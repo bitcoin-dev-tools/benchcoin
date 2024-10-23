@@ -4,12 +4,14 @@
 
 include(GenerateHeaders)
 generate_header_from_raw(data/block413567.raw benchmark::data)
+generate_header_from_raw(data/xor_histogram.raw.tgz benchmark::data)
 
 add_executable(bench_bitcoin
   bench_bitcoin.cpp
   bench.cpp
   nanobench.cpp
   ${CMAKE_CURRENT_BINARY_DIR}/data/block413567.raw.h
+  ${CMAKE_CURRENT_BINARY_DIR}/data/xor_histogram.raw.h
 # Benchmarks:
   addrman.cpp
   base58.cpp

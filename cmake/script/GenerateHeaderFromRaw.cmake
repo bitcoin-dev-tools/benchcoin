@@ -3,7 +3,11 @@
 # file COPYING or https://opensource.org/license/mit/.
 
 cmake_path(GET RAW_SOURCE_PATH STEM raw_source_basename)
-
+if(RAW_SOURCE_PATH MATCHES "\\.tgz$")
+    cmake_path(GET RAW_SOURCE_PATH STEM LAST_ONLY BASE_NAME)
+    file(ARCHIVE_EXTRACT INPUT ${RAW_SOURCE_PATH} DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
+    set(RAW_SOURCE_PATH "${CMAKE_CURRENT_BINARY_DIR}/${BASE_NAME}")
+endif()
 file(READ ${RAW_SOURCE_PATH} hex_content HEX)
 string(REGEX REPLACE "................" "\\0\n" formatted_bytes "${hex_content}")
 string(REGEX REPLACE "[^\n][^\n]" "std::byte{0x\\0}, " formatted_bytes "${formatted_bytes}")

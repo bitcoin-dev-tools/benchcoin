@@ -1,0 +1,13 @@
+[project]
+name = "bitcoin-core-deps"
+version = "0.1.0"
+dependencies = [
+  "codespell==2.2.6",
+  "lief==0.13.2",
+  "mypy==1.4.1",
+  "pyzmq==25.1.0",
+  # Removing in favour of packaged nixpkgs bin which is not dynamically linked
+  # "ruff==0.5.5",
+  "vulture==2.6",
+  "pyperf"
+]

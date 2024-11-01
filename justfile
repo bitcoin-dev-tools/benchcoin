@@ -62,6 +62,14 @@ test-unit1 suite:
 bench:
     build/src/bench/bench_bitcoin
 
+# Run the lint job
+lint:
+    #!/usr/bin/env bash
+    cd test/lint/test_runner/
+    cargo fmt
+    cargo clippy
+    COMMIT_RANGE="$( git rev-list --max-count=1 --merges HEAD )..HEAD" cargo run
+
 # Run the CI workflow
 [group('ci')]
 run-ci: build-ci bench test

@@ -7,7 +7,24 @@ on:
     tags-ignore:
       - '**'
 jobs:
+  lint:
+    runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: cachix/install-nix-action@v27
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+      - name: Build & test release
+        env:
+          NIX_PATH: nixpkgs=channel:nixos-unstable
+        run: |
+          nix-shell --command "just lint"
   build-and-test:
+    needs: lint
     runs-on: [self-hosted, linux, x64]
     timeout-minutes: 20
     steps:

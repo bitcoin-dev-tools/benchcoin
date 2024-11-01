@@ -9,6 +9,20 @@
 }:
 let
   inherit (pkgs.lib) optionals strings;
+
+  # Add mlc binary fetching
+  mlcBinary = pkgs.fetchurl {
+    url = "https://github.com/becheran/mlc/releases/download/v0.18.0/mlc-x86_64-linux";
+    sha256 = "sha256-jbdp+UlFybBE+o567L398hbcWHsG8aQGqYYf5h9JRkw=";
+  };
+
+  # Create a derivation for mlc
+  mlc = pkgs.runCommand "mlc" {} ''
+    mkdir -p $out/bin
+    cp ${mlcBinary} $out/bin/mlc
+    chmod +x $out/bin/mlc
+  '';
+
   binDirs =
     [ "\$PWD/src" ]
     ++ optionals withGui [ "\$PWD/src/qt" ];
@@ -46,29 +60,11 @@ in pkgs.mkShell {
       # https://github.com/bitcoin/bitcoin/blob/master/doc/productivity.md#cache-compilations-with-ccache
       ccache
 
-      # generating compile_commands.json for clang-format, clang-tidy, LSPs etc
-      # https://github.com/bitcoin/bitcoin/blob/master/doc/developer-notes.md#running-clang-tidy
-      # $ a && c && m clean && bear --config src/.bear-tidy-config -- make -j6
-      clang-tools_18
-      bear
-
       # for newer cmake building
       cmake
 
       # depends
       byacc
-
-      # functional tests & linting
-      python3
-      python3Packages.flake8
-      python3Packages.lief
-      python3Packages.autopep8
-      python3Packages.mypy
-      python3Packages.requests
-      python3Packages.pyzmq
-
-      # benchmarking
-      python3Packages.pyperf
 
       # debugging
       gdb
@@ -94,9 +90,18 @@ in pkgs.mkShell {
     buildInputs = with pkgs; [
       just
       bash
+
+      # lint requirements
+      cargo
+      git
+      mlc
+      ruff
+      rustc
+      rustup
+      shellcheck
+      python310
+      uv
     ];
-
-
 
     # Modifies the Nix clang++ wrapper to avoid warning:
     # "_FORTIFY_SOURCE requires compiling with optimization (-O)"
@@ -108,6 +113,11 @@ in pkgs.mkShell {
     shellHook = ''
       echo "Bitcoin Core build nix-shell"
       echo ""
+      echo "Setting up python venv"
+
+      uv venv --python 3.10
+      source .venv/bin/activate
+      uv pip install -r pyproject.toml
 
       BCC_EGG=${pkgs.linuxPackages.bcc}/${pkgs.python3.sitePackages}/bcc-${pkgs.linuxPackages.bcc.version}-py3.${pkgs.python3.sourceVersion.minor}.egg
 
@@ -121,5 +131,9 @@ in pkgs.mkShell {
 
       echo "adding ${builtins.concatStringsSep ":" binDirs} to \$PATH to make running built binaries more natural"
       export PATH=$PATH:${builtins.concatStringsSep ":" binDirs};
+
+      rustup default stable
+      rustup component add rustfmt
+
     '';
 }

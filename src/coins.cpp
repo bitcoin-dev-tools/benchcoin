@@ -109,14 +109,17 @@ void CCoinsViewCache::AddCoin(const COutPoint &outpoint, Coin&& coin, bool possi
            (bool)it->second.coin.IsCoinBase());
 }
 
-void CCoinsViewCache::EmplaceCoinInternalDANGER(COutPoint&& outpoint, Coin&& coin) {
-    cachedCoinsUsage += coin.DynamicMemoryUsage();
+void CCoinsViewCache::EmplaceCoinInternalDANGER(COutPoint&& outpoint, Coin&& coin, bool set_dirty) {
+    const auto mem_usage{coin.DynamicMemoryUsage()};
     auto [it, inserted] = cacheCoins.emplace(
         std::piecewise_construct,
         std::forward_as_tuple(std::move(outpoint)),
         std::forward_as_tuple(std::move(coin)));
     if (inserted) {
-        it->second.AddFlags(CCoinsCacheEntry::DIRTY, *it, m_sentinel);
+        cachedCoinsUsage += mem_usage;
+        if (set_dirty) {
+            it->second.AddFlags(CCoinsCacheEntry::DIRTY, *it, m_sentinel);
+        }
     }
 }
 

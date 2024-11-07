@@ -1,0 +1,42 @@
+{
+  "results": [
+    {
+      "command": "build/src/bitcoind -datadir=$TMP_DATADIR -connect=148.251.128.115:55555 -daemon=0 -signet -stopatheight=170000",
+      "mean": 17.269624889179997,
+      "stddev": null,
+      "median": 17.269624889179997,
+      "user": 2.14742586,
+      "system": 0.57284166,
+      "min": 17.269624889179997,
+      "max": 17.269624889179997,
+      "times": [
+        17.269624889179997
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "6a09409facbd682a57fb7d80f850f5bf54ebc98e"
+      }
+    },
+    {
+      "command": "build/src/bitcoind -datadir=$TMP_DATADIR -connect=148.251.128.115:55555 -daemon=0 -signet -stopatheight=170000",
+      "mean": 17.28384030518,
+      "stddev": null,
+      "median": 17.28384030518,
+      "user": 2.21335086,
+      "system": 0.56882566,
+      "min": 17.28384030518,
+      "max": 17.28384030518,
+      "times": [
+        17.28384030518
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "cb034b74caef18417978a9a989199b53fefaa2d2"
+      }
+    }
+  ]
+}

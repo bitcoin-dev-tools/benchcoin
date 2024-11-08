@@ -32,6 +32,8 @@ BatchSchnorrVerifier::BatchSchnorrVerifier()
     const size_t max_batch_size{106};
     secp256k1_batch* batch{secp256k1_batch_create(secp256k1_context_static, max_batch_size, rnd)};
     m_batch = new Batch(batch);
+    m_callbacks.reserve(max_batch_size);
+    m_batch_size = max_batch_size;
 }
 
 BatchSchnorrVerifier::~BatchSchnorrVerifier()
@@ -42,7 +44,16 @@ BatchSchnorrVerifier::~BatchSchnorrVerifier()
     }
 }
 
-bool BatchSchnorrVerifier::Add(const Span<const unsigned char> sig, const XOnlyPubKey& pubkey, const uint256& sighash)
+void BatchSchnorrVerifier::ExecuteCallbacks()
+{
+    AssertLockHeld(m_batch_mutex);
+    for (size_t i = 0; i < m_callbacks.size(); i++) {
+        m_callbacks[i]();
+    }
+    m_callbacks.clear();
+}
+
+bool BatchSchnorrVerifier::Add(const Span<const unsigned char> sig, const XOnlyPubKey& pubkey, const uint256& sighash, SigCacheCallback callback)
 {
     LOCK(m_batch_mutex);
     if (secp256k1_batch_usable(secp256k1_context_static, m_batch->get()) == 0) {
@@ -52,11 +63,26 @@ bool BatchSchnorrVerifier::Add(const Span<const unsigned char> sig, const XOnlyP
 
     secp256k1_xonly_pubkey pubkey_parsed;
     if (!secp256k1_xonly_pubkey_parse(secp256k1_context_static, &pubkey_parsed, pubkey.data())) return false;
-    return secp256k1_batch_add_schnorrsig(secp256k1_context_static, m_batch->get(), sig.data(), sighash.begin(), 32, &pubkey_parsed);
+    if (secp256k1_batch_add_schnorrsig(secp256k1_context_static, m_batch->get(), sig.data(), sighash.begin(), 32, &pubkey_parsed)) {
+        if (m_callbacks.size() == m_batch_size) {
+            // Batch was verified and cleared, cache now
+            ExecuteCallbacks();
+        } else {
+            m_callbacks.push_back(callback);
+        }
+        return true;
+    }
+
+    return false;
 }
 
 bool BatchSchnorrVerifier::Verify()
 {
     LOCK(m_batch_mutex);
-    return secp256k1_batch_verify(secp256k1_context_static, m_batch->get());
+    if (secp256k1_batch_verify(secp256k1_context_static, m_batch->get())) {
+        // cache sigs
+        ExecuteCallbacks();
+        return true;
+    }
+    return false;
 }

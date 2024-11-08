@@ -42,6 +42,7 @@
 #include <primitives/block.h>
 #include <primitives/transaction.h>
 #include <random.h>
+#include <script/batchsigcache.h>
 #include <script/script.h>
 #include <script/sigcache.h>
 #include <signet.h>

@@ -6,7 +6,6 @@
 #ifndef BITCOIN_SCRIPT_SIGCACHE_H
 #define BITCOIN_SCRIPT_SIGCACHE_H
 
-#include <batchverify.h>
 #include <consensus/amount.h>
 #include <crypto/sha256.h>
 #include <cuckoocache.h>
@@ -78,16 +77,5 @@ public:
 };
 
 [[nodiscard]] bool InitSignatureCache(size_t max_size_bytes);
-
-class BatchingCachingTransactionSignatureChecker : public CachingTransactionSignatureChecker
-{
-private:
-    BatchSchnorrVerifier* m_batch;
-
-public:
-    BatchingCachingTransactionSignatureChecker(const CTransaction* txToIn, unsigned int nInIn, const CAmount& amountIn, bool storeIn, SignatureCache& signature_cache, PrecomputedTransactionData& txdataIn, BatchSchnorrVerifier* batchIn) : CachingTransactionSignatureChecker(txToIn, nInIn, amountIn, storeIn, signature_cache, txdataIn), m_batch(batchIn) {}
-
-    bool VerifySchnorrSignature(Span<const unsigned char> sig, const XOnlyPubKey& pubkey, const uint256& sighash) const override;
-};
 
 #endif // BITCOIN_SCRIPT_SIGCACHE_H

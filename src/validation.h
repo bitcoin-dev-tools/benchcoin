@@ -8,7 +8,6 @@
 
 #include <arith_uint256.h>
 #include <attributes.h>
-#include <batchverify.h>
 #include <chain.h>
 #include <checkqueue.h>
 #include <consensus/amount.h>
@@ -339,17 +338,16 @@ private:
     ScriptError error{SCRIPT_ERR_UNKNOWN_ERROR};
     PrecomputedTransactionData *txdata;
     SignatureCache* m_signature_cache;
-    BatchSchnorrVerifier* m_batch;
 
 public:
-    CScriptCheck(const CTxOut& outIn, const CTransaction& txToIn, SignatureCache& signature_cache, unsigned int nInIn, unsigned int nFlagsIn, bool cacheIn, PrecomputedTransactionData* txdataIn, BatchSchnorrVerifier* batchIn = nullptr) : m_tx_out(outIn), ptxTo(&txToIn), nIn(nInIn), nFlags(nFlagsIn), cacheStore(cacheIn), txdata(txdataIn), m_signature_cache(&signature_cache), m_batch(batchIn) {}
+    CScriptCheck(const CTxOut& outIn, const CTransaction& txToIn, SignatureCache& signature_cache, unsigned int nInIn, unsigned int nFlagsIn, bool cacheIn, PrecomputedTransactionData* txdataIn) : m_tx_out(outIn), ptxTo(&txToIn), nIn(nInIn), nFlags(nFlagsIn), cacheStore(cacheIn), txdata(txdataIn), m_signature_cache(&signature_cache) {}
 
     CScriptCheck(const CScriptCheck&) = delete;
     CScriptCheck& operator=(const CScriptCheck&) = delete;
     CScriptCheck(CScriptCheck&&) = default;
     CScriptCheck& operator=(CScriptCheck&&) = default;
 
-    bool operator()();
+    bool operator()(BatchSchnorrVerifier* batch = nullptr, bool fVerifyBatch = false);
 
     ScriptError GetScriptError() const { return error; }
 };

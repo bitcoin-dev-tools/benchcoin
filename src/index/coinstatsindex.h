@@ -9,7 +9,6 @@
 #include <index/base.h>
 
 class CBlockIndex;
-class CDBBatch;
 namespace kernel {
 struct CCoinsStats;
 }
@@ -45,7 +44,7 @@ private:
 protected:
     bool CustomInit(const std::optional<interfaces::BlockRef>& block) override;
 
-    bool CustomCommit(CDBBatch& batch) override;
+    bool CustomCommit(CDBBatchBase& batch) override;
 
     bool CustomAppend(const interfaces::BlockInfo& block) override;
 

@@ -290,6 +290,7 @@ target_link_libraries(bitcoin_node
     bitcoin_common
     bitcoin_util
     leveldb
+    $<$<BOOL:${WITH_MDBX}>:mdbx-static>
     minisketch
     univalue
     Boost::headers
@@ -298,7 +299,12 @@ target_link_libraries(bitcoin_node
     $<TARGET_NAME_IF_EXISTS:bitcoin_zmq>
     $<TARGET_NAME_IF_EXISTS:USDT::headers>
 )
-
+if(WITH_MDBX)
+  target_include_directories(bitcoin_node PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/libmdbx")
+endif()
+if(WITH_MDBX)
+  target_compile_definitions(bitcoin_node PRIVATE USE_MDBX)
+endif()
 
 # Bitcoin Core bitcoind.
 if(BUILD_DAEMON)

@@ -141,7 +141,7 @@ bool BlockFilterIndex::CustomInit(const std::optional<interfaces::BlockRef>& blo
     return true;
 }
 
-bool BlockFilterIndex::CustomCommit(CDBBatch& batch)
+bool BlockFilterIndex::CustomCommit(CDBBatchBase& batch)
 {
     const FlatFilePos& pos = m_next_filter_pos;
 
@@ -288,7 +288,7 @@ bool BlockFilterIndex::Write(const BlockFilter& filter, uint32_t block_height, c
     return true;
 }
 
-[[nodiscard]] static bool CopyHeightIndexToHashIndex(CDBIterator& db_it, CDBBatch& batch,
+[[nodiscard]] static bool CopyHeightIndexToHashIndex(CDBIteratorBase& db_it, CDBBatchBase& batch,
                                        const std::string& index_name,
                                        int start_height, int stop_height)
 {
@@ -319,7 +319,7 @@ bool BlockFilterIndex::Write(const BlockFilter& filter, uint32_t block_height, c
 bool BlockFilterIndex::CustomRewind(const interfaces::BlockRef& current_tip, const interfaces::BlockRef& new_tip)
 {
     CDBBatch batch(*m_db);
-    std::unique_ptr<CDBIterator> db_it(m_db->NewIterator());
+    std::unique_ptr<CDBIteratorBase> db_it(m_db->NewIterator());
 
     // During a reorg, we need to copy all filters for blocks that are getting disconnected from the
     // height index to the hash index so we can still find them when the height index entries are
@@ -339,7 +339,7 @@ bool BlockFilterIndex::CustomRewind(const interfaces::BlockRef& current_tip, con
     return true;
 }
 
-static bool LookupOne(const CDBWrapper& db, const CBlockIndex* block_index, DBVal& result)
+static bool LookupOne(const CDBWrapperBase& db, const CBlockIndex* block_index, DBVal& result)
 {
     // First check if the result is stored under the height index and the value there matches the
     // block hash. This should be the case if the block is on the active chain.
@@ -357,7 +357,7 @@ static bool LookupOne(const CDBWrapper& db, const CBlockIndex* block_index, DBVa
     return db.Read(DBHashKey(block_index->GetBlockHash()), result);
 }
 
-static bool LookupRange(CDBWrapper& db, const std::string& index_name, int start_height,
+static bool LookupRange(CDBWrapperBase& db, const std::string& index_name, int start_height,
                         const CBlockIndex* stop_index, std::vector<DBVal>& results)
 {
     if (start_height < 0) {
@@ -374,7 +374,7 @@ static bool LookupRange(CDBWrapper& db, const std::string& index_name, int start
     std::vector<std::pair<uint256, DBVal>> values(results_size);
 
     DBHeightKey key(start_height);
-    std::unique_ptr<CDBIterator> db_it(db.NewIterator());
+    std::unique_ptr<CDBIteratorBase> db_it(db.NewIterator());
     db_it->Seek(DBHeightKey(start_height));
     for (int height = start_height; height <= stop_index->nHeight; ++height) {
         if (!db_it->Valid() || !db_it->GetKey(key) || key.height != height) {

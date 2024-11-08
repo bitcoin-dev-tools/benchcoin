@@ -27,7 +27,7 @@ static constexpr uint8_t DB_COINS{'c'};
 
 bool CCoinsViewDB::NeedsUpgrade()
 {
-    std::unique_ptr<CDBIterator> cursor{m_db->NewIterator()};
+    std::unique_ptr<CDBIteratorBase> cursor{m_db->NewIterator()};
     // DB_COINS was deprecated in v0.15.0, commit
     // 1088b02f0ccd7358d2b7076bb9e122d59d502d02
     cursor->Seek(std::make_pair(DB_COINS, uint256{}));
@@ -49,7 +49,7 @@ struct CoinEntry {
 CCoinsViewDB::CCoinsViewDB(DBParams db_params, CoinsViewOptions options) :
     m_db_params{std::move(db_params)},
     m_options{std::move(options)},
-    m_db{std::make_unique<CDBWrapper>(m_db_params)} { }
+    m_db{std::make_unique<MDBXWrapper>(m_db_params)} { }
 
 void CCoinsViewDB::ResizeCache(size_t new_cache_size)
 {
@@ -61,7 +61,7 @@ void CCoinsViewDB::ResizeCache(size_t new_cache_size)
         m_db.reset();
         m_db_params.cache_bytes = new_cache_size;
         m_db_params.wipe_data = false;
-        m_db = std::make_unique<CDBWrapper>(m_db_params);
+        m_db = std::make_unique<MDBXWrapper>(m_db_params);
     }
 }
 
@@ -91,7 +91,7 @@ std::vector<uint256> CCoinsViewDB::GetHeadBlocks() const {
 }
 
 bool CCoinsViewDB::BatchWrite(CoinsViewCacheCursor& cursor, const uint256 &hashBlock) {
-    CDBBatch batch(*m_db);
+    MDBXBatch batch(*m_db);
     size_t count = 0;
     size_t changed = 0;
     assert(!hashBlock.IsNull());
@@ -127,17 +127,15 @@ bool CCoinsViewDB::BatchWrite(CoinsViewCacheCursor& cursor, const uint256 &hashB
         }
         count++;
         it = cursor.NextAndMaybeErase(*it);
-        if (batch.SizeEstimate() > m_options.batch_write_bytes) {
+
+        // I am choosing an arbitrary transaction count to commit on
+        // since we can't really judge a transaction based on it's size
+        // since any size we choose that is a multiple of the page size
+        // we will end up committing before we hit the maximum number of
+        // writes at that page size.
+        if (batch.SizeEstimate() >= 4*m_options.batch_write_bytes) {
             LogDebug(BCLog::COINDB, "Writing partial batch of %.2f MiB\n", batch.SizeEstimate() * (1.0 / 1048576.0));
             m_db->WriteBatch(batch);
-            batch.Clear();
-            if (m_options.simulate_crash_ratio) {
-                static FastRandomContext rng;
-                if (rng.randrange(m_options.simulate_crash_ratio) == 0) {
-                    LogPrintf("Simulating a crash. Goodbye.\n");
-                    _Exit(0);
-                }
-            }
         }
     }
 
@@ -162,7 +160,7 @@ class CCoinsViewDBCursor: public CCoinsViewCursor
 public:
     // Prefer using CCoinsViewDB::Cursor() since we want to perform some
     // cache warmup on instantiation.
-    CCoinsViewDBCursor(CDBIterator* pcursorIn, const uint256&hashBlockIn):
+    CCoinsViewDBCursor(CDBIteratorBase* pcursorIn, const uint256&hashBlockIn):
         CCoinsViewCursor(hashBlockIn), pcursor(pcursorIn) {}
     ~CCoinsViewDBCursor() = default;
 
@@ -173,7 +171,7 @@ public:
     void Next() override;
 
 private:
-    std::unique_ptr<CDBIterator> pcursor;
+    std::unique_ptr<CDBIteratorBase> pcursor;
     std::pair<char, COutPoint> keyTmp;
 
     friend class CCoinsViewDB;
@@ -182,7 +180,7 @@ private:
 std::unique_ptr<CCoinsViewCursor> CCoinsViewDB::Cursor() const
 {
     auto i = std::make_unique<CCoinsViewDBCursor>(
-        const_cast<CDBWrapper&>(*m_db).NewIterator(), GetBestBlock());
+        m_db->NewIterator(), GetBestBlock());
     /* It seems that there are no "const iterators" for LevelDB.  Since we
        only need read operations on it, use a const-cast to get around
        that restriction.  */

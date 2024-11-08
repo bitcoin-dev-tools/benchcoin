@@ -1,0 +1,42 @@
+{
+  "results": [
+    {
+      "command": "perf script flamegraph build/src/bitcoind -datadir=$TMP_DATADIR -connect=148.251.128.115:55555 -daemon=0 -signet -stopatheight=170000",
+      "mean": 17.42390721548,
+      "stddev": null,
+      "median": 17.42390721548,
+      "user": 2.53073888,
+      "system": 0.6727541199999999,
+      "min": 17.42390721548,
+      "max": 17.42390721548,
+      "times": [
+        17.42390721548
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "e1d0201840cfd4ce0568c4f54f40c19cb1dc68f0"
+      }
+    },
+    {
+      "command": "perf script flamegraph build/src/bitcoind -datadir=$TMP_DATADIR -connect=148.251.128.115:55555 -daemon=0 -signet -stopatheight=170000",
+      "mean": 0.83401156848,
+      "stddev": null,
+      "median": 0.83401156848,
+      "user": 0.58653988,
+      "system": 0.08434312000000001,
+      "min": 0.83401156848,
+      "max": 0.83401156848,
+      "times": [
+        0.83401156848
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "696837a53c61040f922a991e6bea23aaf92cfb3a"
+      }
+    }
+  ]
+}

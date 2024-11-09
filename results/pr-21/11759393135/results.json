@@ -1,0 +1,42 @@
+{
+  "results": [
+    {
+      "command": "base (2c09d8fb20d8f9ea934387c431151b73cb29d84d)",
+      "mean": 17.3027386524,
+      "stddev": null,
+      "median": 17.3027386524,
+      "user": 2.4324448800000003,
+      "system": 0.6505476199999999,
+      "min": 17.3027386524,
+      "max": 17.3027386524,
+      "times": [
+        17.3027386524
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "2c09d8fb20d8f9ea934387c431151b73cb29d84d"
+      }
+    },
+    {
+      "command": "head (ff6924143b4e7b9f4511728eb088f8c885c29f63)",
+      "mean": 17.3005761864,
+      "stddev": null,
+      "median": 17.3005761864,
+      "user": 2.27762288,
+      "system": 0.6152756199999999,
+      "min": 17.3005761864,
+      "max": 17.3005761864,
+      "times": [
+        17.3005761864
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "ff6924143b4e7b9f4511728eb088f8c885c29f63"
+      }
+    }
+  ]
+}

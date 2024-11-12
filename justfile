@@ -26,7 +26,8 @@ build-assumeutxo-binaries base_commit head_commit:
             -DCMAKE_BUILD_TYPE=RelWithDebInfo \
             -DCMAKE_C_COMPILER_LAUNCHER=ccache \
             -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
-            -DCMAKE_CXX_FLAGS="-fno-omit-frame-pointer -g"
+            -DCMAKE_CXX_FLAGS="-fno-omit-frame-pointer -g" \
+            -DSECP256K1_EXPERIMENTAL=ON
         taskset -c 0-15 cmake --build "build-$name" -j {{ num_cpus() }}
     done
 

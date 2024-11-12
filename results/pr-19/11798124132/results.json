@@ -1,0 +1,84 @@
+{
+  "results": [
+    {
+      "command": "base (d3304e391fb8cc4abc8257517c8acb60ffabd548)",
+      "mean": 17.41060110866,
+      "stddev": null,
+      "median": 17.41060110866,
+      "user": 2.5301617199999997,
+      "system": 0.7284950199999999,
+      "min": 17.41060110866,
+      "max": 17.41060110866,
+      "times": [
+        17.41060110866
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "d3304e391fb8cc4abc8257517c8acb60ffabd548"
+      },
+      "network": "signet"
+    },
+    {
+      "command": "head (4b6235b1bf8ceccf00d3bc02a3af614d08f9f3c7)",
+      "mean": 17.45221149766,
+      "stddev": null,
+      "median": 17.45221149766,
+      "user": 2.59993172,
+      "system": 0.7410050199999999,
+      "min": 17.45221149766,
+      "max": 17.45221149766,
+      "times": [
+        17.45221149766
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "4b6235b1bf8ceccf00d3bc02a3af614d08f9f3c7"
+      },
+      "network": "signet"
+    },
+    {
+      "command": "base (d3304e391fb8cc4abc8257517c8acb60ffabd548)",
+      "mean": 850.07895340372,
+      "stddev": null,
+      "median": 850.07895340372,
+      "user": 927.81132058,
+      "system": 461.0779459,
+      "min": 850.07895340372,
+      "max": 850.07895340372,
+      "times": [
+        850.07895340372
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "d3304e391fb8cc4abc8257517c8acb60ffabd548"
+      },
+      "network": "mainnet"
+    },
+    {
+      "command": "head (4b6235b1bf8ceccf00d3bc02a3af614d08f9f3c7)",
+      "mean": 508.35852965972,
+      "stddev": null,
+      "median": 508.35852965972,
+      "user": 971.28864258,
+      "system": 910.6875049,
+      "min": 508.35852965972,
+      "max": 508.35852965972,
+      "times": [
+        508.35852965972
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "4b6235b1bf8ceccf00d3bc02a3af614d08f9f3c7"
+      },
+      "network": "mainnet"
+    }
+  ]
+}

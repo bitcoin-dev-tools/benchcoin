@@ -120,7 +120,7 @@ run_benchmark() {
     --export-json "${results_file}" \
     --command-name "base (${base_commit})" \
     --command-name "head (${head_commit})" \
-    "taskset -c 1 perf script flamegraph taskset -c 2-15 build/src/bitcoind -datadir=${TMP_DATADIR} -connect=${connect_address} -daemon=0 -chain=${chain} -stopatheight=${stop_at_height}" \
+    "taskset -c 1 perf script flamegraph taskset -c 2-15 build/src/bitcoind -datadir=${TMP_DATADIR} -connect=${connect_address} -daemon=0 -chain=${chain} -assumevalid=0 -stopatheight=${stop_at_height}" \
     -L commit "${base_commit},${head_commit}"
 }
 

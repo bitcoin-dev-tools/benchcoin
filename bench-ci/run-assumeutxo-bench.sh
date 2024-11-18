@@ -110,7 +110,7 @@ run_benchmark() {
     --export-json "${results_file}" \
     --command-name "base (${base_commit})" \
     --command-name "head (${head_commit})" \
-    "perf script flamegraph build/src/bitcoind -datadir=${TMP_DATADIR} -connect=${connect_address} -daemon=0 -chain=${chain} -assumevalid=0 -stopatheight=${stop_at_height}" \
+    "perf script flamegraph build/src/bitcoind -datadir=${TMP_DATADIR} -connect=${connect_address} -daemon=0 -chain=${chain} -assumevalid=0 -par=1 -stopatheight=${stop_at_height}" \
     -L commit "${base_commit},${head_commit}"
 }
 

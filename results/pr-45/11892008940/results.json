@@ -1,0 +1,84 @@
+{
+  "results": [
+    {
+      "command": "base (d3304e391fb8cc4abc8257517c8acb60ffabd548)",
+      "mean": 25.24007042296,
+      "stddev": null,
+      "median": 25.24007042296,
+      "user": 2.68351826,
+      "system": 0.76260248,
+      "min": 25.24007042296,
+      "max": 25.24007042296,
+      "times": [
+        25.24007042296
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "d3304e391fb8cc4abc8257517c8acb60ffabd548"
+      },
+      "network": "signet"
+    },
+    {
+      "command": "head (d72f972ed540b2999656d185e7571c2abd3118b5)",
+      "mean": 25.16667892996,
+      "stddev": null,
+      "median": 25.16667892996,
+      "user": 2.78126126,
+      "system": 0.8562104799999999,
+      "min": 25.16667892996,
+      "max": 25.16667892996,
+      "times": [
+        25.16667892996
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "d72f972ed540b2999656d185e7571c2abd3118b5"
+      },
+      "network": "signet"
+    },
+    {
+      "command": "base (d3304e391fb8cc4abc8257517c8acb60ffabd548)",
+      "mean": 843.42791510552,
+      "stddev": null,
+      "median": 843.42791510552,
+      "user": 928.7797045599999,
+      "system": 456.04966204,
+      "min": 843.42791510552,
+      "max": 843.42791510552,
+      "times": [
+        843.42791510552
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "d3304e391fb8cc4abc8257517c8acb60ffabd548"
+      },
+      "network": "mainnet"
+    },
+    {
+      "command": "head (d72f972ed540b2999656d185e7571c2abd3118b5)",
+      "mean": 404.13814252352,
+      "stddev": null,
+      "median": 404.13814252352,
+      "user": 690.7688995599999,
+      "system": 150.31070603999999,
+      "min": 404.13814252352,
+      "max": 404.13814252352,
+      "times": [
+        404.13814252352
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "d72f972ed540b2999656d185e7571c2abd3118b5"
+      },
+      "network": "mainnet"
+    }
+  ]
+}

@@ -64,7 +64,7 @@ prepare_assumeutxo_snapshot_run() {
   clean_datadir "${TMP_DATADIR}"
   # Use the pre-built binaries from BINARIES_DIR
   taskset -c 0-15 "${BINARIES_DIR}/${commit}/bitcoind" -datadir="${TMP_DATADIR}" -connect="${CONNECT_ADDRESS}" -daemon=0 -chain="${CHAIN}" -stopatheight=1 -printtoconsole=0
-  taskset -c 0-15 "${BINARIES_DIR}/${commit}/bitcoind" -datadir="${TMP_DATADIR}" -connect="${CONNECT_ADDRESS}" -daemon=0 -chain="${CHAIN}" -dbcache="${DBCACHE}" -pausebackgroundsync=1 -loadutxosnapshot="${UTXO_PATH}" -printtoconsole=0 -assumevalid=0 || true
+  taskset -c 0-15 "${BINARIES_DIR}/${commit}/bitcoind" -datadir="${TMP_DATADIR}" -connect="${CONNECT_ADDRESS}" -daemon=0 -chain="${CHAIN}" -dbcache="${DBCACHE}" -pausebackgroundsync=1 -loadutxosnapshot="${UTXO_PATH}" -printtoconsole=0 -assumevalid=0 -par=1 || true
   clean_logs "${TMP_DATADIR}"
 }
 

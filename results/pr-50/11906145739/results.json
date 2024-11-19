@@ -1,0 +1,84 @@
+{
+  "results": [
+    {
+      "command": "base (d6f8fe733dd3de79bc22312a61cffeb133bd1bc8)",
+      "mean": 25.16754023956,
+      "stddev": null,
+      "median": 25.16754023956,
+      "user": 2.65281624,
+      "system": 0.7804547399999999,
+      "min": 25.16754023956,
+      "max": 25.16754023956,
+      "times": [
+        25.16754023956
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "d6f8fe733dd3de79bc22312a61cffeb133bd1bc8"
+      },
+      "network": "signet"
+    },
+    {
+      "command": "head (a229c71f0e687b3188862619b0934c2f383ed74d)",
+      "mean": 25.24944841556,
+      "stddev": null,
+      "median": 25.24944841556,
+      "user": 2.6526142399999997,
+      "system": 0.7377257399999999,
+      "min": 25.24944841556,
+      "max": 25.24944841556,
+      "times": [
+        25.24944841556
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "a229c71f0e687b3188862619b0934c2f383ed74d"
+      },
+      "network": "signet"
+    },
+    {
+      "command": "base (d6f8fe733dd3de79bc22312a61cffeb133bd1bc8)",
+      "mean": 849.18916288398,
+      "stddev": null,
+      "median": 849.18916288398,
+      "user": 919.24378226,
+      "system": 461.89988114,
+      "min": 849.18916288398,
+      "max": 849.18916288398,
+      "times": [
+        849.18916288398
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "d6f8fe733dd3de79bc22312a61cffeb133bd1bc8"
+      },
+      "network": "mainnet"
+    },
+    {
+      "command": "head (a229c71f0e687b3188862619b0934c2f383ed74d)",
+      "mean": 853.3528575729799,
+      "stddev": null,
+      "median": 853.3528575729799,
+      "user": 925.7198992599999,
+      "system": 463.55531713999994,
+      "min": 853.3528575729799,
+      "max": 853.3528575729799,
+      "times": [
+        853.3528575729799
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "a229c71f0e687b3188862619b0934c2f383ed74d"
+      },
+      "network": "mainnet"
+    }
+  ]
+}

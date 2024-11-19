@@ -1,0 +1,84 @@
+{
+  "results": [
+    {
+      "command": "base (e9a3b76c4740fd26ae6805698844f9febaca6681)",
+      "mean": 25.172303544720002,
+      "stddev": null,
+      "median": 25.172303544720002,
+      "user": 2.6177834200000003,
+      "system": 0.75049314,
+      "min": 25.172303544720002,
+      "max": 25.172303544720002,
+      "times": [
+        25.172303544720002
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "e9a3b76c4740fd26ae6805698844f9febaca6681"
+      },
+      "network": "signet"
+    },
+    {
+      "command": "head (9cb2856c9740310e5545fe559307d70c1f11014d)",
+      "mean": 25.236028273720002,
+      "stddev": null,
+      "median": 25.236028273720002,
+      "user": 2.65414642,
+      "system": 0.72396814,
+      "min": 25.236028273720002,
+      "max": 25.236028273720002,
+      "times": [
+        25.236028273720002
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "9cb2856c9740310e5545fe559307d70c1f11014d"
+      },
+      "network": "signet"
+    },
+    {
+      "command": "base (e9a3b76c4740fd26ae6805698844f9febaca6681)",
+      "mean": 848.9255997597201,
+      "stddev": null,
+      "median": 848.9255997597201,
+      "user": 924.1517450599999,
+      "system": 460.13988066,
+      "min": 848.9255997597201,
+      "max": 848.9255997597201,
+      "times": [
+        848.9255997597201
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "e9a3b76c4740fd26ae6805698844f9febaca6681"
+      },
+      "network": "mainnet"
+    },
+    {
+      "command": "head (9cb2856c9740310e5545fe559307d70c1f11014d)",
+      "mean": 845.45794483172,
+      "stddev": null,
+      "median": 845.45794483172,
+      "user": 927.0928920599999,
+      "system": 462.17430666,
+      "min": 845.45794483172,
+      "max": 845.45794483172,
+      "times": [
+        845.45794483172
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "9cb2856c9740310e5545fe559307d70c1f11014d"
+      },
+      "network": "mainnet"
+    }
+  ]
+}

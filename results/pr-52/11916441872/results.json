@@ -1,0 +1,84 @@
+{
+  "results": [
+    {
+      "command": "base (e9a3b76c4740fd26ae6805698844f9febaca6681)",
+      "mean": 25.219540706220002,
+      "stddev": null,
+      "median": 25.219540706220002,
+      "user": 2.68212972,
+      "system": 0.7619057,
+      "min": 25.219540706220002,
+      "max": 25.219540706220002,
+      "times": [
+        25.219540706220002
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "e9a3b76c4740fd26ae6805698844f9febaca6681"
+      },
+      "network": "signet"
+    },
+    {
+      "command": "head (f45f37b361f9e4baef0d15233474fdab4c9e1475)",
+      "mean": 25.38408821722,
+      "stddev": null,
+      "median": 25.38408821722,
+      "user": 2.70739072,
+      "system": 0.7156667,
+      "min": 25.38408821722,
+      "max": 25.38408821722,
+      "times": [
+        25.38408821722
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "f45f37b361f9e4baef0d15233474fdab4c9e1475"
+      },
+      "network": "signet"
+    },
+    {
+      "command": "base (e9a3b76c4740fd26ae6805698844f9febaca6681)",
+      "mean": 859.21924533774,
+      "stddev": null,
+      "median": 859.21924533774,
+      "user": 928.84823868,
+      "system": 452.63808803999996,
+      "min": 859.21924533774,
+      "max": 859.21924533774,
+      "times": [
+        859.21924533774
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "e9a3b76c4740fd26ae6805698844f9febaca6681"
+      },
+      "network": "mainnet"
+    },
+    {
+      "command": "head (f45f37b361f9e4baef0d15233474fdab4c9e1475)",
+      "mean": 861.4466022867399,
+      "stddev": null,
+      "median": 861.4466022867399,
+      "user": 938.8252616799999,
+      "system": 454.96547603999994,
+      "min": 861.4466022867399,
+      "max": 861.4466022867399,
+      "times": [
+        861.4466022867399
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "f45f37b361f9e4baef0d15233474fdab4c9e1475"
+      },
+      "network": "mainnet"
+    }
+  ]
+}

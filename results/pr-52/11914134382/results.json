@@ -1,0 +1,84 @@
+{
+  "results": [
+    {
+      "command": "base (e9a3b76c4740fd26ae6805698844f9febaca6681)",
+      "mean": 25.30835781312,
+      "stddev": null,
+      "median": 25.30835781312,
+      "user": 2.65291422,
+      "system": 0.78215044,
+      "min": 25.30835781312,
+      "max": 25.30835781312,
+      "times": [
+        25.30835781312
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "e9a3b76c4740fd26ae6805698844f9febaca6681"
+      },
+      "network": "signet"
+    },
+    {
+      "command": "head (8bd98cf4c4be7be689f312a261d407925eb5643a)",
+      "mean": 25.10826080812,
+      "stddev": null,
+      "median": 25.10826080812,
+      "user": 2.62533822,
+      "system": 0.7484304399999999,
+      "min": 25.10826080812,
+      "max": 25.10826080812,
+      "times": [
+        25.10826080812
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "8bd98cf4c4be7be689f312a261d407925eb5643a"
+      },
+      "network": "signet"
+    },
+    {
+      "command": "base (e9a3b76c4740fd26ae6805698844f9febaca6681)",
+      "mean": 864.44262897976,
+      "stddev": null,
+      "median": 864.44262897976,
+      "user": 925.9697504999999,
+      "system": 451.26265193999996,
+      "min": 864.44262897976,
+      "max": 864.44262897976,
+      "times": [
+        864.44262897976
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "e9a3b76c4740fd26ae6805698844f9febaca6681"
+      },
+      "network": "mainnet"
+    },
+    {
+      "command": "head (8bd98cf4c4be7be689f312a261d407925eb5643a)",
+      "mean": 857.33426175676,
+      "stddev": null,
+      "median": 857.33426175676,
+      "user": 932.7030034999999,
+      "system": 457.77872793999995,
+      "min": 857.33426175676,
+      "max": 857.33426175676,
+      "times": [
+        857.33426175676
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "8bd98cf4c4be7be689f312a261d407925eb5643a"
+      },
+      "network": "mainnet"
+    }
+  ]
+}

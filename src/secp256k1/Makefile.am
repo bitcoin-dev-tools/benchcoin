@@ -183,6 +183,17 @@ if BUILD_WINDOWS
 schnorr_example_LDFLAGS += -lbcrypt
 endif
 TESTS += schnorr_example
+if ENABLE_MODULE_BATCH
+noinst_PROGRAMS += batch_example
+batch_example_SOURCES = examples/batch.c
+batch_example_CPPFLAGS = -I$(top_srcdir)/include
+batch_example_LDADD = libsecp256k1.la
+batch_example_LDFLAGS = -static
+if BUILD_WINDOWS
+batch_example_LDFLAGS += -lbcrypt
+endif
+TESTS += batch_example
+endif
 endif
 if ENABLE_MODULE_ELLSWIFT
 noinst_PROGRAMS += ellswift_example
@@ -194,6 +205,17 @@ if BUILD_WINDOWS
 ellswift_example_LDFLAGS += -lbcrypt
 endif
 TESTS += ellswift_example
+endif
+if ENABLE_MODULE_MUSIG
+noinst_PROGRAMS += musig_example
+musig_example_SOURCES = examples/musig.c
+musig_example_CPPFLAGS = -I$(top_srcdir)/include -DSECP256K1_STATIC
+musig_example_LDADD = libsecp256k1.la
+musig_example_LDFLAGS = -static
+if BUILD_WINDOWS
+musig_example_LDFLAGS += -lbcrypt
+endif
+TESTS += musig_example
 endif
 endif
 
@@ -254,6 +276,7 @@ maintainer-clean-local: clean-testvectors
 ### Additional files to distribute
 EXTRA_DIST = autogen.sh CHANGELOG.md SECURITY.md
 EXTRA_DIST += doc/release-process.md doc/safegcd_implementation.md
+EXTRA_DIST += doc/ellswift.md doc/musig.md
 EXTRA_DIST += examples/EXAMPLES_COPYING
 EXTRA_DIST += sage/gen_exhaustive_groups.sage
 EXTRA_DIST += sage/gen_split_lambda_constants.sage
@@ -281,6 +304,14 @@ if ENABLE_MODULE_SCHNORRSIG
 include src/modules/schnorrsig/Makefile.am.include
 endif
 
+if ENABLE_MODULE_MUSIG
+include src/modules/musig/Makefile.am.include
+endif
+
 if ENABLE_MODULE_ELLSWIFT
 include src/modules/ellswift/Makefile.am.include
+endif
+
+if ENABLE_MODULE_BATCH
+include src/modules/batch/Makefile.am.include
 endif

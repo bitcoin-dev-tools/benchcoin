@@ -8,6 +8,7 @@
 
 #include <arith_uint256.h>
 #include <attributes.h>
+#include <batchverify.h>
 #include <chain.h>
 #include <checkqueue.h>
 #include <consensus/amount.h>
@@ -340,8 +341,7 @@ private:
     SignatureCache* m_signature_cache;
 
 public:
-    CScriptCheck(const CTxOut& outIn, const CTransaction& txToIn, SignatureCache& signature_cache, unsigned int nInIn, unsigned int nFlagsIn, bool cacheIn, PrecomputedTransactionData* txdataIn) :
-        m_tx_out(outIn), ptxTo(&txToIn), nIn(nInIn), nFlags(nFlagsIn), cacheStore(cacheIn), txdata(txdataIn), m_signature_cache(&signature_cache) { }
+    CScriptCheck(const CTxOut& outIn, const CTransaction& txToIn, SignatureCache& signature_cache, unsigned int nInIn, unsigned int nFlagsIn, bool cacheIn, PrecomputedTransactionData* txdataIn) : m_tx_out(outIn), ptxTo(&txToIn), nIn(nInIn), nFlags(nFlagsIn), cacheStore(cacheIn), txdata(txdataIn), m_signature_cache(&signature_cache) {}
 
     CScriptCheck(const CScriptCheck&) = delete;
     CScriptCheck& operator=(const CScriptCheck&) = delete;
@@ -349,6 +349,7 @@ public:
     CScriptCheck& operator=(CScriptCheck&&) = default;
 
     bool operator()();
+    bool batch(BatchSchnorrVerifier& batch);
 
     ScriptError GetScriptError() const { return error; }
 };
@@ -357,6 +358,18 @@ public:
 static_assert(std::is_nothrow_move_assignable_v<CScriptCheck>);
 static_assert(std::is_nothrow_move_constructible_v<CScriptCheck>);
 static_assert(std::is_nothrow_destructible_v<CScriptCheck>);
+
+class BatchScriptCheck
+{
+private:
+    std::vector<CScriptCheck> m_checks;
+
+public:
+    template <class InputIterator>
+    BatchScriptCheck(InputIterator start_it, InputIterator end_it);
+
+    bool operator()();
+};
 
 /**
  * Convenience class for initializing and passing the script execution cache
@@ -948,6 +961,7 @@ private:
 
     //! A queue for script verifications that have to be performed by worker threads.
     CCheckQueue<CScriptCheck> m_script_check_queue;
+    CCheckQueue<BatchScriptCheck> m_batch_script_check_queue;
 
     //! Timers and counters used for benchmarking validation in both background
     //! and active chainstates.
@@ -1313,6 +1327,7 @@ public:
     std::optional<int> GetSnapshotBaseHeight() const EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
 
     CCheckQueue<CScriptCheck>& GetCheckQueue() { return m_script_check_queue; }
+    CCheckQueue<BatchScriptCheck>& GetBatchCheckQueue() { return m_batch_script_check_queue; }
 
     ~ChainstateManager();
 };

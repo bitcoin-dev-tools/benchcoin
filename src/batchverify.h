@@ -12,6 +12,8 @@
 
 #include <vector>
 
+constexpr size_t MAX_BATCH_SIZE = 106;
+
 class SigCacheCallback
 {
 private:

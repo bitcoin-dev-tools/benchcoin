@@ -53,7 +53,7 @@ void BatchSchnorrVerifier::ExecuteCallbacks()
     m_callbacks.clear();
 }
 
-bool BatchSchnorrVerifier::Add(const Span<const unsigned char> sig, const XOnlyPubKey& pubkey, const uint256& sighash, SigCacheCallback callback)
+bool BatchSchnorrVerifier::Add(const Span<const unsigned char> sig, const XOnlyPubKey& pubkey, const uint256& sighash, const SigCacheCallback& callback)
 {
     LOCK(m_batch_mutex);
     if (secp256k1_batch_usable(secp256k1_context_static, m_batch->get()) == 0) {
@@ -68,7 +68,7 @@ bool BatchSchnorrVerifier::Add(const Span<const unsigned char> sig, const XOnlyP
             // Batch was verified and cleared, cache now
             ExecuteCallbacks();
         } else {
-            m_callbacks.push_back(callback);
+            m_callbacks.push_back(std::move(callback));
         }
         return true;
     }

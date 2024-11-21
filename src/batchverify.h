@@ -42,7 +42,7 @@ public:
     BatchSchnorrVerifier();
     ~BatchSchnorrVerifier();
 
-    bool Add(const Span<const unsigned char> sig, const XOnlyPubKey& pubkey, const uint256& sighash, SigCacheCallback callback) EXCLUSIVE_LOCKS_REQUIRED(!m_batch_mutex);
+    bool Add(const Span<const unsigned char> sig, const XOnlyPubKey& pubkey, const uint256& sighash, const SigCacheCallback& callback) EXCLUSIVE_LOCKS_REQUIRED(!m_batch_mutex);
     bool Verify() EXCLUSIVE_LOCKS_REQUIRED(!m_batch_mutex);
 };
 

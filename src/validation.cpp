@@ -71,6 +71,7 @@
 #include <deque>
 #include <numeric>
 #include <optional>
+#include <random.h>
 #include <ranges>
 #include <span>
 #include <string>
@@ -2120,14 +2121,14 @@ bool CScriptCheck::batch(BatchSchnorrVerifier& batch)
 }
 
 template <class InputIterator>
-BatchScriptCheck::BatchScriptCheck(InputIterator start_it, InputIterator end_it)
+BatchScriptCheck::BatchScriptCheck(const unsigned char* rnd, InputIterator start_it, InputIterator end_it) : m_rnd(rnd)
 {
     m_checks.insert(m_checks.end(), start_it, end_it);
 }
 
 bool BatchScriptCheck::operator()()
 {
-    BatchSchnorrVerifier batch;
+    BatchSchnorrVerifier batch(m_rnd);
     for (auto& check : m_checks) {
         if (!check.batch(batch)) {
             return false;
@@ -2737,16 +2738,19 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
         UpdateCoins(tx, view, i == 0 ? undoDummy : blockundo.vtxundo.back(), pindex->nHeight);
     }
 
+    // Initialize random bytes to be used by all batches in this block
+    unsigned char rnd[16];
+    GetRandBytes(rnd);
     // Batch the schnorr checks
     std::vector<BatchScriptCheck> vBatchScriptChecks;
     for (size_t i = 0; i < vSchnorrChecks.size(); i += MAX_BATCH_SIZE) {
         auto start_it = vSchnorrChecks.begin() + i;
         auto end_it = min(vSchnorrChecks.end(), start_it + MAX_BATCH_SIZE);
         if (parallel_script_checks) {
-            vBatchScriptChecks.emplace_back(std::make_move_iterator(start_it), std::make_move_iterator(end_it));
+            vBatchScriptChecks.emplace_back(rnd, std::make_move_iterator(start_it), std::make_move_iterator(end_it));
             continue;
         }
-        if (BatchScriptCheck(std::make_move_iterator(start_it), std::make_move_iterator(end_it))()) {
+        if (BatchScriptCheck(rnd, std::make_move_iterator(start_it), std::make_move_iterator(end_it))()) {
             continue;
         }
         LogPrintf("ERROR: %s: Batch verification failed\n", __func__);

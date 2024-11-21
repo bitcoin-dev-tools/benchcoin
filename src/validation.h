@@ -363,10 +363,11 @@ class BatchScriptCheck
 {
 private:
     std::vector<CScriptCheck> m_checks;
+    const unsigned char* m_rnd;
 
 public:
     template <class InputIterator>
-    BatchScriptCheck(InputIterator start_it, InputIterator end_it);
+    BatchScriptCheck(const unsigned char* rnd, InputIterator start_it, InputIterator end_it);
 
     bool operator()();
 };

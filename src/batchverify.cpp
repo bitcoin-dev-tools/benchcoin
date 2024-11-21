@@ -22,10 +22,8 @@ public:
     secp256k1_batch* get() const { return m_batch; }
 };
 
-BatchSchnorrVerifier::BatchSchnorrVerifier()
+BatchSchnorrVerifier::BatchSchnorrVerifier(const unsigned char* rnd)
 {
-    unsigned char rnd[16];
-    GetRandBytes(rnd);
     // This is the maximum number of scalar-point pairs on the batch for which
     // Strauss' algorithm, which is used in the secp256k1 implementation, is
     // still efficient.

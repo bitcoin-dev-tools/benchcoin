@@ -1,0 +1,84 @@
+{
+  "results": [
+    {
+      "command": "base (e9a3b76c4740fd26ae6805698844f9febaca6681)",
+      "mean": 25.20725589728,
+      "stddev": null,
+      "median": 25.20725589728,
+      "user": 2.6549782599999996,
+      "system": 0.73720608,
+      "min": 25.20725589728,
+      "max": 25.20725589728,
+      "times": [
+        25.20725589728
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "e9a3b76c4740fd26ae6805698844f9febaca6681"
+      },
+      "network": "signet"
+    },
+    {
+      "command": "head (9e97f1492a392100bcd4686cfefc79ae76e84ca4)",
+      "mean": 25.25016294928,
+      "stddev": null,
+      "median": 25.25016294928,
+      "user": 2.7136812599999995,
+      "system": 0.80334608,
+      "min": 25.25016294928,
+      "max": 25.25016294928,
+      "times": [
+        25.25016294928
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "9e97f1492a392100bcd4686cfefc79ae76e84ca4"
+      },
+      "network": "signet"
+    },
+    {
+      "command": "base (e9a3b76c4740fd26ae6805698844f9febaca6681)",
+      "mean": 851.04677696308,
+      "stddev": null,
+      "median": 851.04677696308,
+      "user": 928.07413144,
+      "system": 447.89377766,
+      "min": 851.04677696308,
+      "max": 851.04677696308,
+      "times": [
+        851.04677696308
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "e9a3b76c4740fd26ae6805698844f9febaca6681"
+      },
+      "network": "mainnet"
+    },
+    {
+      "command": "head (9e97f1492a392100bcd4686cfefc79ae76e84ca4)",
+      "mean": 513.9585113970801,
+      "stddev": null,
+      "median": 513.9585113970801,
+      "user": 954.17424244,
+      "system": 898.99180566,
+      "min": 513.9585113970801,
+      "max": 513.9585113970801,
+      "times": [
+        513.9585113970801
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "9e97f1492a392100bcd4686cfefc79ae76e84ca4"
+      },
+      "network": "mainnet"
+    }
+  ]
+}

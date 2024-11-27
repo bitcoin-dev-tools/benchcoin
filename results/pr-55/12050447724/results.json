@@ -1,0 +1,84 @@
+{
+  "results": [
+    {
+      "command": "base (e9a3b76c4740fd26ae6805698844f9febaca6681)",
+      "mean": 25.1944011949,
+      "stddev": null,
+      "median": 25.1944011949,
+      "user": 2.6475749599999996,
+      "system": 0.76403636,
+      "min": 25.1944011949,
+      "max": 25.1944011949,
+      "times": [
+        25.1944011949
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "e9a3b76c4740fd26ae6805698844f9febaca6681"
+      },
+      "network": "signet"
+    },
+    {
+      "command": "head (27a86ea00d2ea926389ea2702a2b203575f12fe6)",
+      "mean": 25.2441180549,
+      "stddev": null,
+      "median": 25.2441180549,
+      "user": 2.6630469599999995,
+      "system": 0.72073236,
+      "min": 25.2441180549,
+      "max": 25.2441180549,
+      "times": [
+        25.2441180549
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "27a86ea00d2ea926389ea2702a2b203575f12fe6"
+      },
+      "network": "signet"
+    },
+    {
+      "command": "base (e9a3b76c4740fd26ae6805698844f9febaca6681)",
+      "mean": 858.7737445728201,
+      "stddev": null,
+      "median": 858.7737445728201,
+      "user": 931.6386257,
+      "system": 457.82475272,
+      "min": 858.7737445728201,
+      "max": 858.7737445728201,
+      "times": [
+        858.7737445728201
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "e9a3b76c4740fd26ae6805698844f9febaca6681"
+      },
+      "network": "mainnet"
+    },
+    {
+      "command": "head (27a86ea00d2ea926389ea2702a2b203575f12fe6)",
+      "mean": 854.16034222482,
+      "stddev": null,
+      "median": 854.16034222482,
+      "user": 931.5991317,
+      "system": 458.30092971999994,
+      "min": 854.16034222482,
+      "max": 854.16034222482,
+      "times": [
+        854.16034222482
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "27a86ea00d2ea926389ea2702a2b203575f12fe6"
+      },
+      "network": "mainnet"
+    }
+  ]
+}

@@ -59,7 +59,7 @@ protected:
         bool ReadBestBlock(CBlockLocator& locator) const;
 
         /// Write block locator of the chain that the index is in sync with.
-        void WriteBestBlock(CDBBatch& batch, const CBlockLocator& locator);
+        void WriteBestBlock(CDBBatchBase& batch, const CBlockLocator& locator);
     };
 
 private:
@@ -115,7 +115,7 @@ protected:
 
     /// Virtual method called internally by Commit that can be overridden to atomically
     /// commit more index state.
-    virtual bool CustomCommit(CDBBatch& batch) { return true; }
+    virtual bool CustomCommit(CDBBatchBase& batch) { return true; }
 
     /// Rewind index to an earlier chain tip during a chain reorg. The tip must
     /// be an ancestor of the current best block.

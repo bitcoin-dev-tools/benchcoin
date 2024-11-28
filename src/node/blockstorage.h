@@ -48,10 +48,13 @@ class SignalInterrupt;
 
 namespace kernel {
 /** Access to the block database (blocks/index/) */
-class BlockTreeDB : public CDBWrapper
+class BlockTreeDB
 {
+protected:
+    DBParams m_db_params;
+    std::unique_ptr<CDBWrapperBase> m_db;
 public:
-    using CDBWrapper::CDBWrapper;
+    BlockTreeDB(DBParams db_params);
     bool WriteBatchSync(const std::vector<std::pair<int, const CBlockFileInfo*>>& fileInfo, int nLastFile, const std::vector<const CBlockIndex*>& blockinfo);
     bool ReadBlockFileInfo(int nFile, CBlockFileInfo& info);
     bool ReadLastBlockFile(int& nFile);

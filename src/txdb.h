@@ -53,7 +53,7 @@ class CCoinsViewDB final : public CCoinsView
 protected:
     DBParams m_db_params;
     CoinsViewOptions m_options;
-    std::unique_ptr<CDBWrapper> m_db;
+    std::unique_ptr<CDBWrapperBase> m_db;
 public:
     explicit CCoinsViewDB(DBParams db_params, CoinsViewOptions options);
 

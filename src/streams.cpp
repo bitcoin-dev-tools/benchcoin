@@ -23,7 +23,7 @@ AutoFile::AutoFile(std::FILE* file, std::vector<std::byte> data_xor)
 std::size_t AutoFile::detail_fread(Span<std::byte> dst)
 {
     if (!m_file) throw std::ios_base::failure("AutoFile::read: file handle is nullptr");
-    size_t ret = std::fread(dst.data(), 1, dst.size(), m_file);
+    size_t ret = FRead(dst.data(), dst.size(), m_file);
     if (!m_xor.empty()) {
         if (!m_position.has_value()) throw std::ios_base::failure("AutoFile::read: position unknown");
         util::Xor(dst.subspan(0, ret), m_xor, *m_position);

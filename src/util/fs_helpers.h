@@ -15,6 +15,11 @@
 #include <optional>
 
 /**
+ * On POSIX systems with support for unlocked reading, uses fread_unlocked, otherwise falls back to standard fread.
+ */
+size_t FRead(void* data, size_t size, FILE* file);
+
+/**
  * Ensure file contents are fully committed to disk, using a platform-specific
  * feature analogous to fsync().
  */

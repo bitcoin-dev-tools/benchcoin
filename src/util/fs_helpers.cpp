@@ -78,6 +78,15 @@ LockResult LockDirectory(const fs::path& directory, const fs::path& lockfile_nam
     return LockResult::Success;
 }
 } // namespace util
+
+size_t FRead(void* data, size_t size, FILE* file) {
+#ifdef _POSIX_C_SOURCE
+    return fread_unlocked(data, 1, size, file);
+#else
+    return std::fread(data, 1, size, file);
+#endif
+}
+
 void UnlockDirectory(const fs::path& directory, const fs::path& lockfile_name)
 {
     LOCK(cs_dir_locks);

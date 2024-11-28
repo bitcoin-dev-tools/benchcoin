@@ -14,6 +14,7 @@ AutoFile::AutoFile(std::FILE* file, std::vector<std::byte> data_xor)
 {
     if (!IsNull()) {
         flockfile(m_file);
+        std::setvbuf(m_file, nullptr, _IOFBF, 16 << 10);
         auto pos{std::ftell(m_file)};
         if (pos >= 0) m_position = pos;
     }

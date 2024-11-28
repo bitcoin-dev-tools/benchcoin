@@ -418,6 +418,7 @@ public:
      */
     std::FILE* release()
     {
+        funlockfile(m_file);
         std::FILE* ret{m_file};
         m_file = nullptr;
         return ret;

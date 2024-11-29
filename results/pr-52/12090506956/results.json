@@ -1,0 +1,84 @@
+{
+  "results": [
+    {
+      "command": "base (dc2cad0971408a9c38d1b28f7cd2cfc0c038712b)",
+      "mean": 17.39713523428,
+      "stddev": null,
+      "median": 17.39713523428,
+      "user": 2.5748586199999997,
+      "system": 0.67940498,
+      "min": 17.39713523428,
+      "max": 17.39713523428,
+      "times": [
+        17.39713523428
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "dc2cad0971408a9c38d1b28f7cd2cfc0c038712b"
+      },
+      "network": "signet"
+    },
+    {
+      "command": "head (2876f225d469d53a414dd3135b764eaf267995d5)",
+      "mean": 17.476632303280002,
+      "stddev": null,
+      "median": 17.476632303280002,
+      "user": 2.50661562,
+      "system": 0.75331898,
+      "min": 17.476632303280002,
+      "max": 17.476632303280002,
+      "times": [
+        17.476632303280002
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "2876f225d469d53a414dd3135b764eaf267995d5"
+      },
+      "network": "signet"
+    },
+    {
+      "command": "base (dc2cad0971408a9c38d1b28f7cd2cfc0c038712b)",
+      "mean": 870.28012978422,
+      "stddev": null,
+      "median": 870.28012978422,
+      "user": 916.40522688,
+      "system": 440.27420015999996,
+      "min": 870.28012978422,
+      "max": 870.28012978422,
+      "times": [
+        870.28012978422
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "dc2cad0971408a9c38d1b28f7cd2cfc0c038712b"
+      },
+      "network": "mainnet"
+    },
+    {
+      "command": "head (2876f225d469d53a414dd3135b764eaf267995d5)",
+      "mean": 867.49390112622,
+      "stddev": null,
+      "median": 867.49390112622,
+      "user": 930.53252388,
+      "system": 445.73959515999996,
+      "min": 867.49390112622,
+      "max": 867.49390112622,
+      "times": [
+        867.49390112622
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "2876f225d469d53a414dd3135b764eaf267995d5"
+      },
+      "network": "mainnet"
+    }
+  ]
+}

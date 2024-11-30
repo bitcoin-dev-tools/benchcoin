@@ -1,0 +1,84 @@
+{
+  "results": [
+    {
+      "command": "base (dc2cad0971408a9c38d1b28f7cd2cfc0c038712b)",
+      "mean": 17.51185924394,
+      "stddev": null,
+      "median": 17.51185924394,
+      "user": 2.45018894,
+      "system": 0.78552466,
+      "min": 17.51185924394,
+      "max": 17.51185924394,
+      "times": [
+        17.51185924394
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "dc2cad0971408a9c38d1b28f7cd2cfc0c038712b"
+      },
+      "network": "signet"
+    },
+    {
+      "command": "head (20e734a15e6aa4db5709f34ffa687cfc7846b29b)",
+      "mean": 17.42203858994,
+      "stddev": null,
+      "median": 17.42203858994,
+      "user": 2.50674794,
+      "system": 0.76003666,
+      "min": 17.42203858994,
+      "max": 17.42203858994,
+      "times": [
+        17.42203858994
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "20e734a15e6aa4db5709f34ffa687cfc7846b29b"
+      },
+      "network": "signet"
+    },
+    {
+      "command": "base (dc2cad0971408a9c38d1b28f7cd2cfc0c038712b)",
+      "mean": 879.46235962888,
+      "stddev": null,
+      "median": 879.46235962888,
+      "user": 922.8416916199999,
+      "system": 437.40028365999996,
+      "min": 879.46235962888,
+      "max": 879.46235962888,
+      "times": [
+        879.46235962888
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "dc2cad0971408a9c38d1b28f7cd2cfc0c038712b"
+      },
+      "network": "mainnet"
+    },
+    {
+      "command": "head (20e734a15e6aa4db5709f34ffa687cfc7846b29b)",
+      "mean": 897.37249144088,
+      "stddev": null,
+      "median": 897.37249144088,
+      "user": 902.8145316199999,
+      "system": 433.43986265999996,
+      "min": 897.37249144088,
+      "max": 897.37249144088,
+      "times": [
+        897.37249144088
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "20e734a15e6aa4db5709f34ffa687cfc7846b29b"
+      },
+      "network": "mainnet"
+    }
+  ]
+}

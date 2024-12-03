@@ -12,7 +12,7 @@ jobs:
       contents: write
       checks: read
     env:
-      NETWORKS: "signet,mainnet"
+      NETWORKS: "mainnet,signet"
     steps:
       - uses: actions/checkout@v4
         with:

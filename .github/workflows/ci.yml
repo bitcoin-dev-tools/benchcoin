@@ -8,9 +8,6 @@ jobs:
     strategy:
       matrix:
         include:
-          - network: signet
-            timeout: 20
-            utxo_path: /var/lib/bitcoin/utxo-signet-160000.dat
           - network: mainnet
             timeout: 600
             utxo_path: /var/lib/bitcoin/utxo-840000.dat

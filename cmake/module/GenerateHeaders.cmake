@@ -12,9 +12,10 @@ function(generate_header_from_json json_source_relpath)
 endfunction()
 
 function(generate_header_from_raw raw_source_relpath raw_namespace)
+  string(REGEX REPLACE "\\.tgz$" "" header_relpath "${raw_source_relpath}")
   add_custom_command(
-    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${raw_source_relpath}.h
-    COMMAND ${CMAKE_COMMAND} -DRAW_SOURCE_PATH=${CMAKE_CURRENT_SOURCE_DIR}/${raw_source_relpath} -DHEADER_PATH=${CMAKE_CURRENT_BINARY_DIR}/${raw_source_relpath}.h -DRAW_NAMESPACE=${raw_namespace} -P ${PROJECT_SOURCE_DIR}/cmake/script/GenerateHeaderFromRaw.cmake
+    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${header_relpath}.h
+    COMMAND ${CMAKE_COMMAND} -DRAW_SOURCE_PATH=${CMAKE_CURRENT_SOURCE_DIR}/${raw_source_relpath} -DHEADER_PATH=${CMAKE_CURRENT_BINARY_DIR}/${header_relpath}.h -DRAW_NAMESPACE=${raw_namespace} -P ${PROJECT_SOURCE_DIR}/cmake/script/GenerateHeaderFromRaw.cmake
     DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/${raw_source_relpath} ${PROJECT_SOURCE_DIR}/cmake/script/GenerateHeaderFromRaw.cmake
     VERBATIM
   )

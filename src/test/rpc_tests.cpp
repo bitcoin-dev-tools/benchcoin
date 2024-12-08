@@ -16,6 +16,7 @@
 #include <any>
 
 #include <boost/test/unit_test.hpp>
+#include <utility>
 
 using util::SplitString;
 
@@ -45,14 +46,14 @@ class RPCTestingSetup : public TestingSetup
 {
 public:
     UniValue TransformParams(const UniValue& params, std::vector<std::pair<std::string, bool>> arg_names) const;
-    UniValue CallRPC(std::string args);
+    UniValue CallRPC(const std::string& args);
 };
 
 UniValue RPCTestingSetup::TransformParams(const UniValue& params, std::vector<std::pair<std::string, bool>> arg_names) const
 {
     UniValue transformed_params;
     CRPCTable table;
-    CRPCCommand command{"category", "method", [&](const JSONRPCRequest& request, UniValue&, bool) -> bool { transformed_params = request.params; return true; }, arg_names, /*unique_id=*/0};
+    CRPCCommand command{"category", "method", [&](const JSONRPCRequest& request, UniValue&, bool) -> bool { transformed_params = request.params; return true; }, std::move(arg_names), /*unique_id=*/0};
     table.appendCommand("method", &command);
     JSONRPCRequest request;
     request.strMethod = "method";
@@ -62,7 +63,7 @@ UniValue RPCTestingSetup::TransformParams(const UniValue& params, std::vector<st
     return transformed_params;
 }
 
-UniValue RPCTestingSetup::CallRPC(std::string args)
+UniValue RPCTestingSetup::CallRPC(const std::string& args)
 {
     std::vector<std::string> vArgs{SplitString(args, ' ')};
     std::string strMethod = vArgs[0];
@@ -588,7 +589,7 @@ BOOST_AUTO_TEST_CASE(help_example)
 static void CheckRpc(const std::vector<RPCArg>& params, const UniValue& args, RPCHelpMan::RPCMethodImpl test_impl)
 {
     auto null_result{RPCResult{RPCResult::Type::NONE, "", "None"}};
-    const RPCHelpMan rpc{"dummy", "dummy description", params, null_result, RPCExamples{""}, test_impl};
+    const RPCHelpMan rpc{"dummy", "dummy description", params, null_result, RPCExamples{""}, std::move(test_impl)};
     JSONRPCRequest req;
     req.params = args;
 

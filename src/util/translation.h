@@ -45,7 +45,7 @@ inline bilingual_str operator+(bilingual_str lhs, const bilingual_str& rhs)
 }
 
 /** Mark a bilingual_str as untranslated */
-inline bilingual_str Untranslated(std::string original) { return {original, original}; }
+inline bilingual_str Untranslated(const std::string& original) { return {original, original}; }
 
 // Provide an overload of tinyformat::format which can take bilingual_str arguments.
 namespace tinyformat {

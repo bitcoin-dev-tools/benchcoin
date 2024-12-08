@@ -15,6 +15,6 @@ uint32_t Interpret(const std::vector<bool> &asmap, const std::vector<bool> &ip);
 bool SanityCheckASMap(const std::vector<bool>& asmap, int bits);
 
 /** Read asmap from provided binary file */
-std::vector<bool> DecodeAsmap(fs::path path);
+std::vector<bool> DecodeAsmap(const fs::path& path);
 
 #endif // BITCOIN_UTIL_ASMAP_H

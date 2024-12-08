@@ -3448,7 +3448,7 @@ static void LimitValidationInterfaceQueue(ValidationSignals& signals) LOCKS_EXCL
     }
 }
 
-bool Chainstate::ActivateBestChain(BlockValidationState& state, std::shared_ptr<const CBlock> pblock)
+bool Chainstate::ActivateBestChain(BlockValidationState& state, const std::shared_ptr<const CBlock>& pblock)
 {
     AssertLockNotHeld(m_chainstate_mutex);
 
@@ -5640,7 +5640,7 @@ Chainstate& ChainstateManager::InitializeChainstate(CTxMemPool* mempool)
     return *m_active_chainstate;
 }
 
-[[nodiscard]] static bool DeleteCoinsDBFromDisk(const fs::path db_path, bool is_snapshot)
+[[nodiscard]] static bool DeleteCoinsDBFromDisk(const fs::path& db_path, bool is_snapshot)
     EXCLUSIVE_LOCKS_REQUIRED(::cs_main)
 {
     AssertLockHeld(::cs_main);
@@ -6480,8 +6480,8 @@ bool ChainstateManager::ValidatedSnapshotCleanup()
     fs::path tmp_old{ibd_chainstate_path + "_todelete"};
 
     auto rename_failed_abort = [this](
-                                   fs::path p_old,
-                                   fs::path p_new,
+                                   const fs::path& p_old,
+                                   const fs::path& p_new,
                                    const fs::filesystem_error& err) {
         LogError("[snapshot] Error renaming path (%s) -> (%s): %s\n",
                   fs::PathToString(p_old), fs::PathToString(p_new), err.what());

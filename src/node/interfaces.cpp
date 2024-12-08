@@ -362,7 +362,7 @@ public:
     }
     TransactionError broadcastTransaction(CTransactionRef tx, CAmount max_tx_fee, std::string& err_string) override
     {
-        return BroadcastTransaction(*m_context, std::move(tx), err_string, max_tx_fee, /*relay=*/ true, /*wait_callback=*/ false);
+        return BroadcastTransaction(*m_context, tx, err_string, max_tx_fee, /*relay=*/ true, /*wait_callback=*/ false);
     }
     WalletLoader& walletLoader() override
     {

@@ -12,7 +12,7 @@ namespace util {
 /**
  * A wrapper for do-something-once thread functions.
  */
-void TraceThread(std::string_view thread_name, std::function<void()> thread_func);
+void TraceThread(std::string_view thread_name, const std::function<void()>& thread_func);
 
 } // namespace util
 

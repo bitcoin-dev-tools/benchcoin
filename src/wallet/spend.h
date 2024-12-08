@@ -13,6 +13,7 @@
 #include <wallet/wallet.h>
 
 #include <optional>
+#include <utility>
 
 namespace wallet {
 /** Get the marginal bytes if spending the specified output from this transaction.
@@ -210,7 +211,7 @@ struct CreatedTransactionResult
     std::optional<unsigned int> change_pos;
 
     CreatedTransactionResult(CTransactionRef _tx, CAmount _fee, std::optional<unsigned int> _change_pos, const FeeCalculation& _fee_calc)
-        : tx(_tx), fee(_fee), fee_calc(_fee_calc), change_pos(_change_pos) {}
+        : tx(std::move(_tx)), fee(_fee), fee_calc(_fee_calc), change_pos(_change_pos) {}
 };
 
 /**

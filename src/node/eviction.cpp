@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <functional>
 #include <map>
+#include <utility>
 #include <vector>
 
 
@@ -81,7 +82,7 @@ static void EraseLastKElements(
 {
     std::sort(elements.begin(), elements.end(), comparator);
     size_t eraseSize = std::min(k, elements.size());
-    elements.erase(std::remove_if(elements.end() - eraseSize, elements.end(), predicate), elements.end());
+    elements.erase(std::remove_if(elements.end() - eraseSize, elements.end(), std::move(predicate)), elements.end());
 }
 
 void ProtectNoBanConnections(std::vector<NodeEvictionCandidate>& eviction_candidates)

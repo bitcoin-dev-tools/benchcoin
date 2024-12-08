@@ -18,6 +18,7 @@
 #include <cstdint>
 #include <limits>
 #include <string>
+#include <utility>
 
 /** Message header.
  * (4) message start.
@@ -394,8 +395,8 @@ class CAddress : public CService
 
 public:
     CAddress() : CService{} {};
-    CAddress(CService ipIn, ServiceFlags nServicesIn) : CService{ipIn}, nServices{nServicesIn} {};
-    CAddress(CService ipIn, ServiceFlags nServicesIn, NodeSeconds time) : CService{ipIn}, nTime{time}, nServices{nServicesIn} {};
+    CAddress(CService ipIn, ServiceFlags nServicesIn) : CService{std::move(ipIn)}, nServices{nServicesIn} {};
+    CAddress(CService ipIn, ServiceFlags nServicesIn, NodeSeconds time) : CService{std::move(ipIn)}, nTime{time}, nServices{nServicesIn} {};
 
     enum class Format {
         Disk,

@@ -217,7 +217,7 @@ CNetAddr PCPUnwrapAddress(Span<const uint8_t> wrapped_addr)
 //! PCP or NAT-PMP send-receive loop.
 std::optional<std::vector<uint8_t>> PCPSendRecv(Sock &sock, const std::string &protocol, Span<const uint8_t> request, int num_tries,
         std::chrono::milliseconds timeout_per_try,
-        std::function<bool(Span<const uint8_t>)> check_packet)
+        const std::function<bool(Span<const uint8_t>)>& check_packet)
 {
     using namespace std::chrono;
     // UDP is a potentially lossy protocol, so we try to send again a few times.

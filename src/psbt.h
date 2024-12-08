@@ -164,7 +164,7 @@ void DeserializeHDKeypaths(Stream& s, const std::vector<unsigned char>& key, std
 
 // Serialize a KeyOriginInfo to a stream
 template<typename Stream>
-void SerializeKeyOrigin(Stream& s, KeyOriginInfo hd_keypath)
+void SerializeKeyOrigin(Stream& s, const KeyOriginInfo& hd_keypath)
 {
     s << hd_keypath.fingerprint;
     for (const auto& path : hd_keypath.path) {
@@ -174,7 +174,7 @@ void SerializeKeyOrigin(Stream& s, KeyOriginInfo hd_keypath)
 
 // Serialize a length prefixed KeyOriginInfo to a stream
 template<typename Stream>
-void SerializeHDKeypath(Stream& s, KeyOriginInfo hd_keypath)
+void SerializeHDKeypath(Stream& s, const KeyOriginInfo& hd_keypath)
 {
     WriteCompactSize(s, (hd_keypath.path.size() + 1) * sizeof(uint32_t));
     SerializeKeyOrigin(s, hd_keypath);
@@ -1229,7 +1229,7 @@ PrecomputedTransactionData PrecomputePSBTData(const PartiallySignedTransaction& 
 bool PSBTInputSigned(const PSBTInput& input);
 
 /** Checks whether a PSBTInput is already signed by doing script verification using final fields. */
-bool PSBTInputSignedAndVerified(const PartiallySignedTransaction psbt, unsigned int input_index, const PrecomputedTransactionData* txdata);
+bool PSBTInputSignedAndVerified(const PartiallySignedTransaction& psbt, unsigned int input_index, const PrecomputedTransactionData* txdata);
 
 /** Signs a PSBTInput, verifying that all provided data matches what is being signed.
  *

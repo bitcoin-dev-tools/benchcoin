@@ -183,7 +183,7 @@ public:
         pre_vector = pre_vector_alt;
     }
 
-    void resize_uninitialized(realtype values) {
+    void resize_uninitialized(const realtype& values) {
         size_t r = values.size();
         size_t s = real_vector.size() / 2;
         if (real_vector.capacity() < s + r) {

@@ -156,11 +156,11 @@ struct MempoolAcceptResult {
     /** The wtxid of the transaction in the mempool which has the same txid but different witness. */
     const std::optional<uint256> m_other_wtxid;
 
-    static MempoolAcceptResult Failure(TxValidationState state) {
+    static MempoolAcceptResult Failure(const TxValidationState& state) {
         return MempoolAcceptResult(state);
     }
 
-    static MempoolAcceptResult FeeFailure(TxValidationState state,
+    static MempoolAcceptResult FeeFailure(const TxValidationState& state,
                                           CFeeRate effective_feerate,
                                           const std::vector<Wtxid>& wtxids_fee_calculations) {
         return MempoolAcceptResult(state, effective_feerate, wtxids_fee_calculations);
@@ -186,7 +186,7 @@ struct MempoolAcceptResult {
 // Private constructors. Use static methods MempoolAcceptResult::Success, etc. to construct.
 private:
     /** Constructor for failure case */
-    explicit MempoolAcceptResult(TxValidationState state)
+    explicit MempoolAcceptResult(const TxValidationState& state)
         : m_result_type(ResultType::INVALID), m_state(state) {
             Assume(!state.IsValid()); // Can be invalid or error
         }
@@ -209,7 +209,7 @@ private:
                                  CFeeRate effective_feerate,
                                  const std::vector<Wtxid>& wtxids_fee_calculations)
         : m_result_type(ResultType::INVALID),
-        m_state(state),
+        m_state(std::move(state)),
         m_effective_feerate(effective_feerate),
         m_wtxids_fee_calculations(wtxids_fee_calculations) {}
 
@@ -238,11 +238,11 @@ struct PackageMempoolAcceptResult
 
     explicit PackageMempoolAcceptResult(PackageValidationState state,
                                         std::map<uint256, MempoolAcceptResult>&& results)
-        : m_state{state}, m_tx_results(std::move(results)) {}
+        : m_state{std::move(state)}, m_tx_results(std::move(results)) {}
 
     explicit PackageMempoolAcceptResult(PackageValidationState state, CFeeRate feerate,
                                         std::map<uint256, MempoolAcceptResult>&& results)
-        : m_state{state}, m_tx_results(std::move(results)) {}
+        : m_state{std::move(state)}, m_tx_results(std::move(results)) {}
 
     /** Constructor to create a PackageMempoolAcceptResult from a single MempoolAcceptResult */
     explicit PackageMempoolAcceptResult(const uint256& wtxid, const MempoolAcceptResult& result)
@@ -702,7 +702,7 @@ public:
      */
     bool ActivateBestChain(
         BlockValidationState& state,
-        std::shared_ptr<const CBlock> pblock = nullptr)
+        const std::shared_ptr<const CBlock>& pblock = nullptr)
         EXCLUSIVE_LOCKS_REQUIRED(!m_chainstate_mutex)
         LOCKS_EXCLUDED(::cs_main);
 

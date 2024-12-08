@@ -134,7 +134,7 @@ void DoCheck(std::string prv, std::string pub, const std::string& norm_pub, int 
              const std::vector<std::vector<std::string>>& scripts, const std::optional<OutputType>& type, std::optional<uint256> op_desc_id = std::nullopt,
              const std::set<std::vector<uint32_t>>& paths = ONLY_EMPTY, bool replace_apostrophe_with_h_in_prv=false,
              bool replace_apostrophe_with_h_in_pub=false, uint32_t spender_nlocktime=0, uint32_t spender_nsequence=CTxIn::SEQUENCE_FINAL,
-             std::map<std::vector<uint8_t>, std::vector<uint8_t>> preimages={},
+             const std::map<std::vector<uint8_t>, std::vector<uint8_t>>& preimages={},
              std::optional<std::string> expected_prv = std::nullopt, std::optional<std::string> expected_pub = std::nullopt, int desc_index = 0)
 {
     FlatSigningProvider keys_priv, keys_pub;
@@ -392,8 +392,8 @@ void DoCheck(std::string prv, std::string pub, const std::string& norm_pub, int 
 void Check(const std::string& prv, const std::string& pub, const std::string& norm_pub, int flags,
            const std::vector<std::vector<std::string>>& scripts, const std::optional<OutputType>& type, std::optional<uint256> op_desc_id = std::nullopt,
            const std::set<std::vector<uint32_t>>& paths = ONLY_EMPTY, uint32_t spender_nlocktime=0,
-           uint32_t spender_nsequence=CTxIn::SEQUENCE_FINAL, std::map<std::vector<uint8_t>, std::vector<uint8_t>> preimages={},
-           std::optional<std::string> expected_prv = std::nullopt, std::optional<std::string> expected_pub = std::nullopt, int desc_index = 0)
+           uint32_t spender_nsequence=CTxIn::SEQUENCE_FINAL, const std::map<std::vector<uint8_t>, std::vector<uint8_t>>& preimages={},
+           const std::optional<std::string>& expected_prv = std::nullopt, const std::optional<std::string>& expected_pub = std::nullopt, int desc_index = 0)
 {
     // Do not replace apostrophes with 'h' in prv and pub
     DoCheck(prv, pub, norm_pub, flags, scripts, type, op_desc_id, paths, /*replace_apostrophe_with_h_in_prv=*/false,

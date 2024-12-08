@@ -116,7 +116,7 @@ bool WriteSnapshotBaseBlockhash(Chainstate& snapshot_chainstate)
 
 //! Read the blockhash of the snapshot base block that was used to construct the
 //! chainstate.
-std::optional<uint256> ReadSnapshotBaseBlockhash(fs::path chaindir)
+std::optional<uint256> ReadSnapshotBaseBlockhash(const fs::path& chaindir)
     EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
 
 //! Suffix appended to the chainstate (leveldb) dir when created based upon

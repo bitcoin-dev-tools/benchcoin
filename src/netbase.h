@@ -60,7 +60,7 @@ class Proxy
 public:
     Proxy() : m_is_unix_socket(false), m_randomize_credentials(false) {}
     explicit Proxy(const CService& _proxy, bool _randomize_credentials = false) : proxy(_proxy), m_is_unix_socket(false), m_randomize_credentials(_randomize_credentials) {}
-    explicit Proxy(const std::string path, bool _randomize_credentials = false) : m_unix_socket_path(path), m_is_unix_socket(true), m_randomize_credentials(_randomize_credentials) {}
+    explicit Proxy(const std::string& path, bool _randomize_credentials = false) : m_unix_socket_path(path), m_is_unix_socket(true), m_randomize_credentials(_randomize_credentials) {}
 
     CService proxy;
     std::string m_unix_socket_path;
@@ -205,7 +205,7 @@ extern DNSLookupFn g_dns_lookup;
  * @see Lookup(const std::string&, uint16_t, bool, unsigned int, DNSLookupFn)
  *      for additional parameter descriptions.
  */
-std::vector<CNetAddr> LookupHost(const std::string& name, unsigned int nMaxSolutions, bool fAllowLookup, DNSLookupFn dns_lookup_function = g_dns_lookup);
+std::vector<CNetAddr> LookupHost(const std::string& name, unsigned int nMaxSolutions, bool fAllowLookup, const DNSLookupFn& dns_lookup_function = g_dns_lookup);
 
 /**
  * Resolve a host string to its first corresponding network address.
@@ -216,7 +216,7 @@ std::vector<CNetAddr> LookupHost(const std::string& name, unsigned int nMaxSolut
  * @see LookupHost(const std::string&, unsigned int, bool, DNSLookupFn)
  *      for additional parameter descriptions.
  */
-std::optional<CNetAddr> LookupHost(const std::string& name, bool fAllowLookup, DNSLookupFn dns_lookup_function = g_dns_lookup);
+std::optional<CNetAddr> LookupHost(const std::string& name, bool fAllowLookup, const DNSLookupFn& dns_lookup_function = g_dns_lookup);
 
 /**
  * Resolve a service string to its corresponding service.
@@ -236,7 +236,7 @@ std::optional<CNetAddr> LookupHost(const std::string& name, bool fAllowLookup, D
  * @returns The resulting services to which the specified service string
  *          resolved.
  */
-std::vector<CService> Lookup(const std::string& name, uint16_t portDefault, bool fAllowLookup, unsigned int nMaxSolutions, DNSLookupFn dns_lookup_function = g_dns_lookup);
+std::vector<CService> Lookup(const std::string& name, uint16_t portDefault, bool fAllowLookup, unsigned int nMaxSolutions, const DNSLookupFn& dns_lookup_function = g_dns_lookup);
 
 /**
  * Resolve a service string to its first corresponding service.
@@ -244,7 +244,7 @@ std::vector<CService> Lookup(const std::string& name, uint16_t portDefault, bool
  * @see Lookup(const std::string&, uint16_t, bool, unsigned int, DNSLookupFn)
  *      for additional parameter descriptions.
  */
-std::optional<CService> Lookup(const std::string& name, uint16_t portDefault, bool fAllowLookup, DNSLookupFn dns_lookup_function = g_dns_lookup);
+std::optional<CService> Lookup(const std::string& name, uint16_t portDefault, bool fAllowLookup, const DNSLookupFn& dns_lookup_function = g_dns_lookup);
 
 /**
  * Resolve a service string with a numeric IP to its first corresponding
@@ -255,7 +255,7 @@ std::optional<CService> Lookup(const std::string& name, uint16_t portDefault, bo
  * @see Lookup(const std::string&, uint16_t, bool, unsigned int, DNSLookupFn)
  *      for additional parameter descriptions.
  */
-CService LookupNumeric(const std::string& name, uint16_t portDefault = 0, DNSLookupFn dns_lookup_function = g_dns_lookup);
+CService LookupNumeric(const std::string& name, uint16_t portDefault = 0, const DNSLookupFn& dns_lookup_function = g_dns_lookup);
 
 /**
  * Parse and resolve a specified subnet string into the appropriate internal

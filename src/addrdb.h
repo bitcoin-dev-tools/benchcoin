@@ -36,7 +36,7 @@ private:
     const fs::path m_banlist_dat;
     const fs::path m_banlist_json;
 public:
-    explicit CBanDB(fs::path ban_list_path);
+    explicit CBanDB(const fs::path& ban_list_path);
     bool Write(const banmap_t& banSet);
 
     /**

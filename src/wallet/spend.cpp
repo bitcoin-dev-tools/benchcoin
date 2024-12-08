@@ -108,7 +108,7 @@ int CalculateMaximumSignedInputSize(const CTxOut& txout, const CWallet* wallet, 
 
 /** Infer a descriptor for the given output script. */
 static std::unique_ptr<Descriptor> GetDescriptor(const CWallet* wallet, const CCoinControl* coin_control,
-                                                 const CScript script_pubkey)
+                                                 const CScript& script_pubkey)
 {
     MultiSigningProvider providers;
     for (const auto spkman: wallet->GetScriptPubKeyMans(script_pubkey)) {

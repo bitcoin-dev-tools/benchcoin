@@ -72,7 +72,7 @@ static std::map<std::string, unsigned int> mapFlagNames = {
     {std::string("DISCOURAGE_UPGRADABLE_TAPROOT_VERSION"), (unsigned int)SCRIPT_VERIFY_DISCOURAGE_UPGRADABLE_TAPROOT_VERSION},
 };
 
-unsigned int ParseScriptFlags(std::string strFlags)
+unsigned int ParseScriptFlags(const std::string& strFlags)
 {
     unsigned int flags = SCRIPT_VERIFY_NONE;
     if (strFlags.empty() || strFlags == "NONE") return flags;
@@ -592,7 +592,7 @@ BOOST_AUTO_TEST_CASE(test_big_witness_transaction)
     assert(controlCheck);
 }
 
-SignatureData CombineSignatures(const CMutableTransaction& input1, const CMutableTransaction& input2, const CTransactionRef tx)
+SignatureData CombineSignatures(const CMutableTransaction& input1, const CMutableTransaction& input2, const CTransactionRef& tx)
 {
     SignatureData sigdata;
     sigdata = DataFromTransaction(input1, 0, tx->vout[0]);

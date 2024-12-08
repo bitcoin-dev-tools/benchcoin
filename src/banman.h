@@ -59,7 +59,7 @@ class BanMan
 {
 public:
     ~BanMan();
-    BanMan(fs::path ban_file, CClientUIInterface* client_interface, int64_t default_ban_time);
+    BanMan(const fs::path& ban_file, CClientUIInterface* client_interface, int64_t default_ban_time);
     void Ban(const CNetAddr& net_addr, int64_t ban_time_offset = 0, bool since_unix_epoch = false) EXCLUSIVE_LOCKS_REQUIRED(!m_banned_mutex);
     void Ban(const CSubNet& sub_net, int64_t ban_time_offset = 0, bool since_unix_epoch = false) EXCLUSIVE_LOCKS_REQUIRED(!m_banned_mutex);
     void Discourage(const CNetAddr& net_addr) EXCLUSIVE_LOCKS_REQUIRED(!m_banned_mutex);

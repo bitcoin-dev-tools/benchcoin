@@ -269,7 +269,7 @@ std::optional<unsigned int> ArgsManager::GetArgFlags(const std::string& name) co
     return std::nullopt;
 }
 
-fs::path ArgsManager::GetPathArg(std::string arg, const fs::path& default_value) const
+fs::path ArgsManager::GetPathArg(const std::string& arg, const fs::path& default_value) const
 {
     if (IsArgNegated(arg)) return fs::path{};
     std::string path_str = GetArg(arg, "");
@@ -388,7 +388,7 @@ bool ArgsManager::GetSettingsPath(fs::path* filepath, bool temp, bool backup) co
     return true;
 }
 
-static void SaveErrors(const std::vector<std::string> errors, std::vector<std::string>* error_out)
+static void SaveErrors(const std::vector<std::string>& errors, std::vector<std::string>* error_out)
 {
     for (const auto& error : errors) {
         if (error_out) {
@@ -764,7 +764,7 @@ fs::path ArgsManager::GetConfigFilePath() const
     return *Assert(m_config_path);
 }
 
-void ArgsManager::SetConfigFilePath(fs::path path)
+void ArgsManager::SetConfigFilePath(const fs::path& path)
 {
     LOCK(cs_args);
     assert(!m_config_path);

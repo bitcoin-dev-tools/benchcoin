@@ -91,13 +91,13 @@ public:
 BlockFilterIndex* GetBlockFilterIndex(BlockFilterType filter_type);
 
 /** Iterate over all running block filter indexes, invoking fn on each. */
-void ForEachBlockFilterIndex(std::function<void (BlockFilterIndex&)> fn);
+void ForEachBlockFilterIndex(const std::function<void (BlockFilterIndex&)>& fn);
 
 /**
  * Initialize a block filter index for the given type if one does not already exist. Returns true if
  * a new index is created and false if one has already been initialized.
  */
-bool InitBlockFilterIndex(std::function<std::unique_ptr<interfaces::Chain>()> make_chain, BlockFilterType filter_type,
+bool InitBlockFilterIndex(const std::function<std::unique_ptr<interfaces::Chain>()>& make_chain, BlockFilterType filter_type,
                           size_t n_cache_size, bool f_memory = false, bool f_wipe = false);
 
 /**

@@ -246,7 +246,7 @@ fs::path GetSpecialFolderPath(int nFolder, bool fCreate)
 }
 #endif
 
-bool RenameOver(fs::path src, fs::path dest)
+bool RenameOver(const fs::path& src, const fs::path& dest)
 {
     std::error_code error;
     fs::rename(src, dest, error);

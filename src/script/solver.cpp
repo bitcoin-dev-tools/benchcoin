@@ -63,7 +63,7 @@ static constexpr bool IsSmallInteger(opcodetype opcode)
 
 /** Retrieve a minimally-encoded number in range [min,max] from an (opcode, data) pair,
  *  whether it's OP_n or through a push. */
-static std::optional<int> GetScriptNumber(opcodetype opcode, valtype data, int min, int max)
+static std::optional<int> GetScriptNumber(opcodetype opcode, const valtype& data, int min, int max)
 {
     int count;
     if (IsSmallInteger(opcode)) {

@@ -182,7 +182,7 @@ protected:
      * Return config file path (read-only)
      */
     fs::path GetConfigFilePath() const;
-    void SetConfigFilePath(fs::path);
+    void SetConfigFilePath(const fs::path&);
     [[nodiscard]] bool ReadConfigFiles(std::string& error, bool ignore_invalid_keys = false);
 
     /**
@@ -283,7 +283,7 @@ protected:
      * for examples or implementation for details). If argument is empty or not
      * set, default_value is returned unchanged.
      */
-    fs::path GetPathArg(std::string arg, const fs::path& default_value = {}) const;
+    fs::path GetPathArg(const std::string& arg, const fs::path& default_value = {}) const;
 
     /**
      * Return integer argument or default value

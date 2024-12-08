@@ -15,7 +15,7 @@
 #include <optional>
 
 namespace common {
-std::optional<ConfigError> InitConfig(ArgsManager& args, SettingsAbortFn settings_abort_fn)
+std::optional<ConfigError> InitConfig(ArgsManager& args, const SettingsAbortFn& settings_abort_fn)
 {
     try {
         if (!CheckDataDirOption(args)) {

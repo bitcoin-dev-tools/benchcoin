@@ -11,6 +11,7 @@
 #include <wallet/db.h>
 
 #include <memory>
+#include <utility>
 
 class ArgsManager;
 class CChain;
@@ -106,7 +107,7 @@ public:
     MockableData m_records;
     bool m_pass{true};
 
-    MockableDatabase(MockableData records = {}) : WalletDatabase(), m_records(records) {}
+    MockableDatabase(MockableData records = {}) : WalletDatabase(), m_records(std::move(records)) {}
     ~MockableDatabase() = default;
 
     void Open() override {}
@@ -126,7 +127,7 @@ public:
     std::unique_ptr<DatabaseBatch> MakeBatch(bool flush_on_close = true) override { return std::make_unique<MockableBatch>(m_records, m_pass); }
 };
 
-std::unique_ptr<WalletDatabase> CreateMockableWalletDatabase(MockableData records = {});
+std::unique_ptr<WalletDatabase> CreateMockableWalletDatabase(const MockableData& records = {});
 
 MockableDatabase& GetMockableDatabase(CWallet& wallet);
 } // namespace wallet

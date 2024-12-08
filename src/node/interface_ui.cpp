@@ -30,7 +30,7 @@ struct UISignals {
 static UISignals g_ui_signals;
 
 #define ADD_SIGNALS_IMPL_WRAPPER(signal_name)                                                                 \
-    boost::signals2::connection CClientUIInterface::signal_name##_connect(std::function<signal_name##Sig> fn) \
+    boost::signals2::connection CClientUIInterface::signal_name##_connect(const std::function<signal_name##Sig>& fn) \
     {                                                                                                         \
         return g_ui_signals.signal_name.connect(fn);                                                          \
     }

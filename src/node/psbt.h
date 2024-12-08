@@ -8,6 +8,7 @@
 #include <psbt.h>
 
 #include <optional>
+#include <utility>
 
 namespace node {
 /**
@@ -42,7 +43,7 @@ struct PSBTAnalysis {
         fee = std::nullopt;
         inputs.clear();
         next = PSBTRole::CREATOR;
-        error = err_msg;
+        error = std::move(err_msg);
     }
 };
 

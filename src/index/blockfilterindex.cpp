@@ -499,12 +499,12 @@ BlockFilterIndex* GetBlockFilterIndex(BlockFilterType filter_type)
     return it != g_filter_indexes.end() ? &it->second : nullptr;
 }
 
-void ForEachBlockFilterIndex(std::function<void (BlockFilterIndex&)> fn)
+void ForEachBlockFilterIndex(const std::function<void (BlockFilterIndex&)>& fn)
 {
     for (auto& entry : g_filter_indexes) fn(entry.second);
 }
 
-bool InitBlockFilterIndex(std::function<std::unique_ptr<interfaces::Chain>()> make_chain, BlockFilterType filter_type,
+bool InitBlockFilterIndex(const std::function<std::unique_ptr<interfaces::Chain>()>& make_chain, BlockFilterType filter_type,
                           size_t n_cache_size, bool f_memory, bool f_wipe)
 {
     auto result = g_filter_indexes.emplace(std::piecewise_construct,

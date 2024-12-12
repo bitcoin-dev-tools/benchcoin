@@ -1039,7 +1039,7 @@ bool BlockManager::ReadBlockFromDisk(CBlock& block, const FlatFilePos& pos) cons
 
     // Read block
     try {
-        filein >> TX_WITH_WITNESS(block);
+        BufferedReadOnlyFile{filein} >> TX_WITH_WITNESS(block);
     } catch (const std::exception& e) {
         LogError("%s: Deserialize or I/O error - %s at %s\n", __func__, e.what(), pos.ToString());
         return false;
@@ -1174,7 +1174,9 @@ static auto InitBlocksdirXorKey(const BlockManager::Options& opts)
         };
     }
     LogInfo("Using obfuscation key for blocksdir *.dat files (%s): '%s'\n", fs::PathToString(opts.blocks_dir), HexStr(xor_key));
-    return std::vector<std::byte>{xor_key.begin(), xor_key.end()};
+    uint64_t key;
+    std::memcpy(&key, xor_key.data(), sizeof key);
+    return key;
 }
 
 BlockManager::BlockManager(const util::SignalInterrupt& interrupt, Options opts)

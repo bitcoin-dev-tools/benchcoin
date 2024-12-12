@@ -6,6 +6,7 @@
 #ifndef BITCOIN_STREAMS_H
 #define BITCOIN_STREAMS_H
 
+#include <obfuscation.h>
 #include <serialize.h>
 #include <span.h>
 #include <support/allocators/zeroafterfree.h>
@@ -15,35 +16,15 @@
 #include <assert.h>
 #include <cstddef>
 #include <cstdio>
+#include <cstring>
 #include <ios>
 #include <limits>
 #include <optional>
 #include <stdint.h>
 #include <string.h>
 #include <string>
-#include <utility>
 #include <vector>
-
-namespace util {
-inline void Xor(Span<std::byte> write, Span<const std::byte> key, size_t key_offset = 0)
-{
-    if (key.size() == 0) {
-        return;
-    }
-    key_offset %= key.size();
-
-    for (size_t i = 0, j = key_offset; i != write.size(); i++) {
-        write[i] ^= key[j++];
-
-        // This potentially acts on very many bytes of data, so it's
-        // important that we calculate `j`, i.e. the `key` index in this
-        // way instead of doing a %, which would effectively be a division
-        // for each byte Xor'd -- much slower than need be.
-        if (j == key.size())
-            j = 0;
-    }
-}
-} // namespace util
+#include <util/check.h>
 
 /* Minimal stream for overwriting and/or appending to an existing byte vector
  *
@@ -261,21 +242,18 @@ public:
         return (*this);
     }
 
-    template<typename T>
+    template <typename T>
     DataStream& operator>>(T&& obj)
     {
         ::Unserialize(*this, obj);
         return (*this);
     }
 
-    /**
-     * XOR the contents of this stream with a certain key.
-     *
-     * @param[in] key    The key used to XOR the data in this stream.
-     */
-    void Xor(const std::vector<unsigned char>& key)
+    void Obfuscate(const Obfuscation& obfuscation)
     {
-        util::Xor(MakeWritableByteSpan(*this), MakeByteSpan(key));
+        if (obfuscation.IsActive()) {
+            obfuscation(MakeWritableByteSpan(*this));
+        }
     }
 
     /** Compute total memory usage of this object (own memory + any dynamic memory). */
@@ -392,11 +370,11 @@ class AutoFile
 {
 protected:
     std::FILE* m_file;
-    std::vector<std::byte> m_xor;
+    Obfuscation m_obfuscation;
     std::optional<int64_t> m_position;
 
 public:
-    explicit AutoFile(std::FILE* file, std::vector<std::byte> data_xor={});
+    explicit AutoFile(std::FILE* file, const Obfuscation& obfuscation = {0});
 
     ~AutoFile() { fclose(); }
 
@@ -428,7 +406,7 @@ public:
     bool IsNull() const { return m_file == nullptr; }
 
     /** Continue with a different XOR key */
-    void SetXor(std::vector<std::byte> data_xor) { m_xor = data_xor; }
+    void SetObfuscation(const Obfuscation& obfuscation) { m_obfuscation = obfuscation; }
 
     /** Implementation detail, only used internally. */
     std::size_t detail_fread(Span<std::byte> dst);
@@ -611,6 +589,40 @@ public:
             buf_offset += inc;
             if (buf_offset >= vchBuf.size()) buf_offset = 0;
         }
+    }
+};
+
+class BufferedReadOnlyFile
+{
+private:
+    AutoFile& m_src;
+    std::vector<std::byte> m_buf{16 << 10};
+    size_t m_buf_start{0};
+    size_t m_buf_end{0};
+
+public:
+    explicit BufferedReadOnlyFile(AutoFile& file) : m_src{file} {}
+
+    void read(Span<std::byte> dst)
+    {
+        if (m_buf_start < m_buf_end) {
+            const size_t chunk = std::min(dst.size(), m_buf_end - m_buf_start);
+            std::memcpy(dst.data(), m_buf.data() + m_buf_start, chunk);
+            m_buf_start += chunk;
+            dst = dst.subspan(chunk);
+        }
+        if (!dst.empty()) {
+            Assume(m_buf_start == m_buf_end);
+            m_src.read(dst);
+            m_buf_start = 0;
+            m_buf_end = m_src.detail_fread(m_buf);
+        }
+    }
+
+    template <typename T>
+    void operator>>(T&& obj)
+    {
+        ::Unserialize(*this, obj);
     }
 };
 

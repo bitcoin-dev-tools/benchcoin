@@ -1037,39 +1037,18 @@ static void XorHistogram(benchmark::Bench& bench)
         }
     }
     assert(total_bytes == 114'929'502);
-
     std::ranges::shuffle(test_data, rng); // Make it more realistic & less predictable
 
-    std::vector key_bytes{rng.randbytes<std::byte>(8)};
-    uint64_t key;
-    std::memcpy(&key, key_bytes.data(), 8);
+    const Obfuscation obfuscation{rng.rand64()};
+    assert(obfuscation.IsActive());
 
     size_t offset{0};
     bench.batch(total_bytes).unit("byte").run([&] {
         for (auto& data : test_data) {
-            util::Xor(data, key, offset++);
+            obfuscation(data, offset++);
         }
         ankerl::nanobench::doNotOptimizeAway(test_data);
     });
 }
 
-static void AutoFileXor(benchmark::Bench& bench)
-{
-    FastRandomContext rng{/*fDeterministic=*/true};
-    const auto data{rng.randbytes<std::byte>(1'000'000)};
-
-    const std::vector empty_key_bytes(8, std::byte{0}); // Test disabled xor
-    uint64_t empty_key;
-    std::memcpy(&empty_key, empty_key_bytes.data(), 8);
-
-    const fs::path test_path = fs::temp_directory_path() / "xor_benchmark.dat";
-    AutoFile f{fsbridge::fopen(test_path, "wb+"), empty_key};
-    bench.batch(data.size()).unit("byte").run([&] {
-        f.Truncate(0);
-        f << data;
-    });
-    try { fs::remove(test_path); } catch (const fs::filesystem_error&) {}
-}
-
 BENCHMARK(XorHistogram, benchmark::PriorityLevel::LOW);
-BENCHMARK(AutoFileXor, benchmark::PriorityLevel::LOW);

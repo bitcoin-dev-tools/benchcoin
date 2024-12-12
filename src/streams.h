@@ -6,6 +6,7 @@
 #ifndef BITCOIN_STREAMS_H
 #define BITCOIN_STREAMS_H
 
+#include <obfuscation.h>
 #include <serialize.h>
 #include <span.h>
 #include <support/allocators/zeroafterfree.h>
@@ -13,7 +14,6 @@
 
 #include <algorithm>
 #include <assert.h>
-#include <crypto/common.h>
 #include <cstddef>
 #include <cstdio>
 #include <cstring>
@@ -25,46 +25,6 @@
 #include <string>
 #include <vector>
 #include <util/check.h>
-
-namespace util {
-inline void XorInt(Span<std::byte> write, const uint64_t key, const size_t size)
-{
-    Assume(key);
-    assert(size <= write.size());
-    uint64_t raw = 0;
-    memcpy(&raw, write.data(), size);
-    raw ^= key;
-    memcpy(write.data(), &raw, size);
-}
-inline void Xor(Span<std::byte> write, const uint64_t key)
-{
-    Assume(key);
-    for (constexpr auto size{sizeof(key)}; write.size() >= size; write = write.subspan(size)) {
-        XorInt(write, key, size);
-    }
-    switch (write.size()) { // Help the compiler specialize remaining 1, 2, 4, 7 byte cases
-    case 0:  break;
-    case 1:  XorInt(write, key, 1); break;
-    case 2:  XorInt(write, key, 2); break;
-    case 4:  XorInt(write, key, 4); break;
-    case 7:  XorInt(write, key, 7); break;
-    default: XorInt(write, key, write.size());
-    }
-}
-
-inline uint64_t RotateKey(const uint64_t key, const size_t key_offset)
-{
-    Assume(key);
-    size_t key_rotation{8 * key_offset};
-    if (key_rotation % 64 == 0) return key;
-    if constexpr (std::endian::native == std::endian::big) key_rotation *= -1;
-    return std::rotr(key, key_rotation);
-}
-inline void Xor(Span<std::byte> write, const uint64_t key, const size_t key_offset)
-{
-    if (key) Xor(write, RotateKey(key, key_offset));
-}
-} // namespace util
 
 /* Minimal stream for overwriting and/or appending to an existing byte vector
  *
@@ -289,14 +249,11 @@ public:
         return (*this);
     }
 
-    /**
-     * XOR the contents of this stream with a certain key.
-     *
-     * @param[in] key    The key used to XOR the data in this stream.
-     */
-    void Xor(const uint64_t key)
+    void Obfuscate(const Obfuscation& obfuscation)
     {
-        if (key) util::Xor(MakeWritableByteSpan(*this), key);
+        if (obfuscation.IsActive()) {
+            obfuscation(MakeWritableByteSpan(*this));
+        }
     }
 
     /** Compute total memory usage of this object (own memory + any dynamic memory). */
@@ -413,11 +370,11 @@ class AutoFile
 {
 protected:
     std::FILE* m_file;
-    uint64_t m_xor;
+    Obfuscation m_obfuscation;
     std::optional<int64_t> m_position;
 
 public:
-    explicit AutoFile(std::FILE* file, uint64_t data_xor = 0);
+    explicit AutoFile(std::FILE* file, const Obfuscation& obfuscation = {0});
 
     ~AutoFile() { fclose(); }
 
@@ -449,7 +406,7 @@ public:
     bool IsNull() const { return m_file == nullptr; }
 
     /** Continue with a different XOR key */
-    void SetXor(const uint64_t data_xor) { m_xor = data_xor; }
+    void SetObfuscation(const Obfuscation& obfuscation) { m_obfuscation = obfuscation; }
 
     /** Implementation detail, only used internally. */
     std::size_t detail_fread(Span<std::byte> dst);
@@ -518,7 +475,6 @@ private:
             throw std::ios_base::failure{m_src.feof() ? "BufferedFile::Fill: end of file" : "BufferedFile::Fill: fread failed"};
         }
         nSrcPos += nBytes;
-        // TODO do the xor here
         return true;
     }
 
@@ -656,12 +612,8 @@ public:
             dst = dst.subspan(chunk);
         }
         if (!dst.empty()) {
-            assert(m_buf_start == m_buf_end);
-            assert(dst.size() < m_buf.size());
-            assert(!m_src.feof());
-
+            Assume(m_buf_start == m_buf_end);
             m_src.read(dst);
-
             m_buf_start = 0;
             m_buf_end = m_src.detail_fread(m_buf);
         }

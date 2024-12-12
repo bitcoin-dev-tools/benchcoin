@@ -14,36 +14,6 @@ using namespace std::string_literals;
 
 BOOST_FIXTURE_TEST_SUITE(streams_tests, BasicTestingSetup)
 
-BOOST_AUTO_TEST_CASE(xor_roundtrip_random_chunks)
-{
-    auto apply_random_xor_chunks{[](std::span<std::byte> write, const uint64_t key, FastRandomContext& rng) {
-        for (size_t offset{0}; offset < write.size();) {
-            const size_t chunk_size{1 + rng.randrange(write.size() - offset)};
-            util::Xor(write.subspan(offset, chunk_size), key, offset);
-            offset += chunk_size;
-        }
-    }};
-
-    FastRandomContext rng{/*fDeterministic=*/false};
-    for (size_t test{0}; test < 100; ++test) {
-        const size_t write_size{1 + rng.randrange(100U)};
-        const std::vector original{rng.randbytes<std::byte>(write_size)};
-        std::vector roundtrip{original};
-
-        std::vector key_bytes{rng.randbytes<std::byte>(sizeof(uint64_t))};
-        uint64_t key;
-        std::memcpy(&key, key_bytes.data(), sizeof key);
-
-        apply_random_xor_chunks(roundtrip, key, rng);
-
-        const bool all_zero = (key == 0) || (HexStr(key_bytes).find_first_not_of('0') >= write_size * 2);
-        BOOST_CHECK_EQUAL(original != roundtrip, !all_zero);
-
-        apply_random_xor_chunks(roundtrip, key, rng);
-        BOOST_CHECK(original == roundtrip);
-    }
-}
-
 BOOST_AUTO_TEST_CASE(xor_bytes_reference)
 {
     auto expected_xor{[](std::span<std::byte> write, const std::span<const std::byte> key, size_t key_offset) {
@@ -57,17 +27,44 @@ BOOST_AUTO_TEST_CASE(xor_bytes_reference)
         const size_t write_size{1 + rng.randrange(100U)};
         const size_t key_offset{rng.randrange(3 * 8U)}; // Should wrap around
 
-        std::vector key_bytes{rng.randbytes<std::byte>(sizeof(uint64_t))};
-        uint64_t key;
-        std::memcpy(&key, key_bytes.data(), sizeof key);
 
+        const auto key_bytes{rng.randbytes<std::byte>(Obfuscation::SIZE_BYTES)};
+        const Obfuscation obfuscation{key_bytes};
         std::vector expected{rng.randbytes<std::byte>(write_size)};
         std::vector actual{expected};
 
         expected_xor(expected, key_bytes, key_offset);
-        util::Xor(actual, key, key_offset);
+        obfuscation(actual, key_offset);
 
         BOOST_CHECK_EQUAL_COLLECTIONS(expected.begin(), expected.end(), actual.begin(), actual.end());
+    }
+}
+
+BOOST_AUTO_TEST_CASE(xor_roundtrip_random_chunks)
+{
+    auto apply_random_xor_chunks{[](std::span<std::byte> write, const Obfuscation& obfuscation, FastRandomContext& rng) {
+        for (size_t offset{0}; offset < write.size();) {
+            const size_t chunk_size{1 + rng.randrange(write.size() - offset)};
+            obfuscation(write.subspan(offset, chunk_size), offset);
+            offset += chunk_size;
+        }
+    }};
+
+    FastRandomContext rng{/*fDeterministic=*/false};
+    for (size_t test{0}; test < 100; ++test) {
+        const size_t write_size{1 + rng.randrange(100U)};
+        const std::vector original{rng.randbytes<std::byte>(write_size)};
+        std::vector roundtrip{original};
+
+        const auto key_bytes{rng.randbytes<std::byte>(Obfuscation::SIZE_BYTES)};
+        const Obfuscation obfuscation{key_bytes};
+        apply_random_xor_chunks(roundtrip, obfuscation, rng);
+
+        const bool all_zero = !obfuscation.IsActive() || (HexStr(key_bytes).find_first_not_of('0') >= write_size * 2);
+        BOOST_CHECK_EQUAL(original != roundtrip, !all_zero);
+
+        apply_random_xor_chunks(roundtrip, obfuscation, rng);
+        BOOST_CHECK(original == roundtrip);
     }
 }
 
@@ -285,7 +282,7 @@ BOOST_AUTO_TEST_CASE(streams_serializedata_xor)
     // Degenerate case
     {
         DataStream ds{in};
-        ds.Xor(0);
+        Obfuscation{0}(ds);
         BOOST_CHECK_EQUAL(""s, ds.str());
     }
 
@@ -293,12 +290,10 @@ BOOST_AUTO_TEST_CASE(streams_serializedata_xor)
     in.push_back(std::byte{0xf0});
 
     {
-        constexpr std::array xor_pat{std::byte{0xff}, std::byte{0xff}, std::byte{0xff}, std::byte{0xff}, std::byte{0xff}, std::byte{0xff}, std::byte{0xff}, std::byte{0xff}};
-        uint64_t xor_key;
-        std::memcpy(&xor_key, xor_pat.data(), sizeof xor_key);
+        const Obfuscation obfuscation{{std::byte{0xff}, std::byte{0xff}, std::byte{0xff}, std::byte{0xff}, std::byte{0xff}, std::byte{0xff}, std::byte{0xff}, std::byte{0xff}}};
 
         DataStream ds{in};
-        ds.Xor(xor_key);
+        obfuscation(ds);
         BOOST_CHECK_EQUAL("\xf0\x0f"s, ds.str());
     }
 
@@ -307,12 +302,10 @@ BOOST_AUTO_TEST_CASE(streams_serializedata_xor)
     in.push_back(std::byte{0x0f});
 
     {
-        constexpr std::array xor_pat{std::byte{0xff}, std::byte{0x0f}, std::byte{0xff}, std::byte{0x0f}, std::byte{0xff}, std::byte{0x0f}, std::byte{0xff}, std::byte{0x0f}};
-        uint64_t xor_key;
-        std::memcpy(&xor_key, xor_pat.data(), sizeof xor_key);
+        const Obfuscation obfuscation{{std::byte{0xff}, std::byte{0x0f}, std::byte{0xff}, std::byte{0x0f}, std::byte{0xff}, std::byte{0x0f}, std::byte{0xff}, std::byte{0x0f}}};
 
         DataStream ds{in};
-        ds.Xor(xor_key);
+        obfuscation(ds);
         BOOST_CHECK_EQUAL("\x0f\x00"s, ds.str());
     }
 }

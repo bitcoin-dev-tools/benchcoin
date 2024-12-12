@@ -27,7 +27,7 @@ BOOST_AUTO_TEST_CASE(dbwrapper)
         uint256 res;
 
         // Ensure that we're doing real obfuscation when obfuscate=true
-        BOOST_CHECK(obfuscate != (dbwrapper_private::GetObfuscateKey(dbw) == 0));
+        BOOST_CHECK(obfuscate == dbwrapper_private::GetObfuscation(dbw).IsActive());
 
         BOOST_CHECK(dbw.Write(key, in));
         BOOST_CHECK(dbw.Read(key, res));
@@ -47,7 +47,7 @@ BOOST_AUTO_TEST_CASE(dbwrapper_basic_data)
         bool res_bool;
 
         // Ensure that we're doing real obfuscation when obfuscate=true
-        BOOST_CHECK(obfuscate != (dbwrapper_private::GetObfuscateKey(dbw) == 0));
+        BOOST_CHECK(obfuscate == dbwrapper_private::GetObfuscation(dbw).IsActive());
 
         //Simulate block raw data - "b + block hash"
         std::string key_block = "b" + m_rng.rand256().ToString();
@@ -222,7 +222,7 @@ BOOST_AUTO_TEST_CASE(existing_data_no_obfuscate)
     BOOST_CHECK_EQUAL(res2.ToString(), in.ToString());
 
     BOOST_CHECK(!odbw.IsEmpty()); // There should be existing data
-    BOOST_CHECK_EQUAL(dbwrapper_private::GetObfuscateKey(odbw), 0); // The key should be empty
+    BOOST_CHECK(!dbwrapper_private::GetObfuscation(odbw).IsActive());
 
     uint256 in2 = m_rng.rand256();
     uint256 res3;
@@ -259,7 +259,7 @@ BOOST_AUTO_TEST_CASE(existing_data_reindex)
     // Check that the key/val we wrote with unobfuscated wrapper doesn't exist
     uint256 res2;
     BOOST_CHECK(!odbw.Read(key, res2));
-    BOOST_CHECK_NE(dbwrapper_private::GetObfuscateKey(odbw), 0);
+    BOOST_CHECK(dbwrapper_private::GetObfuscation(odbw).IsActive());
 
     uint256 in2 = m_rng.rand256();
     uint256 res3;

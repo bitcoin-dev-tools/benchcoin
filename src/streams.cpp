@@ -23,7 +23,6 @@ std::size_t AutoFile::detail_fread(Span<std::byte> dst)
     const size_t ret = std::fread(dst.data(), 1, dst.size(), m_file);
     if (m_xor) {
         if (!m_position.has_value()) throw std::ios_base::failure("AutoFile::read: position unknown");
-        Assume(dst.size() == ret);
         util::Xor(dst, m_xor, *m_position);
     }
     if (m_position.has_value()) *m_position += ret;

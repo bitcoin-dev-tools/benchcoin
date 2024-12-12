@@ -518,6 +518,7 @@ private:
             throw std::ios_base::failure{m_src.feof() ? "BufferedFile::Fill: end of file" : "BufferedFile::Fill: fread failed"};
         }
         nSrcPos += nBytes;
+        // TODO do the xor here
         return true;
     }
 
@@ -632,6 +633,44 @@ public:
             buf_offset += inc;
             if (buf_offset >= vchBuf.size()) buf_offset = 0;
         }
+    }
+};
+
+class BufferedReadOnlyFile
+{
+private:
+    AutoFile& m_src;
+    std::vector<std::byte> m_buf{16 << 10};
+    size_t m_buf_start{0};
+    size_t m_buf_end{0};
+
+public:
+    explicit BufferedReadOnlyFile(AutoFile& file) : m_src{file} {}
+
+    void read(Span<std::byte> dst)
+    {
+        if (m_buf_start < m_buf_end) {
+            const size_t chunk = std::min(dst.size(), m_buf_end - m_buf_start);
+            std::memcpy(dst.data(), m_buf.data() + m_buf_start, chunk);
+            m_buf_start += chunk;
+            dst = dst.subspan(chunk);
+        }
+        if (!dst.empty()) {
+            assert(m_buf_start == m_buf_end);
+            assert(dst.size() < m_buf.size());
+            assert(!m_src.feof());
+
+            m_src.read(dst);
+
+            m_buf_start = 0;
+            m_buf_end = m_src.detail_fread(m_buf);
+        }
+    }
+
+    template <typename T>
+    void operator>>(T&& obj)
+    {
+        ::Unserialize(*this, obj);
     }
 };
 

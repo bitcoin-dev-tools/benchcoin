@@ -1039,7 +1039,7 @@ bool BlockManager::ReadBlockFromDisk(CBlock& block, const FlatFilePos& pos) cons
 
     // Read block
     try {
-        filein >> TX_WITH_WITNESS(block);
+        BufferedReadOnlyFile{filein} >> TX_WITH_WITNESS(block);
     } catch (const std::exception& e) {
         LogError("%s: Deserialize or I/O error - %s at %s\n", __func__, e.what(), pos.ToString());
         return false;

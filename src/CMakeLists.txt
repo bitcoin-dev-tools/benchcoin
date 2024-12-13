@@ -138,6 +138,9 @@ if(SECP256K1_INSTALL)
   if(SECP256K1_ENABLE_MODULE_ELLSWIFT)
     list(APPEND ${PROJECT_NAME}_headers "${PROJECT_SOURCE_DIR}/include/secp256k1_ellswift.h")
   endif()
+  if(SECP256K1_ENABLE_MODULE_BATCH)
+    list(APPEND ${PROJECT_NAME}_headers "${PROJECT_SOURCE_DIR}/include/secp256k1_batch.h" "${PROJECT_SOURCE_DIR}/include/secp256k1_schnorrsig_batch.h" "${PROJECT_SOURCE_DIR}/include/secp256k1_tweak_check_batch.h")
+  endif()
   install(FILES ${${PROJECT_NAME}_headers}
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
   )

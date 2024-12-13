@@ -176,7 +176,7 @@ private:
      * (BLOCK_SERIALIZATION_HEADER_SIZE)
      */
     bool WriteBlockToDisk(const CBlock& block, FlatFilePos& pos) const;
-    bool UndoWriteToDisk(const CBlockUndo& blockundo, FlatFilePos& pos, const uint256& hashBlock) const;
+    bool UndoWriteToDisk(const CBlockUndo& blockundo, unsigned int blockundo_size, FlatFilePos& pos, const uint256& hashBlock) const;
 
     /* Calculate the block/rev files to delete based on height specified by user with RPC command pruneblockchain */
     void FindFilesToPruneManual(

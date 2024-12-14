@@ -1,0 +1,84 @@
+{
+  "results": [
+    {
+      "command": "base (0ceefb0062d5829efc19b0c8caa8f08d52e24aa1)",
+      "mean": 435.24323357252,
+      "stddev": null,
+      "median": 435.24323357252,
+      "user": 641.93013398,
+      "system": 124.76847884,
+      "min": 435.24323357252,
+      "max": 435.24323357252,
+      "times": [
+        435.24323357252
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "0ceefb0062d5829efc19b0c8caa8f08d52e24aa1"
+      },
+      "network": "mainnet"
+    },
+    {
+      "command": "head (c0390a2b2f2c1ee343bb36868d11a2d453a88df5)",
+      "mean": 437.67476381252004,
+      "stddev": null,
+      "median": 437.67476381252004,
+      "user": 640.21718598,
+      "system": 126.76357784,
+      "min": 437.67476381252004,
+      "max": 437.67476381252004,
+      "times": [
+        437.67476381252004
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "c0390a2b2f2c1ee343bb36868d11a2d453a88df5"
+      },
+      "network": "mainnet"
+    },
+    {
+      "command": "base (0ceefb0062d5829efc19b0c8caa8f08d52e24aa1)",
+      "mean": 17.48115065352,
+      "stddev": null,
+      "median": 17.48115065352,
+      "user": 2.676913,
+      "system": 0.7991294600000001,
+      "min": 17.48115065352,
+      "max": 17.48115065352,
+      "times": [
+        17.48115065352
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "0ceefb0062d5829efc19b0c8caa8f08d52e24aa1"
+      },
+      "network": "signet"
+    },
+    {
+      "command": "head (c0390a2b2f2c1ee343bb36868d11a2d453a88df5)",
+      "mean": 17.39583892352,
+      "stddev": null,
+      "median": 17.39583892352,
+      "user": 2.614683,
+      "system": 0.8392394599999999,
+      "min": 17.39583892352,
+      "max": 17.39583892352,
+      "times": [
+        17.39583892352
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "c0390a2b2f2c1ee343bb36868d11a2d453a88df5"
+      },
+      "network": "signet"
+    }
+  ]
+}

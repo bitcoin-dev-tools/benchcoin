@@ -1,0 +1,84 @@
+{
+  "results": [
+    {
+      "command": "base (0ceefb0062d5829efc19b0c8caa8f08d52e24aa1)",
+      "mean": 434.75972419164,
+      "stddev": null,
+      "median": 434.75972419164,
+      "user": 642.6635239399999,
+      "system": 127.11025902,
+      "min": 434.75972419164,
+      "max": 434.75972419164,
+      "times": [
+        434.75972419164
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "0ceefb0062d5829efc19b0c8caa8f08d52e24aa1"
+      },
+      "network": "mainnet"
+    },
+    {
+      "command": "head (67889434030833372aeee72bac18d0dca2f2c163)",
+      "mean": 435.14714628064,
+      "stddev": null,
+      "median": 435.14714628064,
+      "user": 639.3965819399999,
+      "system": 121.30540202,
+      "min": 435.14714628064,
+      "max": 435.14714628064,
+      "times": [
+        435.14714628064
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "67889434030833372aeee72bac18d0dca2f2c163"
+      },
+      "network": "mainnet"
+    },
+    {
+      "command": "base (0ceefb0062d5829efc19b0c8caa8f08d52e24aa1)",
+      "mean": 17.490447208000003,
+      "stddev": null,
+      "median": 17.490447208000003,
+      "user": 2.67994246,
+      "system": 0.81082488,
+      "min": 17.490447208000003,
+      "max": 17.490447208000003,
+      "times": [
+        17.490447208000003
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "0ceefb0062d5829efc19b0c8caa8f08d52e24aa1"
+      },
+      "network": "signet"
+    },
+    {
+      "command": "head (67889434030833372aeee72bac18d0dca2f2c163)",
+      "mean": 17.449833289,
+      "stddev": null,
+      "median": 17.449833289,
+      "user": 2.6647324599999997,
+      "system": 0.7693328799999999,
+      "min": 17.449833289,
+      "max": 17.449833289,
+      "times": [
+        17.449833289
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "67889434030833372aeee72bac18d0dca2f2c163"
+      },
+      "network": "signet"
+    }
+  ]
+}

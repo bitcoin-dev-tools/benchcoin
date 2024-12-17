@@ -1,0 +1,84 @@
+{
+  "results": [
+    {
+      "command": "base (0ceefb0062d5829efc19b0c8caa8f08d52e24aa1)",
+      "mean": 422.56217002654,
+      "stddev": null,
+      "median": 422.56217002654,
+      "user": 652.1203568999999,
+      "system": 128.78187631999998,
+      "min": 422.56217002654,
+      "max": 422.56217002654,
+      "times": [
+        422.56217002654
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "0ceefb0062d5829efc19b0c8caa8f08d52e24aa1"
+      },
+      "network": "mainnet"
+    },
+    {
+      "command": "head (a15327e49f07b158474f37042943725381ec34d6)",
+      "mean": 432.30837105653995,
+      "stddev": null,
+      "median": 432.30837105653995,
+      "user": 644.7208668999999,
+      "system": 127.05984432,
+      "min": 432.30837105653995,
+      "max": 432.30837105653995,
+      "times": [
+        432.30837105653995
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "a15327e49f07b158474f37042943725381ec34d6"
+      },
+      "network": "mainnet"
+    },
+    {
+      "command": "base (0ceefb0062d5829efc19b0c8caa8f08d52e24aa1)",
+      "mean": 17.453549256600002,
+      "stddev": null,
+      "median": 17.453549256600002,
+      "user": 2.6427127599999998,
+      "system": 0.82755912,
+      "min": 17.453549256600002,
+      "max": 17.453549256600002,
+      "times": [
+        17.453549256600002
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "0ceefb0062d5829efc19b0c8caa8f08d52e24aa1"
+      },
+      "network": "signet"
+    },
+    {
+      "command": "head (a15327e49f07b158474f37042943725381ec34d6)",
+      "mean": 17.3664294296,
+      "stddev": null,
+      "median": 17.3664294296,
+      "user": 2.68861376,
+      "system": 0.82240012,
+      "min": 17.3664294296,
+      "max": 17.3664294296,
+      "times": [
+        17.3664294296
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "a15327e49f07b158474f37042943725381ec34d6"
+      },
+      "network": "signet"
+    }
+  ]
+}

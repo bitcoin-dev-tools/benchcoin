@@ -137,7 +137,8 @@ static void SetMaxOpenFiles(leveldb::Options *options) {
 static leveldb::Options GetOptions(size_t nCacheSize)
 {
     leveldb::Options options;
-    options.block_cache = leveldb::NewLRUCache(nCacheSize / 2);
+    SetMaxOpenFiles(&options);
+    options.block_cache = leveldb::NewLRUCache(options.max_open_files - 10);
     options.write_buffer_size = nCacheSize / 4; // up to two write buffers may be held in memory simultaneously
     options.filter_policy = leveldb::NewBloomFilterPolicy(10);
     options.compression = leveldb::kNoCompression;
@@ -148,7 +149,6 @@ static leveldb::Options GetOptions(size_t nCacheSize)
         options.paranoid_checks = true;
     }
     options.max_file_size = std::max(options.max_file_size, DBWRAPPER_MAX_FILE_SIZE);
-    SetMaxOpenFiles(&options);
     return options;
 }
 

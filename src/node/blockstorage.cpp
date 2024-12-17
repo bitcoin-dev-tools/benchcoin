@@ -951,31 +951,38 @@ bool BlockManager::SaveBlockUndo(const CBlockUndo& blockundo, BlockValidationSta
     const BlockfileType type = BlockfileTypeForHeight(block.nHeight);
     auto& cursor = *Assert(WITH_LOCK(cs_LastBlockFile, return m_blockfile_cursors[type]));
 
-    // Write undo information to disk
     if (block.GetUndoPos().IsNull()) {
         FlatFilePos pos;
         const uint32_t blockundo_size{static_cast<uint32_t>(GetSerializeSize(blockundo))};
-        if (!FindUndoPos(state, block.nFile, pos, blockundo_size + UNDO_DATA_DISK_OVERHEAD)) {
+        if (!FindUndoPos(state, block.nFile, pos, UNDO_DATA_DISK_OVERHEAD + blockundo_size)) {
             LogError("%s: FindUndoPos failed\n", __func__);
             return false;
         }
-        // Open history file to append
-        AutoFile fileout{OpenUndoFile(pos)};
+        AutoFile fileout{m_undo_file_seq.Open(pos, false), {}}; // We'll obfuscate ourselves
         if (fileout.IsNull()) {
             LogError("%s: OpenUndoFile failed\n", __func__);
             return FatalError(m_opts.notifications, state, _("Failed to write undo data."));
         }
 
-        // Write index header
-        fileout << GetParams().MessageStart() << blockundo_size;
+        {
+            DataStream header;
+            header.reserve(BLOCK_SERIALIZATION_HEADER_SIZE);
+            header << GetParams().MessageStart() << blockundo_size;
+            util::Xor(header, m_xor_key, pos.nPos);
+            fileout.write(header);
+        }
         pos.nPos += BLOCK_SERIALIZATION_HEADER_SIZE;
-        fileout << blockundo;
+        {
+            HashWriter hasher;
+            hasher << block.pprev->GetBlockHash();
+            hasher << blockundo;
 
-        // calculate & write checksum
-        HashWriter hasher{};
-        hasher << block.pprev->GetBlockHash();
-        hasher << blockundo;
-        fileout << hasher.GetHash();
+            DataStream undo_data;
+            undo_data.reserve(blockundo_size + sizeof(uint256));
+            undo_data << blockundo << hasher.GetHash();
+            util::Xor(undo_data, m_xor_key, pos.nPos);
+            fileout.write(undo_data);
+        }
 
         // rev files are written in block height order, whereas blk files are written as blocks come in (often out of order)
         // we want to flush the rev (undo) file once we've written the last block, which is indicated by the last height
@@ -1105,21 +1112,34 @@ bool BlockManager::ReadRawBlockFromDisk(std::vector<uint8_t>& block, const FlatF
 FlatFilePos BlockManager::SaveBlock(const CBlock& block, int nHeight)
 {
     const uint32_t block_size{static_cast<uint32_t>(GetSerializeSize(TX_WITH_WITNESS(block)))};
-    FlatFilePos pos{FindNextBlockPos(block_size + BLOCK_SERIALIZATION_HEADER_SIZE, nHeight, block.GetBlockTime())};
+    FlatFilePos pos{FindNextBlockPos(BLOCK_SERIALIZATION_HEADER_SIZE + block_size, nHeight, block.GetBlockTime())};
     if (pos.IsNull()) {
         LogError("%s: FindNextBlockPos failed\n", __func__);
         return FlatFilePos();
     }
-    AutoFile fileout{OpenBlockFile(pos)};
+    AutoFile fileout{m_block_file_seq.Open(pos, false), {}}; // We'll obfuscate ourselves
     if (fileout.IsNull()) {
         LogError("%s: OpenBlockFile failed\n", __func__);
         m_opts.notifications.fatalError(_("Failed to write block."));
         return FlatFilePos();
     }
 
-    fileout << GetParams().MessageStart() << block_size;
+    {
+        DataStream header;
+        header.reserve(BLOCK_SERIALIZATION_HEADER_SIZE);
+        header << GetParams().MessageStart() << block_size;
+        util::Xor(header, m_xor_key, pos.nPos);
+        fileout.write(header);
+    }
     pos.nPos += BLOCK_SERIALIZATION_HEADER_SIZE;
-    fileout << TX_WITH_WITNESS(block);
+    {
+        DataStream block_data;
+        block_data.reserve(block_size);
+        block_data << TX_WITH_WITNESS(block);
+        util::Xor(block_data, m_xor_key, pos.nPos);
+        fileout.write(block_data);
+    }
+
     return pos;
 }
 

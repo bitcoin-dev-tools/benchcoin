@@ -671,7 +671,10 @@ CBlockFileInfo* BlockManager::GetBlockFileInfo(size_t n)
 
 bool BlockManager::UndoReadFromDisk(CBlockUndo& blockundo, const CBlockIndex& index) const
 {
-    const FlatFilePos pos{WITH_LOCK(::cs_main, return index.GetUndoPos())};
+    FlatFilePos pos{WITH_LOCK(::cs_main, return index.GetUndoPos())};
+    if (pos.nPos < BLOCK_SERIALIZATION_HEADER_SIZE) return false;
+    uint32_t undo_size;
+    pos.nPos -= sizeof undo_size;
 
     // Open history file to read
     AutoFile filein{OpenUndoFile(pos, true)};
@@ -681,20 +684,26 @@ bool BlockManager::UndoReadFromDisk(CBlockUndo& blockundo, const CBlockIndex& in
     }
 
     // Read block
-    uint256 hashChecksum;
-    HashVerifier verifier{filein}; // Use HashVerifier as reserializing may lose data, c.f. commit d342424301013ec47dc146a4beb49d5c9319d80a
     try {
+        filein >> undo_size;
+        if (undo_size > MAX_SIZE) throw std::runtime_error{strprintf("Refusing to read undo data of size: %d", undo_size)};
+
+        std::vector<uint8_t> mem(undo_size);
+        filein >> Span{mem};
+
+        SpanReader reader{mem};
+        HashVerifier verifier{reader}; // Use HashVerifier as reserializing may lose data, c.f. commit d342424301013ec47dc146a4beb49d5c9319d80a
         verifier << index.pprev->GetBlockHash();
         verifier >> blockundo;
+
+        uint256 hashChecksum;
         filein >> hashChecksum;
+        if (hashChecksum != verifier.GetHash()) {
+            LogError("%s: Checksum mismatch at %s\n", __func__, pos.ToString());
+            return false;
+        }
     } catch (const std::exception& e) {
         LogError("%s: Deserialize or I/O error - %s at %s\n", __func__, e.what(), pos.ToString());
-        return false;
-    }
-
-    // Verify checksum
-    if (hashChecksum != verifier.GetHash()) {
-        LogError("%s: Checksum mismatch at %s\n", __func__, pos.ToString());
         return false;
     }
 
@@ -994,20 +1003,26 @@ bool BlockManager::SaveBlockUndo(const CBlockUndo& blockundo, BlockValidationSta
     return true;
 }
 
-bool BlockManager::ReadBlockFromDisk(CBlock& block, const FlatFilePos& pos) const
+bool BlockManager::ReadBlockFromDisk(CBlock& block, FlatFilePos pos) const
 {
     block.SetNull();
 
-    // Open history file to read
+    if (pos.nPos < BLOCK_SERIALIZATION_HEADER_SIZE) return false;
+    uint32_t blk_size;
+    pos.nPos -= sizeof blk_size;
     AutoFile filein{OpenBlockFile(pos, true)};
     if (filein.IsNull()) {
         LogError("%s: OpenBlockFile failed for %s\n", __func__, pos.ToString());
         return false;
     }
 
-    // Read block
     try {
-        filein >> TX_WITH_WITNESS(block);
+        filein >> blk_size;
+        if (blk_size > MAX_SIZE) throw std::runtime_error{strprintf("Refusing to read block of size: %d", blk_size)};
+
+        std::vector<uint8_t> mem(blk_size);
+        filein >> Span{mem};
+        SpanReader(mem) >> TX_WITH_WITNESS(block);
     } catch (const std::exception& e) {
         LogError("%s: Deserialize or I/O error - %s at %s\n", __func__, e.what(), pos.ToString());
         return false;

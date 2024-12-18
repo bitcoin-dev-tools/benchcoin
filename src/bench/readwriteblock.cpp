@@ -43,7 +43,7 @@ static void SaveBlockToDiskBench(benchmark::Bench& bench)
     auto& blockman{testing_setup->m_node.chainman->m_blockman};
     const CBlock block{CreateTestBlock()};
     bench.run([&] {
-        const auto pos{blockman.SaveBlockToDisk(block, 413'567)};
+        const auto pos{blockman.SaveBlock(block, 413'567)};
         assert(!pos.IsNull());
     });
 }
@@ -52,7 +52,7 @@ static void ReadBlockFromDiskBench(benchmark::Bench& bench)
 {
     const auto testing_setup{MakeNoLogFileContext<const TestingSetup>(ChainType::MAIN)};
     auto& blockman{testing_setup->m_node.chainman->m_blockman};
-    const auto pos{blockman.SaveBlockToDisk(CreateTestBlock(), 413'567)};
+    const auto pos{blockman.SaveBlock(CreateTestBlock(), 413'567)};
     CBlock block;
     bench.run([&] {
         const auto success{blockman.ReadBlockFromDisk(block, pos)};
@@ -64,7 +64,7 @@ static void ReadRawBlockFromDiskBench(benchmark::Bench& bench)
 {
     const auto testing_setup{MakeNoLogFileContext<const TestingSetup>(ChainType::MAIN)};
     auto& blockman{testing_setup->m_node.chainman->m_blockman};
-    const auto pos{blockman.SaveBlockToDisk(CreateTestBlock(), 413'567)};
+    const auto pos{blockman.SaveBlock(CreateTestBlock(), 413'567)};
     std::vector<uint8_t> block_data;
     blockman.ReadRawBlockFromDisk(block_data, pos); // warmup
     bench.run([&] {

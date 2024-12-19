@@ -111,8 +111,8 @@ run_benchmark() {
 
   # Run hyperfine
   hyperfine \
-    --setup "setup_assumeutxo_snapshot_run {commit} ${TMP_DATADIR}" \
-    --prepare "prepare_assumeutxo_snapshot_run ${TMP_DATADIR} ${UTXO_PATH} ${connect_address} ${chain}" \
+    --setup "taskset -c 1-15 setup_assumeutxo_snapshot_run {commit} ${TMP_DATADIR}" \
+    --prepare "taskset -c 1-15 prepare_assumeutxo_snapshot_run ${TMP_DATADIR} ${UTXO_PATH} ${connect_address} ${chain}" \
     --conclude "conclude_assumeutxo_snapshot_run {commit}" \
     --cleanup "cleanup_assumeutxo_snapshot_run ${TMP_DATADIR}" \
     --runs 1 \

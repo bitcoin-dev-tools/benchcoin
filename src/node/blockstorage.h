@@ -175,8 +175,8 @@ private:
      * After this call, it will point to the beginning of the serialized CBlock data, after the separator fields
      * (BLOCK_SERIALIZATION_HEADER_SIZE)
      */
-    bool WriteBlockToDisk(const CBlock& block, FlatFilePos& pos) const;
-    bool UndoWriteToDisk(const CBlockUndo& blockundo, FlatFilePos& pos, const uint256& hashBlock) const;
+    bool WriteBlockToDisk(const CBlock& block, uint32_t block_size, FlatFilePos& pos) const;
+    bool UndoWriteToDisk(const CBlockUndo& blockundo, uint32_t blockundo_size, FlatFilePos& pos, const uint256& hashBlock) const;
 
     /* Calculate the block/rev files to delete based on height specified by user with RPC command pruneblockchain */
     void FindFilesToPruneManual(
@@ -241,7 +241,7 @@ private:
 
     const bool m_prune_mode;
 
-    const std::vector<std::byte> m_xor_key;
+    const Obfuscation m_obfuscation;
 
     /** Dirty block index entries. */
     std::set<CBlockIndex*> m_dirty_blockindex;

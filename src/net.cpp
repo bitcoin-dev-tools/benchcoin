@@ -52,6 +52,7 @@
 #include <functional>
 #include <optional>
 #include <unordered_map>
+#include <utility>
 
 TRACEPOINT_SEMAPHORE(net, outbound_message);
 
@@ -2455,7 +2456,7 @@ bool CConnman::MaybePickPreferredNetwork(std::optional<Network>& network)
     return false;
 }
 
-void CConnman::ThreadOpenConnections(const std::vector<std::string> connect, Span<const std::string> seed_nodes)
+void CConnman::ThreadOpenConnections(const std::vector<std::string>& connect, Span<const std::string> seed_nodes)
 {
     AssertLockNotHeld(m_unused_i2p_sessions_mutex);
     AssertLockNotHeld(m_reconnections_mutex);
@@ -3739,7 +3740,7 @@ CNode::CNode(NodeId idIn,
              CNodeOptions&& node_opts)
     : m_transport{MakeTransport(idIn, node_opts.use_v2transport, conn_type_in == ConnectionType::INBOUND)},
       m_permission_flags{node_opts.permission_flags},
-      m_sock{sock},
+      m_sock{std::move(sock)},
       m_connected{GetTime<std::chrono::seconds>()},
       addr{addrIn},
       addrBind{addrBindIn},
@@ -3851,7 +3852,7 @@ void CConnman::PushMessage(CNode* pnode, CSerializedNetMsg&& msg)
     if (nBytesSent) RecordBytesSent(nBytesSent);
 }
 
-bool CConnman::ForNode(NodeId id, std::function<bool(CNode* pnode)> func)
+bool CConnman::ForNode(NodeId id, const std::function<bool(CNode* pnode)>& func)
 {
     CNode* found = nullptr;
     LOCK(m_nodes_mutex);

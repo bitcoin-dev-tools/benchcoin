@@ -35,7 +35,7 @@ struct NoLockLoggingTestingSetup : public TestingSetup {
 };
 
 struct CheckQueueTest : NoLockLoggingTestingSetup {
-    void Correct_Queue_range(std::vector<size_t> range);
+    void Correct_Queue_range(const std::vector<size_t>& range);
 };
 
 static const unsigned int QUEUE_BATCH_SIZE = 128;
@@ -158,7 +158,7 @@ typedef CCheckQueue<FrozenCleanupCheck> FrozenCleanup_Queue;
 /** This test case checks that the CCheckQueue works properly
  * with each specified size_t Checks pushed.
  */
-void CheckQueueTest::Correct_Queue_range(std::vector<size_t> range)
+void CheckQueueTest::Correct_Queue_range(const std::vector<size_t>& range)
 {
     auto small_queue = std::make_unique<Correct_Queue>(QUEUE_BATCH_SIZE, SCRIPT_CHECK_THREADS);
     // Make vChecks here to save on malloc (this test can be slow...)

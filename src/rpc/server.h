@@ -13,6 +13,7 @@
 #include <map>
 #include <stdint.h>
 #include <string>
+#include <utility>
 
 #include <univalue.h>
 
@@ -96,7 +97,7 @@ public:
     //! Simplified constructor taking plain RpcMethodFnType function pointer.
     CRPCCommand(std::string category, RpcMethodFnType fn)
         : CRPCCommand(
-              category,
+              std::move(category),
               fn().m_name,
               [fn](const JSONRPCRequest& request, UniValue& result, bool) { result = fn().HandleRequest(request); return true; },
               fn().GetArgNames(),

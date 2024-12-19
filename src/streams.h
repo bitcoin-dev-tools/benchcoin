@@ -428,7 +428,7 @@ public:
     bool IsNull() const { return m_file == nullptr; }
 
     /** Continue with a different XOR key */
-    void SetXor(std::vector<std::byte> data_xor) { m_xor = data_xor; }
+    void SetXor(std::vector<std::byte> data_xor) { m_xor = std::move(data_xor); }
 
     /** Implementation detail, only used internally. */
     std::size_t detail_fread(Span<std::byte> dst);

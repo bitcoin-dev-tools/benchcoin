@@ -14,8 +14,8 @@
 #include <util/translation.h>
 
 
-BanMan::BanMan(fs::path ban_file, CClientUIInterface* client_interface, int64_t default_ban_time)
-    : m_client_interface(client_interface), m_ban_db(std::move(ban_file)), m_default_ban_time(default_ban_time)
+BanMan::BanMan(const fs::path& ban_file, CClientUIInterface* client_interface, int64_t default_ban_time)
+    : m_client_interface(client_interface), m_ban_db(ban_file), m_default_ban_time(default_ban_time)
 {
     LoadBanlist();
     DumpBanlist();

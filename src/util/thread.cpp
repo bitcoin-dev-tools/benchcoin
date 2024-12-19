@@ -13,7 +13,7 @@
 #include <string>
 #include <utility>
 
-void util::TraceThread(std::string_view thread_name, std::function<void()> thread_func)
+void util::TraceThread(std::string_view thread_name, const std::function<void()>& thread_func)
 {
     util::ThreadRename(std::string{thread_name});
     try {

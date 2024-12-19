@@ -60,6 +60,7 @@
 #include <algorithm>
 #include <functional>
 #include <stdexcept>
+#include <utility>
 
 using namespace util::hex_literals;
 using kernel::BlockTreeDB;
@@ -105,7 +106,7 @@ static void ExitFailure(std::string_view str_err)
     exit(EXIT_FAILURE);
 }
 
-BasicTestingSetup::BasicTestingSetup(const ChainType chainType, TestOpts opts)
+BasicTestingSetup::BasicTestingSetup(const ChainType chainType, const TestOpts& opts)
     : m_args{}
 {
     m_node.shutdown_signal = &m_interrupt;
@@ -210,7 +211,7 @@ BasicTestingSetup::~BasicTestingSetup()
     gArgs.ClearArgs();
 }
 
-ChainTestingSetup::ChainTestingSetup(const ChainType chainType, TestOpts opts)
+ChainTestingSetup::ChainTestingSetup(const ChainType chainType, const TestOpts& opts)
     : BasicTestingSetup(chainType, opts)
 {
     const CChainParams& chainparams = Params();
@@ -305,7 +306,7 @@ void ChainTestingSetup::LoadVerifyActivateChainstate()
 
 TestingSetup::TestingSetup(
     const ChainType chainType,
-    TestOpts opts)
+    const TestOpts& opts)
     : ChainTestingSetup(chainType, opts)
 {
     m_coins_db_in_memory = opts.coins_db_in_memory;
@@ -341,7 +342,7 @@ TestingSetup::TestingSetup(
 
 TestChain100Setup::TestChain100Setup(
     const ChainType chain_type,
-    TestOpts opts)
+    const TestOpts& opts)
     : TestingSetup{ChainType::REGTEST, opts}
 {
     SetMockTime(1598887952);
@@ -487,7 +488,7 @@ CMutableTransaction TestChain100Setup::CreateValidMempoolTransaction(const std::
     return mempool_txn;
 }
 
-CMutableTransaction TestChain100Setup::CreateValidMempoolTransaction(CTransactionRef input_transaction,
+CMutableTransaction TestChain100Setup::CreateValidMempoolTransaction(const CTransactionRef& input_transaction,
                                                                      uint32_t input_vout,
                                                                      int input_height,
                                                                      CKey input_signing_key,
@@ -496,11 +497,11 @@ CMutableTransaction TestChain100Setup::CreateValidMempoolTransaction(CTransactio
                                                                      bool submit)
 {
     COutPoint input{input_transaction->GetHash(), input_vout};
-    CTxOut output{output_amount, output_destination};
+    CTxOut output{output_amount, std::move(output_destination)};
     return CreateValidMempoolTransaction(/*input_transactions=*/{input_transaction},
                                          /*inputs=*/{input},
                                          /*input_height=*/input_height,
-                                         /*input_signing_keys=*/{input_signing_key},
+                                         /*input_signing_keys=*/{std::move(input_signing_key)},
                                          /*outputs=*/{output},
                                          /*submit=*/submit);
 }

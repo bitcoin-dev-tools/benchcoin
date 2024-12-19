@@ -14,7 +14,7 @@ namespace node {
 
 /** Dump the mempool to a file. */
 bool DumpMempool(const CTxMemPool& pool, const fs::path& dump_path,
-                 fsbridge::FopenFn mockable_fopen_function = fsbridge::fopen,
+                 const fsbridge::FopenFn& mockable_fopen_function = fsbridge::fopen,
                  bool skip_file_commit = false);
 
 struct ImportMempoolOptions {

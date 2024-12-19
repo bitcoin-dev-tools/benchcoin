@@ -53,6 +53,7 @@ Documentation for C++ subprocessing library.
 #include <memory>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #if (defined _MSC_VER) || (defined __MINGW32__)
@@ -938,7 +939,7 @@ public:
   }
 
   template <typename... Args>
-  Popen(std::vector<std::string> vargs_, Args &&... args) : vargs_(vargs_)
+  Popen(std::vector<std::string> vargs_, Args &&... args) : vargs_(std::move(vargs_))
   {
     init_args(std::forward<Args>(args)...);
 

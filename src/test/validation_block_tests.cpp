@@ -226,7 +226,7 @@ BOOST_AUTO_TEST_CASE(processnewblock_signals_ordering)
 BOOST_AUTO_TEST_CASE(mempool_locks_reorg)
 {
     bool ignored;
-    auto ProcessBlock = [&](std::shared_ptr<const CBlock> block) -> bool {
+    auto ProcessBlock = [&](const std::shared_ptr<const CBlock>& block) -> bool {
         return Assert(m_node.chainman)->ProcessNewBlock(block, /*force_processing=*/true, /*min_pow_checked=*/true, /*new_block=*/&ignored);
     };
 

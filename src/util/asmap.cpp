@@ -194,7 +194,7 @@ bool SanityCheckASMap(const std::vector<bool>& asmap, int bits)
     return false; // Reached EOF without RETURN instruction
 }
 
-std::vector<bool> DecodeAsmap(fs::path path)
+std::vector<bool> DecodeAsmap(const fs::path& path)
 {
     std::vector<bool> bits;
     FILE *filestr = fsbridge::fopen(path, "rb");

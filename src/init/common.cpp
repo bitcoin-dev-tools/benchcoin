@@ -83,7 +83,7 @@ util::Result<void> SetLoggingCategories(const ArgsManager& args)
         const std::vector<std::string> categories = args.GetArgs("-debug");
 
         if (std::none_of(categories.begin(), categories.end(),
-            [](std::string cat){return cat == "0" || cat == "none";})) {
+            [](const std::string& cat){return cat == "0" || cat == "none";})) {
             for (const auto& cat : categories) {
                 if (!LogInstance().EnableCategory(cat)) {
                     return util::Error{strprintf(_("Unsupported logging category %s=%s."), "-debug", cat)};

@@ -20,7 +20,7 @@ static std::string rtrim(std::string s)
     return s;
 }
 
-static void runtest(std::string filename, const std::string& jdata)
+static void runtest(const std::string& filename, const std::string& jdata)
 {
         std::string prefix = filename.substr(0, 4);
 

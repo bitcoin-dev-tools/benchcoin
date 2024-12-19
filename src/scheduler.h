@@ -47,12 +47,12 @@ public:
     typedef std::function<void()> Function;
 
     /** Call func at/after time t */
-    void schedule(Function f, std::chrono::steady_clock::time_point t) EXCLUSIVE_LOCKS_REQUIRED(!newTaskMutex);
+    void schedule(const Function& f, std::chrono::steady_clock::time_point t) EXCLUSIVE_LOCKS_REQUIRED(!newTaskMutex);
 
     /** Call f once after the delta has passed */
-    void scheduleFromNow(Function f, std::chrono::milliseconds delta) EXCLUSIVE_LOCKS_REQUIRED(!newTaskMutex)
+    void scheduleFromNow(const Function& f, std::chrono::milliseconds delta) EXCLUSIVE_LOCKS_REQUIRED(!newTaskMutex)
     {
-        schedule(std::move(f), std::chrono::steady_clock::now() + delta);
+        schedule(f, std::chrono::steady_clock::now() + delta);
     }
 
     /**
@@ -61,7 +61,7 @@ public:
      * The timing is not exact: Every time f is finished, it is rescheduled to run again after delta. If you need more
      * accurate scheduling, don't use this method.
      */
-    void scheduleEvery(Function f, std::chrono::milliseconds delta) EXCLUSIVE_LOCKS_REQUIRED(!newTaskMutex);
+    void scheduleEvery(const Function& f, std::chrono::milliseconds delta) EXCLUSIVE_LOCKS_REQUIRED(!newTaskMutex);
 
     /**
      * Mock the scheduler to fast forward in time.

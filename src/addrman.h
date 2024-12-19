@@ -22,7 +22,7 @@
 class InvalidAddrManVersionError : public std::ios_base::failure
 {
 public:
-    InvalidAddrManVersionError(std::string msg) : std::ios_base::failure(msg) { }
+    InvalidAddrManVersionError(const std::string& msg) : std::ios_base::failure(msg) { }
 };
 
 class AddrManImpl;

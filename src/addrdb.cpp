@@ -128,7 +128,7 @@ void DeserializeFileDB(const fs::path& path, Data&& data)
 }
 } // namespace
 
-CBanDB::CBanDB(fs::path ban_list_path)
+CBanDB::CBanDB(const fs::path& ban_list_path)
     : m_banlist_dat(ban_list_path + ".dat"),
       m_banlist_json(ban_list_path + ".json")
 {

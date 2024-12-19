@@ -22,7 +22,7 @@ BOOST_FIXTURE_TEST_SUITE(net_peer_eviction_tests, BasicTestingSetup)
 // return true if all of `protected_peer_ids` and none of `unprotected_peer_ids`
 // are protected from eviction, i.e. removed from the eviction candidates.
 bool IsProtected(int num_peers,
-                 std::function<void(NodeEvictionCandidate&)> candidate_setup_fn,
+                 const std::function<void(NodeEvictionCandidate&)>& candidate_setup_fn,
                  const std::unordered_set<NodeId>& protected_peer_ids,
                  const std::unordered_set<NodeId>& unprotected_peer_ids,
                  FastRandomContext& random_context)
@@ -583,7 +583,7 @@ bool IsEvicted(std::vector<NodeEvictionCandidate> candidates, const std::unorder
 // Create number_of_nodes random nodes, apply setup function candidate_setup_fn,
 // apply eviction logic and then return true if any of the node ids in node_ids
 // are selected for eviction.
-bool IsEvicted(const int number_of_nodes, std::function<void(NodeEvictionCandidate&)> candidate_setup_fn, const std::unordered_set<NodeId>& node_ids, FastRandomContext& random_context)
+bool IsEvicted(const int number_of_nodes, const std::function<void(NodeEvictionCandidate&)>& candidate_setup_fn, const std::unordered_set<NodeId>& node_ids, FastRandomContext& random_context)
 {
     std::vector<NodeEvictionCandidate> candidates = GetRandomNodeEvictionCandidates(number_of_nodes, random_context);
     for (NodeEvictionCandidate& candidate : candidates) {

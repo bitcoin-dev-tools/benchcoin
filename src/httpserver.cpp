@@ -28,6 +28,7 @@
 #include <span>
 #include <string>
 #include <unordered_map>
+#include <utility>
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -127,7 +128,7 @@ public:
 struct HTTPPathHandler
 {
     HTTPPathHandler(std::string _prefix, bool _exactMatch, HTTPRequestHandler _handler):
-        prefix(_prefix), exactMatch(_exactMatch), handler(_handler)
+        prefix(std::move(_prefix)), exactMatch(_exactMatch), handler(std::move(_handler))
     {
     }
     std::string prefix;

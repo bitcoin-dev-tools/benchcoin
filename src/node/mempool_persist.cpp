@@ -146,7 +146,7 @@ bool LoadMempool(CTxMemPool& pool, const fs::path& load_path, Chainstate& active
     return true;
 }
 
-bool DumpMempool(const CTxMemPool& pool, const fs::path& dump_path, FopenFn mockable_fopen_function, bool skip_file_commit)
+bool DumpMempool(const CTxMemPool& pool, const fs::path& dump_path, const FopenFn& mockable_fopen_function, bool skip_file_commit)
 {
     auto start = SteadyClock::now();
 

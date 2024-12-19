@@ -39,7 +39,7 @@ using namespace util::hex_literals;
 
 static const unsigned int gFlags = SCRIPT_VERIFY_P2SH | SCRIPT_VERIFY_STRICTENC;
 
-unsigned int ParseScriptFlags(std::string strFlags);
+unsigned int ParseScriptFlags(const std::string& strFlags);
 std::string FormatScriptFlags(unsigned int flags);
 
 struct ScriptErrorDesc

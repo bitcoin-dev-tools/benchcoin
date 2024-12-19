@@ -17,13 +17,14 @@
 
 #include <memory>
 #include <string>
+#include <utility>
 
 /// Save the log level and the value of CreateSock and restore them when the test ends.
 class EnvTestingSetup : public BasicTestingSetup
 {
 public:
     explicit EnvTestingSetup(const ChainType chainType = ChainType::MAIN,
-                             TestOpts opts = {})
+                             const TestOpts& opts = {})
         : BasicTestingSetup{chainType, opts},
           m_prev_log_level{LogInstance().LogLevel()},
           m_create_sock_orig{CreateSock}

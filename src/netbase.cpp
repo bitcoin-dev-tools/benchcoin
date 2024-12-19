@@ -22,6 +22,7 @@
 #include <functional>
 #include <limits>
 #include <memory>
+#include <utility>
 
 #ifdef HAVE_SOCKADDR_UN
 #include <sys/un.h>
@@ -145,7 +146,7 @@ std::vector<std::string> GetNetworkNames(bool append_unroutable)
     return names;
 }
 
-static std::vector<CNetAddr> LookupIntern(const std::string& name, unsigned int nMaxSolutions, bool fAllowLookup, DNSLookupFn dns_lookup_function)
+static std::vector<CNetAddr> LookupIntern(const std::string& name, unsigned int nMaxSolutions, bool fAllowLookup, const DNSLookupFn& dns_lookup_function)
 {
     if (!ContainsNoNUL(name)) return {};
     {
@@ -174,7 +175,7 @@ static std::vector<CNetAddr> LookupIntern(const std::string& name, unsigned int 
     return addresses;
 }
 
-std::vector<CNetAddr> LookupHost(const std::string& name, unsigned int nMaxSolutions, bool fAllowLookup, DNSLookupFn dns_lookup_function)
+std::vector<CNetAddr> LookupHost(const std::string& name, unsigned int nMaxSolutions, bool fAllowLookup, const DNSLookupFn& dns_lookup_function)
 {
     if (!ContainsNoNUL(name)) return {};
     std::string strHost = name;
@@ -186,13 +187,13 @@ std::vector<CNetAddr> LookupHost(const std::string& name, unsigned int nMaxSolut
     return LookupIntern(strHost, nMaxSolutions, fAllowLookup, dns_lookup_function);
 }
 
-std::optional<CNetAddr> LookupHost(const std::string& name, bool fAllowLookup, DNSLookupFn dns_lookup_function)
+std::optional<CNetAddr> LookupHost(const std::string& name, bool fAllowLookup, const DNSLookupFn& dns_lookup_function)
 {
     const std::vector<CNetAddr> addresses{LookupHost(name, 1, fAllowLookup, dns_lookup_function)};
     return addresses.empty() ? std::nullopt : std::make_optional(addresses.front());
 }
 
-std::vector<CService> Lookup(const std::string& name, uint16_t portDefault, bool fAllowLookup, unsigned int nMaxSolutions, DNSLookupFn dns_lookup_function)
+std::vector<CService> Lookup(const std::string& name, uint16_t portDefault, bool fAllowLookup, unsigned int nMaxSolutions, const DNSLookupFn& dns_lookup_function)
 {
     if (name.empty() || !ContainsNoNUL(name)) {
         return {};
@@ -210,14 +211,14 @@ std::vector<CService> Lookup(const std::string& name, uint16_t portDefault, bool
     return services;
 }
 
-std::optional<CService> Lookup(const std::string& name, uint16_t portDefault, bool fAllowLookup, DNSLookupFn dns_lookup_function)
+std::optional<CService> Lookup(const std::string& name, uint16_t portDefault, bool fAllowLookup, const DNSLookupFn& dns_lookup_function)
 {
     const std::vector<CService> services{Lookup(name, portDefault, fAllowLookup, 1, dns_lookup_function)};
 
     return services.empty() ? std::nullopt : std::make_optional(services.front());
 }
 
-CService LookupNumeric(const std::string& name, uint16_t portDefault, DNSLookupFn dns_lookup_function)
+CService LookupNumeric(const std::string& name, uint16_t portDefault, const DNSLookupFn& dns_lookup_function)
 {
     if (!ContainsNoNUL(name)) {
         return {};

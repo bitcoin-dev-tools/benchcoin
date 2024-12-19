@@ -44,6 +44,7 @@
 #include <queue>
 #include <thread>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 class AddrMan;
@@ -1127,7 +1128,7 @@ public:
     // alias for thread safety annotations only, not defined
     RecursiveMutex& GetNodesMutex() const LOCK_RETURNED(m_nodes_mutex);
 
-    bool ForNode(NodeId id, std::function<bool(CNode* pnode)> func);
+    bool ForNode(NodeId id, const std::function<bool(CNode* pnode)>& func);
 
     void PushMessage(CNode* pnode, CSerializedNetMsg&& msg) EXCLUSIVE_LOCKS_REQUIRED(!m_total_bytes_sent_mutex);
 
@@ -1262,7 +1263,7 @@ private:
         std::shared_ptr<Sock> sock;
         inline void AddSocketPermissionFlags(NetPermissionFlags& flags) const { NetPermissions::AddFlag(flags, m_permissions); }
         ListenSocket(std::shared_ptr<Sock> sock_, NetPermissionFlags permissions_)
-            : sock{sock_}, m_permissions{permissions_}
+            : sock{std::move(sock_)}, m_permissions{permissions_}
         {
         }
 
@@ -1281,7 +1282,7 @@ private:
     void ThreadOpenAddedConnections() EXCLUSIVE_LOCKS_REQUIRED(!m_added_nodes_mutex, !m_unused_i2p_sessions_mutex, !m_reconnections_mutex);
     void AddAddrFetch(const std::string& strDest) EXCLUSIVE_LOCKS_REQUIRED(!m_addr_fetches_mutex);
     void ProcessAddrFetch() EXCLUSIVE_LOCKS_REQUIRED(!m_addr_fetches_mutex, !m_unused_i2p_sessions_mutex);
-    void ThreadOpenConnections(std::vector<std::string> connect, Span<const std::string> seed_nodes) EXCLUSIVE_LOCKS_REQUIRED(!m_addr_fetches_mutex, !m_added_nodes_mutex, !m_nodes_mutex, !m_unused_i2p_sessions_mutex, !m_reconnections_mutex);
+    void ThreadOpenConnections(const std::vector<std::string>& connect, Span<const std::string> seed_nodes) EXCLUSIVE_LOCKS_REQUIRED(!m_addr_fetches_mutex, !m_added_nodes_mutex, !m_nodes_mutex, !m_unused_i2p_sessions_mutex, !m_reconnections_mutex);
     void ThreadMessageHandler() EXCLUSIVE_LOCKS_REQUIRED(!mutexMsgProc);
     void ThreadI2PAcceptIncoming();
     void AcceptConnection(const ListenSocket& hListenSocket);

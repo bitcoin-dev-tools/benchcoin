@@ -297,7 +297,7 @@ public:
         WalletOrderForm order_form) override
     {
         LOCK(m_wallet->cs_wallet);
-        m_wallet->CommitTransaction(std::move(tx), std::move(value_map), std::move(order_form));
+        m_wallet->CommitTransaction(tx, std::move(value_map), std::move(order_form));
     }
     bool transactionCanBeAbandoned(const uint256& txid) override { return m_wallet->TransactionCanBeAbandoned(txid); }
     bool abandonTransaction(const uint256& txid) override
@@ -655,7 +655,7 @@ public:
     bool isEncrypted(const std::string& wallet_name) override
     {
         auto wallets{GetWallets(m_context)};
-        auto it = std::find_if(wallets.begin(), wallets.end(), [&](std::shared_ptr<CWallet> w){ return w->GetName() == wallet_name; });
+        auto it = std::find_if(wallets.begin(), wallets.end(), [&](const std::shared_ptr<CWallet>& w){ return w->GetName() == wallet_name; });
         if (it != wallets.end()) return (*it)->IsCrypted();
 
         // Unloaded wallet, read db

@@ -1098,7 +1098,7 @@ static util::Result<SelectionResult> CoinGrinder(const CAmount& target,
                                                     const CoinSelectionParams& cs_params,
                                                     const node::NodeContext& m_node,
                                                     int max_selection_weight,
-                                                    std::function<CoinsResult(CWallet&)> coin_setup)
+                                                    const std::function<CoinsResult(CWallet&)>& coin_setup)
 {
     std::unique_ptr<CWallet> wallet = NewWallet(m_node);
     CoinEligibilityFilter filter(0, 0, 0); // accept all coins without ancestors
@@ -1309,7 +1309,7 @@ static util::Result<SelectionResult> SelectCoinsSRD(const CAmount& target,
                                                     const CoinSelectionParams& cs_params,
                                                     const node::NodeContext& m_node,
                                                     int max_selection_weight,
-                                                    std::function<CoinsResult(CWallet&)> coin_setup)
+                                                    const std::function<CoinsResult(CWallet&)>& coin_setup)
 {
     std::unique_ptr<CWallet> wallet = NewWallet(m_node);
     CoinEligibilityFilter filter(0, 0, 0); // accept all coins without ancestors
@@ -1394,7 +1394,7 @@ BOOST_AUTO_TEST_CASE(srd_tests)
     }
 }
 
-static util::Result<SelectionResult> select_coins(const CAmount& target, const CoinSelectionParams& cs_params, const CCoinControl& cc, std::function<CoinsResult(CWallet&)> coin_setup, const node::NodeContext& m_node)
+static util::Result<SelectionResult> select_coins(const CAmount& target, const CoinSelectionParams& cs_params, const CCoinControl& cc, const std::function<CoinsResult(CWallet&)>& coin_setup, const node::NodeContext& m_node)
 {
     std::unique_ptr<CWallet> wallet = NewWallet(m_node);
     auto available_coins = coin_setup(*wallet);

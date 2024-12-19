@@ -342,7 +342,7 @@ static RPCHelpMan echoipc()
     };
 }
 
-static UniValue SummaryToJSON(const IndexSummary&& summary, std::string index_name)
+static UniValue SummaryToJSON(const IndexSummary&& summary, const std::string& index_name)
 {
     UniValue ret_summary(UniValue::VOBJ);
     if (!index_name.empty() && index_name != summary.name) return ret_summary;

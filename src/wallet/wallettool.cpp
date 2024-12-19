@@ -45,7 +45,7 @@ static void WalletCreate(CWallet* wallet_instance, uint64_t wallet_creation_flag
     wallet_instance->TopUpKeyPool();
 }
 
-static std::shared_ptr<CWallet> MakeWallet(const std::string& name, const fs::path& path, DatabaseOptions options)
+static std::shared_ptr<CWallet> MakeWallet(const std::string& name, const fs::path& path, const DatabaseOptions& options)
 {
     DatabaseStatus status;
     bilingual_str error;

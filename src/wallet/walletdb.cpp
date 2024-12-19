@@ -30,6 +30,7 @@
 #include <atomic>
 #include <optional>
 #include <string>
+#include <utility>
 
 namespace wallet {
 namespace DBKeys {
@@ -493,7 +494,7 @@ struct LoadResult
 };
 
 using LoadFunc = std::function<DBErrors(CWallet* pwallet, DataStream& key, DataStream& value, std::string& err)>;
-static LoadResult LoadRecords(CWallet* pwallet, DatabaseBatch& batch, const std::string& key, DataStream& prefix, LoadFunc load_func)
+static LoadResult LoadRecords(CWallet* pwallet, DatabaseBatch& batch, const std::string& key, DataStream& prefix, const LoadFunc& load_func)
 {
     LoadResult result;
     DataStream ssKey;
@@ -530,7 +531,7 @@ static LoadResult LoadRecords(CWallet* pwallet, DatabaseBatch& batch, const std:
     return result;
 }
 
-static LoadResult LoadRecords(CWallet* pwallet, DatabaseBatch& batch, const std::string& key, LoadFunc load_func)
+static LoadResult LoadRecords(CWallet* pwallet, DatabaseBatch& batch, const std::string& key, const LoadFunc& load_func)
 {
     DataStream prefix;
     prefix << key;

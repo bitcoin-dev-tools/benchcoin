@@ -95,7 +95,7 @@ std::set<int> InterpretSubtractFeeFromOutputInstructions(const UniValue& sffo_in
     return sffo_set;
 }
 
-static UniValue FinishTransaction(const std::shared_ptr<CWallet> pwallet, const UniValue& options, const CMutableTransaction& rawTx)
+static UniValue FinishTransaction(const std::shared_ptr<CWallet>& pwallet, const UniValue& options, const CMutableTransaction& rawTx)
 {
     // Make a blank psbt
     PartiallySignedTransaction psbtx(rawTx);
@@ -984,7 +984,7 @@ static std::vector<RPCArg> OutputsDoc()
     };
 }
 
-static RPCHelpMan bumpfee_helper(std::string method_name)
+static RPCHelpMan bumpfee_helper(const std::string& method_name)
 {
     const bool want_psbt = method_name == "psbtbumpfee";
     const std::string incremental_fee{CFeeRate(DEFAULT_INCREMENTAL_RELAY_FEE).ToString(FeeEstimateMode::SAT_VB)};

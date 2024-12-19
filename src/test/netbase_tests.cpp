@@ -118,7 +118,7 @@ BOOST_AUTO_TEST_CASE(netbase_splithost)
     BOOST_CHECK(TestSplitHost("www.bitcoincore.org:", "www.bitcoincore.org:", 0, false));
 }
 
-bool static TestParse(std::string src, std::string canon)
+bool static TestParse(const std::string& src, const std::string& canon)
 {
     CService addr(LookupNumeric(src, 65535));
     return canon == addr.ToStringAddrPort();

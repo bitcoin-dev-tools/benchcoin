@@ -39,7 +39,7 @@ static inline CTransactionRef make_tx(const std::vector<CTransactionRef>& inputs
 
 // Make two child transactions from parent (which must have at least 2 outputs).
 // Each tx will have the same outputs, using the amounts specified in output_values.
-static inline std::pair<CTransactionRef, CTransactionRef> make_two_siblings(const CTransactionRef parent,
+static inline std::pair<CTransactionRef, CTransactionRef> make_two_siblings(const CTransactionRef& parent,
                                       const std::vector<CAmount>& output_values)
 {
     assert(parent->vout.size() >= 2);
@@ -99,7 +99,7 @@ static CTransactionRef add_descendant_to_parents(const std::vector<CTransactionR
 }
 
 // Makes two children for a single parent
-static std::pair<CTransactionRef, CTransactionRef> add_children_to_parent(const CTransactionRef parent, CTxMemPool& pool)
+static std::pair<CTransactionRef, CTransactionRef> add_children_to_parent(const CTransactionRef& parent, CTxMemPool& pool)
     EXCLUSIVE_LOCKS_REQUIRED(::cs_main, pool.cs)
 {
     AssertLockHeld(::cs_main);

@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <cassert>
 #include <stdexcept>
+#include <utility>
 
 std::string COutPoint::ToString() const
 {
@@ -26,14 +27,14 @@ std::string COutPoint::ToString() const
 CTxIn::CTxIn(COutPoint prevoutIn, CScript scriptSigIn, uint32_t nSequenceIn)
 {
     prevout = prevoutIn;
-    scriptSig = scriptSigIn;
+    scriptSig = std::move(scriptSigIn);
     nSequence = nSequenceIn;
 }
 
 CTxIn::CTxIn(Txid hashPrevTx, uint32_t nOut, CScript scriptSigIn, uint32_t nSequenceIn)
 {
     prevout = COutPoint(hashPrevTx, nOut);
-    scriptSig = scriptSigIn;
+    scriptSig = std::move(scriptSigIn);
     nSequence = nSequenceIn;
 }
 
@@ -55,7 +56,7 @@ std::string CTxIn::ToString() const
 CTxOut::CTxOut(const CAmount& nValueIn, CScript scriptPubKeyIn)
 {
     nValue = nValueIn;
-    scriptPubKey = scriptPubKeyIn;
+    scriptPubKey = std::move(scriptPubKeyIn);
 }
 
 std::string CTxOut::ToString() const

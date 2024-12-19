@@ -48,7 +48,7 @@ setup_assumeutxo_snapshot_run() {
 
   git checkout "${commit}"
   # Build for CI without bench_bitcoin
-  cmake -B build -DBUILD_BENCH=OFF -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_CXX_FLAGS="-fno-omit-frame-pointer"
+  cmake -B build -DBUILD_BENCH=OFF -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS="-fno-omit-frame-pointer"
   cmake --build build -j "$(nproc)"
   clean_datadir "${TMP_DATADIR}"
 }
@@ -111,8 +111,8 @@ run_benchmark() {
 
   # Run hyperfine
   hyperfine \
-    --setup "setup_assumeutxo_snapshot_run {commit} ${TMP_DATADIR}" \
-    --prepare "prepare_assumeutxo_snapshot_run ${TMP_DATADIR} ${UTXO_PATH} ${connect_address} ${chain}" \
+    --setup "taskset -c 1-15 setup_assumeutxo_snapshot_run {commit} ${TMP_DATADIR}" \
+    --prepare "taskset -c 1-15 prepare_assumeutxo_snapshot_run ${TMP_DATADIR} ${UTXO_PATH} ${connect_address} ${chain}" \
     --conclude "conclude_assumeutxo_snapshot_run {commit}" \
     --cleanup "cleanup_assumeutxo_snapshot_run ${TMP_DATADIR}" \
     --runs 1 \

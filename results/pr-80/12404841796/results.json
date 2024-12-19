@@ -1,0 +1,84 @@
+{
+  "results": [
+    {
+      "command": "base (e29d2412eea7c5db366b7a5e6a2ebccb76879b34)",
+      "mean": 465.10323651951995,
+      "stddev": null,
+      "median": 465.10323651951995,
+      "user": 656.69201752,
+      "system": 126.17647441999999,
+      "min": 465.10323651951995,
+      "max": 465.10323651951995,
+      "times": [
+        465.10323651951995
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "e29d2412eea7c5db366b7a5e6a2ebccb76879b34"
+      },
+      "network": "mainnet"
+    },
+    {
+      "command": "head (75b6fe4819efc8c75d48defeb926010f2a0f0e4d)",
+      "mean": 467.51797624652,
+      "stddev": null,
+      "median": 467.51797624652,
+      "user": 653.72752552,
+      "system": 123.03615341999999,
+      "min": 467.51797624652,
+      "max": 467.51797624652,
+      "times": [
+        467.51797624652
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "75b6fe4819efc8c75d48defeb926010f2a0f0e4d"
+      },
+      "network": "mainnet"
+    },
+    {
+      "command": "base (e29d2412eea7c5db366b7a5e6a2ebccb76879b34)",
+      "mean": 17.3790071071,
+      "stddev": null,
+      "median": 17.3790071071,
+      "user": 2.24492752,
+      "system": 0.80480232,
+      "min": 17.3790071071,
+      "max": 17.3790071071,
+      "times": [
+        17.3790071071
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "e29d2412eea7c5db366b7a5e6a2ebccb76879b34"
+      },
+      "network": "signet"
+    },
+    {
+      "command": "head (75b6fe4819efc8c75d48defeb926010f2a0f0e4d)",
+      "mean": 17.4265560631,
+      "stddev": null,
+      "median": 17.4265560631,
+      "user": 2.28182452,
+      "system": 0.7640203199999999,
+      "min": 17.4265560631,
+      "max": 17.4265560631,
+      "times": [
+        17.4265560631
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "75b6fe4819efc8c75d48defeb926010f2a0f0e4d"
+      },
+      "network": "signet"
+    }
+  ]
+}

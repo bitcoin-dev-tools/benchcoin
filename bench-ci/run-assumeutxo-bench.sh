@@ -48,7 +48,7 @@ setup_assumeutxo_snapshot_run() {
 
   git checkout "${commit}"
   # Build for CI without bench_bitcoin
-  cmake -B build -DBUILD_BENCH=OFF -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_CXX_FLAGS="-fno-omit-frame-pointer"
+  cmake -B build -DBUILD_BENCH=OFF -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS="-fno-omit-frame-pointer"
   cmake --build build -j "$(nproc)"
   clean_datadir "${TMP_DATADIR}"
 }

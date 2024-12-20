@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Benchmark Results</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+  </head>
+  <body class="bg-gray-100 p-8">
+    <div class="max-w-4xl mx-auto">
+      <h1 class="text-3xl font-bold mb-8">Benchmark Results</h1>
+      <div class="bg-white rounded-lg shadow p-6 mb-8">
+        <h2 class="text-xl font-semibold mb-4">PR #78 - Run 12437287935</h2>
+        
+          <div class="mb-8">
+            <h3 class="text-lg font-semibold mb-4 capitalize">mainnet Results</h3>
+            <div class="overflow-x-auto">
+              
+                    <table class="min-w-full table-auto mb-4">
+                      <thead>
+                        <tr class="bg-gray-50">
+                          <th class="px-4 py-2">Branch</th>
+                          <th class="px-4 py-2">Command</th>
+                          <th class="px-4 py-2">Mean (s)</th>
+                          <th class="px-4 py-2">Std Dev</th>
+                          <th class="px-4 py-2">User (s)</th>
+                          <th class="px-4 py-2">System (s)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr class="border-t">
+                          <td class="px-4 py-2 font-mono text-sm">
+                            <a href="https://github.com/bitcoin-dev-tools/benchcoin/commit/e29d2412">e29d2412</a>
+                          </td>
+                          <td class="px-4 py-2 font-mono text-sm">base (e29d2412eea7c5db366b7a5e6a2ebccb76879b34)</td>
+                          <td class="px-4 py-2 text-right">461.755</td>
+                          <td class="px-4 py-2 text-right">N/A</td>
+                          <td class="px-4 py-2 text-right">660.829</td>
+                          <td class="px-4 py-2 text-right">126.588</td>
+                        </tr>
+                      </tbody>
+                    </table>
+
+                    
+                      <iframe src="mainnet-e29d2412eea7c5db366b7a5e6a2ebccb76879b34-flamegraph.html" width="100%" height="600px" frameborder="0" class="mb-4"></iframe>
+                    
+                  
+                    <table class="min-w-full table-auto mb-4">
+                      <thead>
+                        <tr class="bg-gray-50">
+                          <th class="px-4 py-2">Branch</th>
+                          <th class="px-4 py-2">Command</th>
+                          <th class="px-4 py-2">Mean (s)</th>
+                          <th class="px-4 py-2">Std Dev</th>
+                          <th class="px-4 py-2">User (s)</th>
+                          <th class="px-4 py-2">System (s)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr class="border-t">
+                          <td class="px-4 py-2 font-mono text-sm">
+                            <a href="https://github.com/bitcoin-dev-tools/benchcoin/commit/a750c63c">a750c63c</a>
+                          </td>
+                          <td class="px-4 py-2 font-mono text-sm">head (a750c63c67e0f8e4972d25e08b4668264a5a3c5c)</td>
+                          <td class="px-4 py-2 text-right">455.784</td>
+                          <td class="px-4 py-2 text-right">N/A</td>
+                          <td class="px-4 py-2 text-right">655.550</td>
+                          <td class="px-4 py-2 text-right">127.757</td>
+                        </tr>
+                      </tbody>
+                    </table>
+
+                    
+                      <iframe src="mainnet-a750c63c67e0f8e4972d25e08b4668264a5a3c5c-flamegraph.html" width="100%" height="600px" frameborder="0" class="mb-4"></iframe>
+                    
+                  
+            </div>
+          </div>
+        
+          <div class="mb-8">
+            <h3 class="text-lg font-semibold mb-4 capitalize">signet Results</h3>
+            <div class="overflow-x-auto">
+              
+                    <table class="min-w-full table-auto mb-4">
+                      <thead>
+                        <tr class="bg-gray-50">
+                          <th class="px-4 py-2">Branch</th>
+                          <th class="px-4 py-2">Command</th>
+                          <th class="px-4 py-2">Mean (s)</th>
+                          <th class="px-4 py-2">Std Dev</th>
+                          <th class="px-4 py-2">User (s)</th>
+                          <th class="px-4 py-2">System (s)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr class="border-t">
+                          <td class="px-4 py-2 font-mono text-sm">
+                            <a href="https://github.com/bitcoin-dev-tools/benchcoin/commit/e29d2412">e29d2412</a>
+                          </td>
+                          <td class="px-4 py-2 font-mono text-sm">base (e29d2412eea7c5db366b7a5e6a2ebccb76879b34)</td>
+                          <td class="px-4 py-2 text-right">17.486</td>
+                          <td class="px-4 py-2 text-right">N/A</td>
+                          <td class="px-4 py-2 text-right">2.257</td>
+                          <td class="px-4 py-2 text-right">0.789</td>
+                        </tr>
+                      </tbody>
+                    </table>
+
+                    
+                      <iframe src="signet-e29d2412eea7c5db366b7a5e6a2ebccb76879b34-flamegraph.html" width="100%" height="600px" frameborder="0" class="mb-4"></iframe>
+                    
+                  
+                    <table class="min-w-full table-auto mb-4">
+                      <thead>
+                        <tr class="bg-gray-50">
+                          <th class="px-4 py-2">Branch</th>
+                          <th class="px-4 py-2">Command</th>
+                          <th class="px-4 py-2">Mean (s)</th>
+                          <th class="px-4 py-2">Std Dev</th>
+                          <th class="px-4 py-2">User (s)</th>
+                          <th class="px-4 py-2">System (s)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr class="border-t">
+                          <td class="px-4 py-2 font-mono text-sm">
+                            <a href="https://github.com/bitcoin-dev-tools/benchcoin/commit/a750c63c">a750c63c</a>
+                          </td>
+                          <td class="px-4 py-2 font-mono text-sm">head (a750c63c67e0f8e4972d25e08b4668264a5a3c5c)</td>
+                          <td class="px-4 py-2 text-right">17.407</td>
+                          <td class="px-4 py-2 text-right">N/A</td>
+                          <td class="px-4 py-2 text-right">2.268</td>
+                          <td class="px-4 py-2 text-right">0.775</td>
+                        </tr>
+                      </tbody>
+                    </table>
+
+                    
+                      <iframe src="signet-a750c63c67e0f8e4972d25e08b4668264a5a3c5c-flamegraph.html" width="100%" height="600px" frameborder="0" class="mb-4"></iframe>
+                    
+                  
+            </div>
+          </div>
+        
+      </div>
+    </div>
+  </body>
+</html>

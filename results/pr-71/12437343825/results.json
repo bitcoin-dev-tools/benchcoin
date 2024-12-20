@@ -1,0 +1,84 @@
+{
+  "results": [
+    {
+      "command": "base (e29d2412eea7c5db366b7a5e6a2ebccb76879b34)",
+      "mean": 470.2426877271,
+      "stddev": null,
+      "median": 470.2426877271,
+      "user": 661.39212014,
+      "system": 126.65295066,
+      "min": 470.2426877271,
+      "max": 470.2426877271,
+      "times": [
+        470.2426877271
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "e29d2412eea7c5db366b7a5e6a2ebccb76879b34"
+      },
+      "network": "mainnet"
+    },
+    {
+      "command": "head (e599af69cb3ca7931d02c7dbfca32953b70494f6)",
+      "mean": 462.5826470781,
+      "stddev": null,
+      "median": 462.5826470781,
+      "user": 657.61608114,
+      "system": 124.89784866,
+      "min": 462.5826470781,
+      "max": 462.5826470781,
+      "times": [
+        462.5826470781
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "e599af69cb3ca7931d02c7dbfca32953b70494f6"
+      },
+      "network": "mainnet"
+    },
+    {
+      "command": "base (e29d2412eea7c5db366b7a5e6a2ebccb76879b34)",
+      "mean": 17.45794359716,
+      "stddev": null,
+      "median": 17.45794359716,
+      "user": 2.21105064,
+      "system": 0.83168776,
+      "min": 17.45794359716,
+      "max": 17.45794359716,
+      "times": [
+        17.45794359716
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "e29d2412eea7c5db366b7a5e6a2ebccb76879b34"
+      },
+      "network": "signet"
+    },
+    {
+      "command": "head (e599af69cb3ca7931d02c7dbfca32953b70494f6)",
+      "mean": 17.411490496160003,
+      "stddev": null,
+      "median": 17.411490496160003,
+      "user": 2.2755866399999998,
+      "system": 0.7729147599999999,
+      "min": 17.411490496160003,
+      "max": 17.411490496160003,
+      "times": [
+        17.411490496160003
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "e599af69cb3ca7931d02c7dbfca32953b70494f6"
+      },
+      "network": "signet"
+    }
+  ]
+}

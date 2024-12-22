@@ -75,9 +75,9 @@ lint:
 # Run signet assumeutxo CI workflow
 [group('ci')]
 run-assumeutxo-signet-ci base_commit head_commit TMP_DATADIR UTXO_PATH results_file:
-    ./bench-ci/run-assumeutxo-bench.sh {{ base_commit }} {{ head_commit }} {{ TMP_DATADIR }} {{ UTXO_PATH }} {{ results_file }} signet 170000 "148.251.128.115:55555"
+    ./bench-ci/run-assumeutxo-bench.sh {{ base_commit }} {{ head_commit }} {{ TMP_DATADIR }} {{ UTXO_PATH }} {{ results_file }} signet 200000 "148.251.128.115:55555"
 
 # Run mainnet assumeutxo CI workflow
 [group('ci')]
 run-assumeutxo-mainnet-ci base_commit head_commit TMP_DATADIR UTXO_PATH results_file:
-    ./bench-ci/run-assumeutxo-bench.sh {{ base_commit }} {{ head_commit }} {{ TMP_DATADIR }} {{ UTXO_PATH }} {{ results_file }} main 850000 "148.251.128.115:33333"
+    ./bench-ci/run-assumeutxo-bench.sh {{ base_commit }} {{ head_commit }} {{ TMP_DATADIR }} {{ UTXO_PATH }} {{ results_file }} main 860000 "148.251.128.115:33333"

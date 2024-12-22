@@ -1,0 +1,44 @@
+{
+  "results": [
+    {
+      "command": "base (e29d2412eea7c5db366b7a5e6a2ebccb76879b34)",
+      "mean": 74.17685427848001,
+      "stddev": null,
+      "median": 74.17685427848001,
+      "user": 21.99252416,
+      "system": 3.86732872,
+      "min": 74.17685427848001,
+      "max": 74.17685427848001,
+      "times": [
+        74.17685427848001
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "e29d2412eea7c5db366b7a5e6a2ebccb76879b34"
+      },
+      "network": "signet"
+    },
+    {
+      "command": "head (d3c7bf2041e5bfad3a544f32748b9bfef68afe7c)",
+      "mean": 73.76641944648,
+      "stddev": null,
+      "median": 73.76641944648,
+      "user": 22.037651159999996,
+      "system": 3.5785207199999998,
+      "min": 73.76641944648,
+      "max": 73.76641944648,
+      "times": [
+        73.76641944648
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "d3c7bf2041e5bfad3a544f32748b9bfef68afe7c"
+      },
+      "network": "signet"
+    }
+  ]
+}

@@ -11,9 +11,15 @@ jobs:
           - network: signet
             timeout: 20
             utxo_path: /var/lib/bitcoin/utxo-signet-160000.dat
-          - network: mainnet
+            dbcache: 550
+          - network: mainnet-default
             timeout: 600
             utxo_path: /var/lib/bitcoin/utxo-840000.dat
+            dbcache: 550
+          - network: mainnet-large
+            timeout: 600
+            utxo_path: /var/lib/bitcoin/utxo-840000.dat
+            dbcache: 10000
     runs-on: [self-hosted, linux, x64]
     timeout-minutes: ${{ matrix.timeout }}
     env:
@@ -42,7 +48,7 @@ jobs:
         run: |
           env
           mkdir -p "$TMP_DATADIR"
-          nix-shell --command "just run-assumeutxo-${{ matrix.network }}-ci $BASE_SHA $CHECKOUT_COMMIT $TMP_DATADIR $UTXO_PATH ${{ runner.temp }}/results.json"
+          nix-shell --command "just run-assumeutxo-${{ matrix.network }}-ci $BASE_SHA $CHECKOUT_COMMIT $TMP_DATADIR $UTXO_PATH ${{ runner.temp }}/results.json ${{ matrix.dbcache }}"
       - uses: actions/upload-artifact@v4
         with:
           name: result-${{ matrix.network }}

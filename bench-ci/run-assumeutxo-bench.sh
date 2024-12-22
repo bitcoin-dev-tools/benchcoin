@@ -33,7 +33,7 @@ clean_logs() {
   local logfile="${TMP_DATADIR}/debug.log"
 
   echo "Checking for ${logfile}"
-  if [ -e "{$logfile}" ]; then
+  if [ -e "${logfile}" ]; then
     echo "Removing ${logfile}"
     rm "${logfile}"
   fi
@@ -47,8 +47,8 @@ setup_assumeutxo_snapshot_run() {
   local TMP_DATADIR="$2"
 
   git checkout "${commit}"
-  # Build for CI without bench_bitcoin
-  cmake -B build -DBUILD_BENCH=OFF -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_CXX_FLAGS="-fno-omit-frame-pointer"
+  # Build for CI
+  cmake -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_BENCH=OFF -DBUILD_UTIL=OFF -DBUILD_TX=OFF -DBUILD_TESTS=OFF -DENABLE_WALLET=OFF -DINSTALL_MAN=OFF -DCMAKE_CXX_FLAGS="-fno-omit-frame-pointer"
   cmake --build build -j "$(nproc)"
   clean_datadir "${TMP_DATADIR}"
 }

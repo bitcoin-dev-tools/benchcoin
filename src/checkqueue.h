@@ -115,9 +115,11 @@ private:
                 fOk = fAllOk;
             }
             // execute work
-            for (T& check : vChecks)
-                if (fOk)
-                    fOk = check();
+            for (size_t i = 0; i < vChecks.size(); i++) {
+                if (fOk) {
+                    fOk = vChecks[i]();
+                }
+            }
             vChecks.clear();
         } while (true);
     }

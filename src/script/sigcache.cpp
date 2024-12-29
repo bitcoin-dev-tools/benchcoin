@@ -5,6 +5,7 @@
 
 #include <script/sigcache.h>
 
+#include <common/system.h>
 #include <crypto/sha256.h>
 #include <logging.h>
 #include <pubkey.h>

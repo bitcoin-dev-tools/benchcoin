@@ -12,7 +12,10 @@ jobs:
       contents: write
       checks: read
     env:
-      NETWORKS: "mainnet,signet"
+      NETWORKS: "mainnet-default,mainnet-large,signet"
+    outputs:
+      speedups: ${{ steps.organize.outputs.speedups }}
+      pr-number: ${{ steps.organize.outputs.pr-number }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -47,7 +50,7 @@ jobs:
           script: |
             const fs = require('fs');
             const networks = process.env.NETWORKS.split(',');
-            let prNumber = 'main';
+            let prNumber = 'master';
             let runId;
 
             // First, extract metadata and get PR number
@@ -79,18 +82,31 @@ jobs:
 
             // Process each network's results
             const combinedResults = {
-              results: []
+              results: [],
+              speedups: {}
             };
 
             for (const network of networks) {
               if (fs.existsSync(`${network}-results`)) {
                 const networkResults = JSON.parse(fs.readFileSync(`${network}-results/results.json`, 'utf8'));
+                let baseMean, headMean;
 
-                // Add network name to each result
+                // Add network name to each result and collect means
                 networkResults.results.forEach(result => {
                   result.network = network;
                   combinedResults.results.push(result);
+                  if (result.command.includes('base')) {
+                    baseMean = result.mean;
+                  } else if (result.command.includes('head')) {
+                    headMean = result.mean;
+                  }
                 });
+
+                // Calculate speedup if we have both measurements
+                if (baseMean && headMean) {
+                  const speedup = ((baseMean - headMean) / baseMean * 100).toFixed(1);
+                  combinedResults.speedups[network] = speedup;
+                }
 
                 // Move flamegraphs
                 if (fs.existsSync(`${network}-flamegraph`)) {
@@ -120,7 +136,12 @@ jobs:
                     <h2 class="text-xl font-semibold mb-4">PR #${prNumber} - Run ${runId}</h2>
                     ${networks.map(network => `
                       <div class="mb-8">
-                        <h3 class="text-lg font-semibold mb-4 capitalize">${network} Results</h3>
+                        <h3 class="text-lg font-semibold mb-4 capitalize">
+                          ${network} Results
+                          ${combinedResults.speedups[network] ? 
+                            `<span class="text-sm font-normal ml-2">(${combinedResults.speedups[network]}% speedup)</span>` 
+                            : ''}
+                        </h3>
                         <div class="overflow-x-auto">
                           ${combinedResults.results
                             .filter(result => result.network === network)
@@ -207,10 +228,16 @@ jobs:
 
             fs.writeFileSync('index.html', mainIndexHtml);
 
-            // Return the URL for the PR comment
+            // Set outputs for use in PR comment
             const resultUrl = `https://${context.repo.owner}.github.io/${context.repo.name}/results/pr-${prNumber}/${runId}/index.html`;
+            const speedupString = Object.entries(combinedResults.speedups)
+              .map(([network, speedup]) => `${network}: ${speedup}%`)
+              .join(', ');
+            
             core.setOutput('result-url', resultUrl);
-            return resultUrl;
+            core.setOutput('speedups', speedupString);
+            core.setOutput('pr-number', prNumber);
+            return { url: resultUrl, speedups: speedupString };
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
@@ -230,27 +257,12 @@ jobs:
       pull-requests: write
       actions: read
     steps:
-      - name: Download metadata artifact
-        uses: actions/download-artifact@v4
-        with:
-          pattern: run-metadata-*
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          run-id: ${{ github.event.workflow_run.id }}
-          path: metadata
-      - name: Parse Pull Request Number
-        id: parse-pr
-        run: |
-          # Find the first github.json file in any of the metadata subdirectories
-          metadata_file=$(find metadata -name github.json | head -n1)
-          if [ -n "$metadata_file" ]; then
-            pr_number=$(jq -r '.event.pull_request.number' "$metadata_file")
-            echo "PR_NUMBER=$pr_number" >> "$GITHUB_ENV"
-          fi
       - name: Comment on PR
-        if: ${{ env.PR_NUMBER }}
+        if: ${{ needs.build.outputs.pr-number != 'master' }}
         uses: thollander/actions-comment-pull-request@v3.0.1
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          pr-number: ${{ env.PR_NUMBER }}
+          pr-number: ${{ needs.build.outputs.pr-number }}
           message: |
-            📊 Benchmark results for this run (${{ github.event.workflow_run.id }}) will be available at: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/results/pr-${{ env.PR_NUMBER }}/${{ github.event.workflow_run.id }}/index.html after the github pages "build and deployment" action has completed.
+            📊 Benchmark results for this run (${{ github.event.workflow_run.id }}) will be available at: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/results/pr-${{ needs.build.outputs.pr-number }}/${{ github.event.workflow_run.id }}/index.html after the github pages "build and deployment" action has completed.
+            🚀 Speedups: ${{ needs.build.outputs.speedups }}

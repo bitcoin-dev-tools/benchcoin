@@ -33,7 +33,7 @@ clean_logs() {
   local logfile="${TMP_DATADIR}/debug.log"
 
   echo "Checking for ${logfile}"
-  if [ -e "{$logfile}" ]; then
+  if [ -e "${logfile}" ]; then
     echo "Removing ${logfile}"
     rm "${logfile}"
   fi
@@ -47,8 +47,8 @@ setup_assumeutxo_snapshot_run() {
   local TMP_DATADIR="$2"
 
   git checkout "${commit}"
-  # Build for CI without bench_bitcoin
-  cmake -B build -DBUILD_BENCH=OFF -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_CXX_FLAGS="-fno-omit-frame-pointer"
+  # Build for CI
+  cmake -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_BENCH=OFF -DBUILD_UTIL=OFF -DBUILD_TX=OFF -DBUILD_TESTS=OFF -DENABLE_WALLET=OFF -DINSTALL_MAN=OFF -DCMAKE_CXX_FLAGS="-fno-omit-frame-pointer"
   cmake --build build -j "$(nproc)"
   clean_datadir "${TMP_DATADIR}"
 }
@@ -60,12 +60,13 @@ prepare_assumeutxo_snapshot_run() {
   local TMP_DATADIR="$1"
   local UTXO_PATH="$2"
   local CONNECT_ADDRESS="$3"
-  local chain="$4"
+  local CHAIN="$4"
+  local DBCACHE="$5"
 
   # Run the actual preparation steps
   clean_datadir "${TMP_DATADIR}"
-  build/src/bitcoind -datadir="${TMP_DATADIR}" -connect="${CONNECT_ADDRESS}" -daemon=0 -chain="${chain}" -stopatheight=1
-  build/src/bitcoind -datadir="${TMP_DATADIR}" -connect="${CONNECT_ADDRESS}" -daemon=0 -chain="${chain}" -dbcache=16000 -pausebackgroundsync=1 -loadutxosnapshot="${UTXO_PATH}" || true
+  build/src/bitcoind -datadir="${TMP_DATADIR}" -connect="${CONNECT_ADDRESS}" -daemon=0 -chain="${CHAIN}" -stopatheight=1 -printtoconsole=0
+  build/src/bitcoind -datadir="${TMP_DATADIR}" -connect="${CONNECT_ADDRESS}" -daemon=0 -chain="${CHAIN}" -dbcache=16000 -pausebackgroundsync=1 -loadutxosnapshot="${UTXO_PATH}" -printtoconsole=0 || true
   clean_logs "${TMP_DATADIR}"
 }
 
@@ -100,6 +101,7 @@ run_benchmark() {
   local chain="$6"
   local stop_at_height="$7"
   local connect_address="$8"
+  local dbcache="$9"
 
   # Export functions so they can be used by hyperfine
   export -f setup_assumeutxo_snapshot_run
@@ -112,7 +114,7 @@ run_benchmark() {
   # Run hyperfine
   hyperfine \
     --setup "setup_assumeutxo_snapshot_run {commit} ${TMP_DATADIR}" \
-    --prepare "prepare_assumeutxo_snapshot_run ${TMP_DATADIR} ${UTXO_PATH} ${connect_address} ${chain}" \
+    --prepare "prepare_assumeutxo_snapshot_run ${TMP_DATADIR} ${UTXO_PATH} ${connect_address} ${chain} ${dbcache}" \
     --conclude "conclude_assumeutxo_snapshot_run {commit}" \
     --cleanup "cleanup_assumeutxo_snapshot_run ${TMP_DATADIR}" \
     --runs 1 \
@@ -120,14 +122,14 @@ run_benchmark() {
     --export-json "${results_file}" \
     --command-name "base (${base_commit})" \
     --command-name "head (${head_commit})" \
-    "taskset -c 1 perf script flamegraph taskset -c 2-15 build/src/bitcoind -datadir=${TMP_DATADIR} -connect=${connect_address} -daemon=0 -chain=${chain} -stopatheight=${stop_at_height}" \
+    "taskset -c 1 perf script flamegraph taskset -c 2-15 build/src/bitcoind -datadir=${TMP_DATADIR} \-connect=${connect_address} -daemon=0 -chain=${chain} -stopatheight=${stop_at_height} -dbcache=${dbcache} -printtoconsole=0" \
     -L commit "${base_commit},${head_commit}"
 }
 
 # Main execution
-if [ "$#" -ne 8 ]; then
-  echo "Usage: $0 base_commit head_commit TMP_DATADIR UTXO_PATH results_dir chain stop_at_height connect_address"
+if [ "$#" -ne 9 ]; then
+  echo "Usage: $0 base_commit head_commit TMP_DATADIR UTXO_PATH results_dir chain stop_at_height connect_address dbcache"
   exit 1
 fi
 
-run_benchmark "$1" "$2" "$3" "$4" "$5" "$6" "$7" "$8"
+run_benchmark "$1" "$2" "$3" "$4" "$5" "$6" "$7" "$8" "$9"

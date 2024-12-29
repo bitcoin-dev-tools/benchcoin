@@ -1,0 +1,84 @@
+{
+  "results": [
+    {
+      "command": "base (92df3f79bc9236d98563f5b214e6ded977176492)",
+      "mean": 431.35578557462,
+      "stddev": null,
+      "median": 431.35578557462,
+      "user": 694.8082095,
+      "system": 139.88691756,
+      "min": 431.35578557462,
+      "max": 431.35578557462,
+      "times": [
+        431.35578557462
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "92df3f79bc9236d98563f5b214e6ded977176492"
+      },
+      "network": "mainnet"
+    },
+    {
+      "command": "head (bae230a584676953c4be14bcf4f80d9a5c84dec7)",
+      "mean": 430.35002681662,
+      "stddev": null,
+      "median": 430.35002681662,
+      "user": 688.1016745000001,
+      "system": 143.25164556,
+      "min": 430.35002681662,
+      "max": 430.35002681662,
+      "times": [
+        430.35002681662
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "bae230a584676953c4be14bcf4f80d9a5c84dec7"
+      },
+      "network": "mainnet"
+    },
+    {
+      "command": "base (92df3f79bc9236d98563f5b214e6ded977176492)",
+      "mean": 25.032298112219998,
+      "stddev": null,
+      "median": 25.032298112219998,
+      "user": 2.23415872,
+      "system": 0.84286054,
+      "min": 25.032298112219998,
+      "max": 25.032298112219998,
+      "times": [
+        25.032298112219998
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "92df3f79bc9236d98563f5b214e6ded977176492"
+      },
+      "network": "signet"
+    },
+    {
+      "command": "head (bae230a584676953c4be14bcf4f80d9a5c84dec7)",
+      "mean": 25.23094462222,
+      "stddev": null,
+      "median": 25.23094462222,
+      "user": 2.24704772,
+      "system": 0.81560454,
+      "min": 25.23094462222,
+      "max": 25.23094462222,
+      "times": [
+        25.23094462222
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "bae230a584676953c4be14bcf4f80d9a5c84dec7"
+      },
+      "network": "signet"
+    }
+  ]
+}

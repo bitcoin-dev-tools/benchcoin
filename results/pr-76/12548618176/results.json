@@ -1,0 +1,84 @@
+{
+  "results": [
+    {
+      "command": "base (92df3f79bc9236d98563f5b214e6ded977176492)",
+      "mean": 453.56423927701996,
+      "stddev": null,
+      "median": 453.56423927701996,
+      "user": 663.31270304,
+      "system": 131.49476086,
+      "min": 453.56423927701996,
+      "max": 453.56423927701996,
+      "times": [
+        453.56423927701996
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "92df3f79bc9236d98563f5b214e6ded977176492"
+      },
+      "network": "mainnet"
+    },
+    {
+      "command": "head (d242dad9af31bb37f8f2ea1a6667bc3d96c6e7ca)",
+      "mean": 468.61837193701996,
+      "stddev": null,
+      "median": 468.61837193701996,
+      "user": 677.0683480399999,
+      "system": 117.03655686,
+      "min": 468.61837193701996,
+      "max": 468.61837193701996,
+      "times": [
+        468.61837193701996
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "d242dad9af31bb37f8f2ea1a6667bc3d96c6e7ca"
+      },
+      "network": "mainnet"
+    },
+    {
+      "command": "base (92df3f79bc9236d98563f5b214e6ded977176492)",
+      "mean": 25.04300398322,
+      "stddev": null,
+      "median": 25.04300398322,
+      "user": 2.24750644,
+      "system": 0.7914116999999999,
+      "min": 25.04300398322,
+      "max": 25.04300398322,
+      "times": [
+        25.04300398322
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "92df3f79bc9236d98563f5b214e6ded977176492"
+      },
+      "network": "signet"
+    },
+    {
+      "command": "head (d242dad9af31bb37f8f2ea1a6667bc3d96c6e7ca)",
+      "mean": 25.039754325220002,
+      "stddev": null,
+      "median": 25.039754325220002,
+      "user": 2.2032344399999997,
+      "system": 0.7712477,
+      "min": 25.039754325220002,
+      "max": 25.039754325220002,
+      "times": [
+        25.039754325220002
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "d242dad9af31bb37f8f2ea1a6667bc3d96c6e7ca"
+      },
+      "network": "signet"
+    }
+  ]
+}

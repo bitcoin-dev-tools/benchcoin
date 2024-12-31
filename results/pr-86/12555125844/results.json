@@ -1,0 +1,84 @@
+{
+  "results": [
+    {
+      "command": "base (d158c68b105e1f684733a17c8263ffdc0bfc3cff)",
+      "mean": 458.75489375750004,
+      "stddev": null,
+      "median": 458.75489375750004,
+      "user": 653.90814176,
+      "system": 127.13941485999999,
+      "min": 458.75489375750004,
+      "max": 458.75489375750004,
+      "times": [
+        458.75489375750004
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "d158c68b105e1f684733a17c8263ffdc0bfc3cff"
+      },
+      "network": "mainnet"
+    },
+    {
+      "command": "head (1c57e2b25331663ef07cf732ab9323fee62de215)",
+      "mean": 453.29109250650004,
+      "stddev": null,
+      "median": 453.29109250650004,
+      "user": 667.59531976,
+      "system": 117.35980086,
+      "min": 453.29109250650004,
+      "max": 453.29109250650004,
+      "times": [
+        453.29109250650004
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "1c57e2b25331663ef07cf732ab9323fee62de215"
+      },
+      "network": "mainnet"
+    },
+    {
+      "command": "base (d158c68b105e1f684733a17c8263ffdc0bfc3cff)",
+      "mean": 25.04646094456,
+      "stddev": null,
+      "median": 25.04646094456,
+      "user": 2.2719912,
+      "system": 0.73733608,
+      "min": 25.04646094456,
+      "max": 25.04646094456,
+      "times": [
+        25.04646094456
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "d158c68b105e1f684733a17c8263ffdc0bfc3cff"
+      },
+      "network": "signet"
+    },
+    {
+      "command": "head (1c57e2b25331663ef07cf732ab9323fee62de215)",
+      "mean": 25.07685251556,
+      "stddev": null,
+      "median": 25.07685251556,
+      "user": 2.2205192,
+      "system": 0.7563080799999999,
+      "min": 25.07685251556,
+      "max": 25.07685251556,
+      "times": [
+        25.07685251556
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "1c57e2b25331663ef07cf732ab9323fee62de215"
+      },
+      "network": "signet"
+    }
+  ]
+}

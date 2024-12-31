@@ -1,0 +1,84 @@
+{
+  "results": [
+    {
+      "command": "base (d158c68b105e1f684733a17c8263ffdc0bfc3cff)",
+      "mean": 448.2370264332,
+      "stddev": null,
+      "median": 448.2370264332,
+      "user": 662.16110062,
+      "system": 127.48036218,
+      "min": 448.2370264332,
+      "max": 448.2370264332,
+      "times": [
+        448.2370264332
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "d158c68b105e1f684733a17c8263ffdc0bfc3cff"
+      },
+      "network": "mainnet"
+    },
+    {
+      "command": "head (ce868d1a086c1841b005829048763de44ec936f1)",
+      "mean": 465.9153879502,
+      "stddev": null,
+      "median": 465.9153879502,
+      "user": 654.9435886199999,
+      "system": 112.08894518,
+      "min": 465.9153879502,
+      "max": 465.9153879502,
+      "times": [
+        465.9153879502
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "ce868d1a086c1841b005829048763de44ec936f1"
+      },
+      "network": "mainnet"
+    },
+    {
+      "command": "base (d158c68b105e1f684733a17c8263ffdc0bfc3cff)",
+      "mean": 25.1920212459,
+      "stddev": null,
+      "median": 25.1920212459,
+      "user": 2.30926872,
+      "system": 0.7605907399999999,
+      "min": 25.1920212459,
+      "max": 25.1920212459,
+      "times": [
+        25.1920212459
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "d158c68b105e1f684733a17c8263ffdc0bfc3cff"
+      },
+      "network": "signet"
+    },
+    {
+      "command": "head (ce868d1a086c1841b005829048763de44ec936f1)",
+      "mean": 25.085604300900002,
+      "stddev": null,
+      "median": 25.085604300900002,
+      "user": 2.21351372,
+      "system": 0.7400607399999999,
+      "min": 25.085604300900002,
+      "max": 25.085604300900002,
+      "times": [
+        25.085604300900002
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "ce868d1a086c1841b005829048763de44ec936f1"
+      },
+      "network": "signet"
+    }
+  ]
+}

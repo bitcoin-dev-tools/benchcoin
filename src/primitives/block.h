@@ -67,6 +67,10 @@ public:
 
 class CBlock : public CBlockHeader
 {
+    mutable uint256 m_hash{};
+    mutable size_t m_size_no_witness{0};
+    mutable size_t m_size_with_witness{0};
+
 public:
     // network and disk
     std::vector<CTransactionRef> vtx;
@@ -99,6 +103,36 @@ public:
         fChecked = false;
         m_checked_witness_commitment = false;
         m_checked_merkle_root = false;
+        m_size_no_witness = 0;
+        m_size_with_witness = 0;
+        m_hash.SetNull();
+    }
+
+    uint256 GetHash() const {
+        if (fChecked && !m_hash.IsNull()) return m_hash;
+        const uint256 hash{CBlockHeader::GetHash()};
+        if (fChecked) m_hash = hash;
+        return hash;
+    }
+
+    size_t SizeNoWitness() const {
+        if (fChecked && m_size_with_witness) {
+            // assert (m_size_no_witness == GetSerializeSize(TX_NO_WITNESS(*this))); // TODO: remove this assert
+            return m_size_no_witness;
+        }
+        const size_t size{GetSerializeSize(TX_NO_WITNESS(*this))};
+        if (fChecked) m_size_no_witness = size;
+        return size;
+    }
+
+    size_t SizeWithWitness() const {
+        if (fChecked && m_size_with_witness) {
+            // assert (m_size_with_witness == GetSerializeSize(TX_WITH_WITNESS(*this))); // TODO: remove this assert
+            return m_size_with_witness;
+        }
+        const size_t size{GetSerializeSize(TX_WITH_WITNESS(*this))};
+        if (fChecked) m_size_with_witness = size;
+        return size;
     }
 
     CBlockHeader GetBlockHeader() const

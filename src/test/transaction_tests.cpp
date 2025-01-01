@@ -389,7 +389,7 @@ BOOST_AUTO_TEST_CASE(tx_oversized)
         return CTransaction(tx);
     };
     const auto maxTransactionSize = MAX_BLOCK_WEIGHT / WITNESS_SCALE_FACTOR;
-    const auto oversizedTransactionBaseSize = ::GetSerializeSize(TX_NO_WITNESS(createTransaction(maxTransactionSize))) - maxTransactionSize;
+    const auto oversizedTransactionBaseSize = createTransaction(maxTransactionSize).SizeNoWitness() - maxTransactionSize;
 
     auto maxPayloadSize = maxTransactionSize - oversizedTransactionBaseSize;
     {

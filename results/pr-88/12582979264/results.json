@@ -1,0 +1,84 @@
+{
+  "results": [
+    {
+      "command": "base (d158c68b105e1f684733a17c8263ffdc0bfc3cff)",
+      "mean": 448.8954923071,
+      "stddev": null,
+      "median": 448.8954923071,
+      "user": 655.81575784,
+      "system": 129.41146555999998,
+      "min": 448.8954923071,
+      "max": 448.8954923071,
+      "times": [
+        448.8954923071
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "d158c68b105e1f684733a17c8263ffdc0bfc3cff"
+      },
+      "network": "mainnet"
+    },
+    {
+      "command": "head (e81dd9c9f17feaff0b799554137a2e8c8468a85e)",
+      "mean": 462.19718175410003,
+      "stddev": null,
+      "median": 462.19718175410003,
+      "user": 643.4304488399999,
+      "system": 120.64490356,
+      "min": 462.19718175410003,
+      "max": 462.19718175410003,
+      "times": [
+        462.19718175410003
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "e81dd9c9f17feaff0b799554137a2e8c8468a85e"
+      },
+      "network": "mainnet"
+    },
+    {
+      "command": "base (d158c68b105e1f684733a17c8263ffdc0bfc3cff)",
+      "mean": 25.18188598976,
+      "stddev": null,
+      "median": 25.18188598976,
+      "user": 2.31801732,
+      "system": 0.78825608,
+      "min": 25.18188598976,
+      "max": 25.18188598976,
+      "times": [
+        25.18188598976
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "d158c68b105e1f684733a17c8263ffdc0bfc3cff"
+      },
+      "network": "signet"
+    },
+    {
+      "command": "head (e81dd9c9f17feaff0b799554137a2e8c8468a85e)",
+      "mean": 25.077174079760002,
+      "stddev": null,
+      "median": 25.077174079760002,
+      "user": 2.26628732,
+      "system": 0.76979208,
+      "min": 25.077174079760002,
+      "max": 25.077174079760002,
+      "times": [
+        25.077174079760002
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "e81dd9c9f17feaff0b799554137a2e8c8468a85e"
+      },
+      "network": "signet"
+    }
+  ]
+}

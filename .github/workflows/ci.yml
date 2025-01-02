@@ -53,11 +53,15 @@ jobs:
         run: |
           env
           mkdir -p "$TMP_DATADIR"
-          nix-shell --command "just run-assumeutxo-${{ matrix.network }}-ci $BASE_SHA $CHECKOUT_COMMIT $TMP_DATADIR $UTXO_PATH ${{ runner.temp }}/results.json ${{ matrix.dbcache }}"
+          nix-shell --command "just run-assumeutxo-${{ matrix.network }}-ci $BASE_SHA $CHECKOUT_COMMIT $TMP_DATADIR $UTXO_PATH ${{ runner.temp }}/results.json ${{ matrix.dbcache }} ${{ runner.temp }}/pngs"
       - uses: actions/upload-artifact@v4
         with:
           name: result-${{ matrix.network }}
           path: "${{ runner.temp }}/results.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pngs-${{ matrix.network }}
+          path: "${{ runner.temp }}/pngs/*.png"
       - uses: actions/upload-artifact@v4
         with:
           name: flamegraph-${{ matrix.network }}

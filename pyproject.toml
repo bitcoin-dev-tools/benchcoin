@@ -9,5 +9,7 @@ dependencies = [
   # Removing in favour of packaged nixpkgs bin which is not dynamically linked
   # "ruff==0.5.5",
   "vulture==2.6",
-  "pyperf"
+  "pyperf==2.8.0",
+  "matplotlib==3.8.0",
+  "numpy==1.26.0"
 ]

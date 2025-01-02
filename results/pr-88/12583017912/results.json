@@ -1,0 +1,84 @@
+{
+  "results": [
+    {
+      "command": "base (d158c68b105e1f684733a17c8263ffdc0bfc3cff)",
+      "mean": 462.17174339508,
+      "stddev": null,
+      "median": 462.17174339508,
+      "user": 654.6221039799999,
+      "system": 127.02976419999999,
+      "min": 462.17174339508,
+      "max": 462.17174339508,
+      "times": [
+        462.17174339508
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "d158c68b105e1f684733a17c8263ffdc0bfc3cff"
+      },
+      "network": "mainnet"
+    },
+    {
+      "command": "head (2335e9a02f7bb6262e382d9670fdaaaaca83ac9c)",
+      "mean": 457.40418433608,
+      "stddev": null,
+      "median": 457.40418433608,
+      "user": 657.59330098,
+      "system": 123.52922819999999,
+      "min": 457.40418433608,
+      "max": 457.40418433608,
+      "times": [
+        457.40418433608
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "2335e9a02f7bb6262e382d9670fdaaaaca83ac9c"
+      },
+      "network": "mainnet"
+    },
+    {
+      "command": "base (d158c68b105e1f684733a17c8263ffdc0bfc3cff)",
+      "mean": 25.0733531419,
+      "stddev": null,
+      "median": 25.0733531419,
+      "user": 2.24569954,
+      "system": 0.75972906,
+      "min": 25.0733531419,
+      "max": 25.0733531419,
+      "times": [
+        25.0733531419
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "d158c68b105e1f684733a17c8263ffdc0bfc3cff"
+      },
+      "network": "signet"
+    },
+    {
+      "command": "head (2335e9a02f7bb6262e382d9670fdaaaaca83ac9c)",
+      "mean": 25.1225030249,
+      "stddev": null,
+      "median": 25.1225030249,
+      "user": 2.34115454,
+      "system": 0.72487206,
+      "min": 25.1225030249,
+      "max": 25.1225030249,
+      "times": [
+        25.1225030249
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "2335e9a02f7bb6262e382d9670fdaaaaca83ac9c"
+      },
+      "network": "signet"
+    }
+  ]
+}

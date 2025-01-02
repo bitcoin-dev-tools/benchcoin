@@ -82,7 +82,23 @@ conclude_assumeutxo_snapshot_run() {
   set -euxo pipefail
 
   local commit="$1"
+  local TMP_DATADIR="$2"
+  local PNG_DIR="$3"
 
+  if [ -e "${TMP_DATADIR}/debug.log" ]; then
+    echo "Generating plots from debug.log"
+    if [ -x "bench-ci/parse_and_plot.py" ]; then
+      bench-ci/parse_and_plot.py "${TMP_DATADIR}" "${PNG_DIR}"
+    else
+      ls -al "bench-ci/"
+      echo "parse_and_plot.py not found or not executable, skipping plot generation"
+    fi
+  else
+    ls -al "${TMP_DATADIR}/"
+    echo "debug.log not found, skipping plot generation"
+  fi
+
+  # Move flamegraph if exists
   if [ -e flamegraph.html ]; then
     mv flamegraph.html "${commit}"-flamegraph.html
   fi
@@ -105,9 +121,10 @@ run_benchmark() {
   local TMP_DATADIR="$3"
   local UTXO_PATH="$4"
   local results_file="$5"
-  local chain="$6"
-  local stop_at_height="$7"
-  local connect_address="$8"
+  local png_dir="$6"
+  local chain="$7"
+  local stop_at_height="$8"
+  local connect_address="$9"
 
   # Export functions so they can be used by hyperfine
   export -f setup_assumeutxo_snapshot_run
@@ -121,7 +138,7 @@ run_benchmark() {
   hyperfine \
     --setup "setup_assumeutxo_snapshot_run {commit} ${TMP_DATADIR}" \
     --prepare "prepare_assumeutxo_snapshot_run ${TMP_DATADIR} ${UTXO_PATH} ${connect_address} ${chain}" \
-    --conclude "conclude_assumeutxo_snapshot_run {commit}" \
+    --conclude "conclude_assumeutxo_snapshot_run {commit} ${TMP_DATADIR} ${png_dir}" \
     --cleanup "cleanup_assumeutxo_snapshot_run ${TMP_DATADIR}" \
     --runs 1 \
     --show-output \
@@ -133,9 +150,9 @@ run_benchmark() {
 }
 
 # Main execution
-if [ "$#" -ne 8 ]; then
-  echo "Usage: $0 base_commit head_commit TMP_DATADIR UTXO_PATH results_dir chain stop_at_height connect_address"
+if [ "$#" -ne 9 ]; then
+  echo "Usage: $0 base_commit head_commit TMP_DATADIR UTXO_PATH results_dir png_dir chain stop_at_height connect_address"
   exit 1
 fi
 
-run_benchmark "$1" "$2" "$3" "$4" "$5" "$6" "$7" "$8"
+run_benchmark "$1" "$2" "$3" "$4" "$5" "$6" "$7" "$8" "$9"

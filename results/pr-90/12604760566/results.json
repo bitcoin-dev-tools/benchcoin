@@ -1,0 +1,84 @@
+{
+  "results": [
+    {
+      "command": "base (d158c68b105e1f684733a17c8263ffdc0bfc3cff)",
+      "mean": 4.63907926282,
+      "stddev": null,
+      "median": 4.63907926282,
+      "user": 4.066456059999999,
+      "system": 0.6689628999999999,
+      "min": 4.63907926282,
+      "max": 4.63907926282,
+      "times": [
+        4.63907926282
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "d158c68b105e1f684733a17c8263ffdc0bfc3cff"
+      },
+      "network": "mainnet"
+    },
+    {
+      "command": "head (52bb580f31e0703dc038dc17ea6b547151c530ab)",
+      "mean": 4.57084274982,
+      "stddev": null,
+      "median": 4.57084274982,
+      "user": 3.81443006,
+      "system": 0.5965109,
+      "min": 4.57084274982,
+      "max": 4.57084274982,
+      "times": [
+        4.57084274982
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "52bb580f31e0703dc038dc17ea6b547151c530ab"
+      },
+      "network": "mainnet"
+    },
+    {
+      "command": "base (d158c68b105e1f684733a17c8263ffdc0bfc3cff)",
+      "mean": 1.2161829153600001,
+      "stddev": null,
+      "median": 1.2161829153600001,
+      "user": 0.74225378,
+      "system": 0.15357518,
+      "min": 1.2161829153600001,
+      "max": 1.2161829153600001,
+      "times": [
+        1.2161829153600001
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "d158c68b105e1f684733a17c8263ffdc0bfc3cff"
+      },
+      "network": "signet"
+    },
+    {
+      "command": "head (52bb580f31e0703dc038dc17ea6b547151c530ab)",
+      "mean": 1.2552048203600001,
+      "stddev": null,
+      "median": 1.2552048203600001,
+      "user": 0.74033278,
+      "system": 0.15266417999999998,
+      "min": 1.2552048203600001,
+      "max": 1.2552048203600001,
+      "times": [
+        1.2552048203600001
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "52bb580f31e0703dc038dc17ea6b547151c530ab"
+      },
+      "network": "signet"
+    }
+  ]
+}

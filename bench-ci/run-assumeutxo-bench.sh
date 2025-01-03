@@ -85,10 +85,12 @@ conclude_assumeutxo_snapshot_run() {
   local TMP_DATADIR="$2"
   local PNG_DIR="$3"
 
-  if [ -e "${TMP_DATADIR}/debug.log" ]; then
-    echo "Generating plots from debug.log"
+  # Search in subdirs e.g. $datadir/signet
+  debug_log=$(find "${TMP_DATADIR}" -name debug.log -print -quit)
+  if [ -n "${debug_log}" ]; then
+    echo "Generating plots from ${debug_log}"
     if [ -x "bench-ci/parse_and_plot.py" ]; then
-      bench-ci/parse_and_plot.py "${TMP_DATADIR}" "${PNG_DIR}"
+      bench-ci/parse_and_plot.py "$(dirname "${debug_log}")" "${PNG_DIR}"
     else
       ls -al "bench-ci/"
       echo "parse_and_plot.py not found or not executable, skipping plot generation"

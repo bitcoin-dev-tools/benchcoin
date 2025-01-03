@@ -17,6 +17,7 @@
 #include <cstdint>
 #include <cstring>
 #include <optional>
+#include <serialize.h>
 #include <string>
 #include <string_view>
 
@@ -111,14 +112,16 @@ public:
 
     constexpr uint64_t GetUint64(int pos) const { return ReadLE64(m_data.data() + pos * 8); }
 
-    template<typename Stream>
-    void Serialize(Stream& s) const
+    template<typename Stream> void Serialize(Stream& s) const
     {
-        s << Span(m_data);
+        if constexpr (ContainsSizeComputer<Stream>) {
+            s.GetStream().seek(WIDTH);
+        } else {
+            s << Span(m_data);
+        }
     }
 
-    template<typename Stream>
-    void Unserialize(Stream& s)
+    template<typename Stream> void Unserialize(Stream& s)
     {
         s.read(MakeWritableByteSpan(m_data));
     }

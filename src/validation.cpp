@@ -793,7 +793,7 @@ bool MemPoolAccept::PreChecks(ATMPArgs& args, Workspace& ws)
     }
 
     // Transactions smaller than 65 non-witness bytes are not relayed to mitigate CVE-2017-12842.
-    if (::GetSerializeSize(TX_NO_WITNESS(tx)) < MIN_STANDARD_TX_NONWITNESS_SIZE)
+    if (tx.GetStrippedSize() < MIN_STANDARD_TX_NONWITNESS_SIZE)
         return state.Invalid(TxValidationResult::TX_NOT_STANDARD, "tx-size-small");
 
     // Only accept nLockTime-using transactions that can be mined in the next
@@ -4143,8 +4143,7 @@ bool IsBlockMutated(const CBlock& block, bool check_witness_root)
         //
         // Note: This is not a consensus change as this only applies to blocks that
         // don't have a coinbase transaction and would therefore already be invalid.
-        return std::any_of(block.vtx.begin(), block.vtx.end(),
-                           [](auto& tx) { return GetSerializeSize(TX_NO_WITNESS(tx)) == 64; });
+        return std::ranges::any_of(block.vtx, [](auto& tx) { return tx->GetStrippedSize() == 64; });
     } else {
         // Theoretically it is still possible for a block with a 64 byte
         // coinbase transaction to be mutated but we neglect that possibility

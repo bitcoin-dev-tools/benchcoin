@@ -132,7 +132,7 @@ class BlockValidationState : public ValidationState<BlockValidationResult> {};
 // weight = (stripped_size * 3) + total_size.
 static inline int32_t GetTransactionWeight(const CTransaction& tx)
 {
-    return ::GetSerializeSize(TX_NO_WITNESS(tx)) * (WITNESS_SCALE_FACTOR - 1) + ::GetSerializeSize(TX_WITH_WITNESS(tx));
+    return tx.GetStrippedSize() * (WITNESS_SCALE_FACTOR - 1) + tx.GetTotalSize();
 }
 static inline int64_t GetBlockWeight(const CBlock& block)
 {

@@ -313,11 +313,14 @@ private:
     const bool m_has_witness;
     const Txid hash;
     const Wtxid m_witness_hash;
+    const size_t m_size;          // Total size with witness
+    const size_t m_stripped_size; // Size without witness
 
     Txid ComputeHash() const;
     Wtxid ComputeWitnessHash() const;
-
     bool ComputeHasWitness() const;
+    size_t ComputeSize() const;
+    size_t ComputeStrippedSize() const;
 
 public:
     /** Convert a CMutableTransaction into a CTransaction. */
@@ -351,7 +354,8 @@ public:
      * "Total Size" defined in BIP141 and BIP144.
      * @return Total transaction size in bytes
      */
-    unsigned int GetTotalSize() const;
+    size_t GetTotalSize() const { return m_size; }
+    size_t GetStrippedSize() const { return m_stripped_size; }
 
     bool IsCoinBase() const
     {

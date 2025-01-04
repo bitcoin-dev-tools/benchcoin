@@ -123,7 +123,7 @@ in pkgs.mkShell {
       echo "Setting up python venv"
 
       # fixes libstdc++ issues and libgl.so issues
-      export LD_LIBRARY_PATH=${stdenv.cc.cc.lib}/lib/:$LD_LIBRARY_PATH
+      # export LD_LIBRARY_PATH=${stdenv.cc.cc.lib}/lib/:$LD_LIBRARY_PATH
 
       uv venv --python 3.10
       source .venv/bin/activate

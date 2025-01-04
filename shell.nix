@@ -105,6 +105,8 @@ in pkgs.mkShell {
       uv
 
       # Benchmarking
+      binutils    # For addr2line and other symbol tools
+      elfutils    # For stack unwinding and symbol resolution
       flamegraph
       hyperfine
       jq

@@ -131,20 +131,20 @@ in pkgs.mkShell {
       source .venv/bin/activate
       uv pip install -r pyproject.toml
 
-      BCC_EGG=${pkgs.linuxPackages.bcc}/${pkgs.python3.sitePackages}/bcc-${pkgs.linuxPackages.bcc.version}-py3.${pkgs.python3.sourceVersion.minor}.egg
-
-      echo "adding bcc egg to PYTHONPATH: $BCC_EGG"
-      if [ -f $BCC_EGG ]; then
-        export PYTHONPATH="$PYTHONPATH:$BCC_EGG"
-        echo ""
-      else
-        echo "The bcc egg $BCC_EGG does not exist. Maybe the python or bcc version is different?"
-      fi
-
-      echo "adding ${builtins.concatStringsSep ":" binDirs} to \$PATH to make running built binaries more natural"
-      export PATH=$PATH:${builtins.concatStringsSep ":" binDirs};
-
-      rustup default stable
-      rustup component add rustfmt
+      # BCC_EGG=${pkgs.linuxPackages.bcc}/${pkgs.python3.sitePackages}/bcc-${pkgs.linuxPackages.bcc.version}-py3.${pkgs.python3.sourceVersion.minor}.egg
+      #
+      # echo "adding bcc egg to PYTHONPATH: $BCC_EGG"
+      # if [ -f $BCC_EGG ]; then
+      #   export PYTHONPATH="$PYTHONPATH:$BCC_EGG"
+      #   echo ""
+      # else
+      #   echo "The bcc egg $BCC_EGG does not exist. Maybe the python or bcc version is different?"
+      # fi
+      #
+      # echo "adding ${builtins.concatStringsSep ":" binDirs} to \$PATH to make running built binaries more natural"
+      # export PATH=$PATH:${builtins.concatStringsSep ":" binDirs};
+      #
+      # rustup default stable
+      # rustup component add rustfmt
     '';
 }

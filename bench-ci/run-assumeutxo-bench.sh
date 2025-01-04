@@ -53,7 +53,7 @@ setup_assumeutxo_snapshot_run() {
       -DBUILD_BENCH=OFF \
       -DBUILD_TESTS=OFF \
       -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-      -DCMAKE_CXX_FLAGS="-fno-omit-frame-pointer" \
+      -DCMAKE_CXX_FLAGS="-fno-omit-frame-pointer -g3" \
       -DCMAKE_C_COMPILER_LAUNCHER=ccache \
       -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
   cmake --build build -j "$(nproc)"

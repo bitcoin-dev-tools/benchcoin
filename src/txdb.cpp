@@ -116,21 +116,45 @@ bool CCoinsViewDB::BatchWrite(CoinsViewCacheCursor& cursor, const uint256 &hashB
     batch.Erase(DB_BEST_BLOCK);
     batch.Write(DB_HEAD_BLOCKS, Vector(hashBlock, old_tip));
 
-    for (auto it{cursor.Begin()}; it != cursor.End();) {
+    auto SortedWrite{[&](std::vector<std::pair<COutPoint, Coin>>& entries) {
+        if (entries.empty()) return;
+        std::ranges::sort(entries, [](const auto& a, const auto& b) { return b.first.hash < a.first.hash; });
+        for (const auto& [outpoint, coin] : entries) {
+            if (coin.IsSpent()) {
+                batch.Erase(CoinEntry{&outpoint});
+            } else {
+                batch.Write(CoinEntry{&outpoint}, coin);
+            }
+        }
+        entries.clear();
+        m_db->WriteBatch(batch);
+    }};
+
+    const size_t batch_size{m_options.batch_write_bytes / sizeof(std::pair<COutPoint, Coin>)};
+    std::vector<std::pair<COutPoint, Coin>> dirty_entries;
+    dirty_entries.reserve(batch_size);
+    size_t size_estimate{0};
+    for (auto it{cursor.Begin()}; it != cursor.End(); it = cursor.NextAndMaybeErase(*it)) {
         if (it->second.IsDirty()) {
-            CoinEntry entry(&it->first);
-            if (it->second.coin.IsSpent())
-                batch.Erase(entry);
-            else
-                batch.Write(entry, it->second.coin);
+            size_estimate += it->second.coin.IsSpent()
+                           ? 2 + DBWRAPPER_PREALLOC_KEY_SIZE
+                           : 3 + DBWRAPPER_PREALLOC_KEY_SIZE + 1 + DBWRAPPER_PREALLOC_VALUE_SIZE;
+
+            if (cursor.WillErase(*it)) {
+                dirty_entries.emplace_back(it->first, std::move(it->second.coin));
+            } else {
+                dirty_entries.emplace_back(it->first, it->second.coin);
+            }
             changed++;
         }
         count++;
-        it = cursor.NextAndMaybeErase(*it);
-        if (batch.SizeEstimate() > m_options.batch_write_bytes) {
-            LogDebug(BCLog::COINDB, "Writing partial batch of %.2f MiB\n", batch.SizeEstimate() * (1.0 / 1048576.0));
-            m_db->WriteBatch(batch);
+
+        if (size_estimate > m_options.batch_write_bytes) {
+            SortedWrite(dirty_entries);
+            LogDebug(BCLog::COINDB, "Writing partial batch of %.2f MiB", batch.SizeEstimate() * (1.0 / 1048576.0));
             batch.Clear();
+            size_estimate = 0;
+
             if (m_options.simulate_crash_ratio) {
                 static FastRandomContext rng;
                 if (rng.randrange(m_options.simulate_crash_ratio) == 0) {
@@ -140,6 +164,7 @@ bool CCoinsViewDB::BatchWrite(CoinsViewCacheCursor& cursor, const uint256 &hashB
             }
         }
     }
+    SortedWrite(dirty_entries);
 
     // In the last batch, mark the database as consistent with hashBlock again.
     batch.Erase(DB_HEAD_BLOCKS);

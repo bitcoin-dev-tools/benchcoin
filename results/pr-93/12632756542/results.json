@@ -1,0 +1,84 @@
+{
+  "results": [
+    {
+      "command": "base (05e31826e2462a2a998ae964ff64411fb0b332f0)",
+      "mean": 388.61336337278004,
+      "stddev": null,
+      "median": 388.61336337278004,
+      "user": 451.3870136,
+      "system": 50.01039488,
+      "min": 388.61336337278004,
+      "max": 388.61336337278004,
+      "times": [
+        388.61336337278004
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "05e31826e2462a2a998ae964ff64411fb0b332f0"
+      },
+      "network": "mainnet"
+    },
+    {
+      "command": "head (fd8e8957330d56e1b82626f6f98a5ca22c823c06)",
+      "mean": 391.58326563478,
+      "stddev": null,
+      "median": 391.58326563478,
+      "user": 450.8721056,
+      "system": 51.47601588,
+      "min": 391.58326563478,
+      "max": 391.58326563478,
+      "times": [
+        391.58326563478
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "fd8e8957330d56e1b82626f6f98a5ca22c823c06"
+      },
+      "network": "mainnet"
+    },
+    {
+      "command": "base (05e31826e2462a2a998ae964ff64411fb0b332f0)",
+      "mean": 25.11838956344,
+      "stddev": null,
+      "median": 25.11838956344,
+      "user": 2.526882,
+      "system": 0.7511528199999999,
+      "min": 25.11838956344,
+      "max": 25.11838956344,
+      "times": [
+        25.11838956344
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "05e31826e2462a2a998ae964ff64411fb0b332f0"
+      },
+      "network": "signet"
+    },
+    {
+      "command": "head (fd8e8957330d56e1b82626f6f98a5ca22c823c06)",
+      "mean": 26.13629581744,
+      "stddev": null,
+      "median": 26.13629581744,
+      "user": 2.547031,
+      "system": 0.8376548199999999,
+      "min": 26.13629581744,
+      "max": 26.13629581744,
+      "times": [
+        26.13629581744
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "fd8e8957330d56e1b82626f6f98a5ca22c823c06"
+      },
+      "network": "signet"
+    }
+  ]
+}

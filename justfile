@@ -16,9 +16,12 @@ build-assumeutxo-binaries base_commit head_commit:
         git checkout "$commit"
         taskset -c 0-15 cmake -B "build-$name" \
             -DBUILD_BENCH=OFF \
+            -DBUILD_CLI=OFF \
             -DBUILD_TESTS=OFF \
             -DBUILD_TX=OFF \
             -DBUILD_UTIL=OFF \
+            -DENABLE_EXTERNAL_SIGNER=OFF \
+            -DENABLE_WALLET=OFF \
             -DINSTALL_MAN=OFF \
             -DCMAKE_BUILD_TYPE=RelWithDebInfo \
             -DCMAKE_C_COMPILER_LAUNCHER=ccache \

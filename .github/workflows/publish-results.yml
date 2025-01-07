@@ -111,7 +111,7 @@ jobs:
 
                 // Calculate speedup if we have both measurements
                 if (baseMean && headMean) {
-                const speedup = baseMean > 0 ? ((baseMean - headMean) / baseMean * 100).toFixed(1) : 'N/A';
+                  const speedup = baseMean > 0 ? ((baseMean - headMean) / baseMean * 100).toFixed(1) : 'N/A';
                   combinedResults.speedups[network] = speedup;
                 }
 
@@ -125,11 +125,11 @@ jobs:
                 }
 
                 // Move plots
-                if (fs.existsSync(plotsDir)) {
+                if (fs.existsSync(`${network}-plots`)) {
                   const targetPlotsDir = `${resultDir}/${network}-plots`;
                   fs.mkdirSync(targetPlotsDir, { recursive: true });
-                  fs.readdirSync(plotsDir).forEach(plot => {
-                    const sourcePlot = `${plotsDir}/${plot}`;
+                  fs.readdirSync(`${network}-plots`).forEach(plot => {
+                    const sourcePlot = `${network}-plots/${plot}`;
                     const targetPlot = `${targetPlotsDir}/${plot}`;
                     fs.copyFileSync(sourcePlot, targetPlot);
                   });
@@ -166,7 +166,15 @@ jobs:
                             .map(result => {
                               const commitShortId = result.parameters.commit.slice(0, 8);
                               const flameGraphFile = `${network}-${result.parameters.commit}-flamegraph.svg`;
-                              const flameGraphPath = `${resultDir}/${flameGraphFile}`;
+                              const flameGraphPath = `${resultDir}/${network}-${result.parameters.commit}-flamegraph.svg`;
+
+                              // Query PNG files dynamically
+                              const plotDir = `${resultDir}/${network}-plots`;
+                              const plots = fs.existsSync(plotDir)
+                                ? fs.readdirSync(plotDir)
+                                    .map(plot => `<img src="${network}-plots/${plot}" alt="${plot}" class="mb-4 max-w-full h-auto">`)
+                                    .join('')
+                                : '';
 
                               return `
                                 <table class="min-w-full table-auto mb-4">
@@ -193,20 +201,10 @@ jobs:
                                     </tr>
                                   </tbody>
                                 </table>
-
                                 ${fs.existsSync(flameGraphPath) ? `
                                   <object data="${flameGraphFile}" type="image/svg+xml" width="100%" style="height: 600px;" class="mb-4"></object>
                                 ` : ''}
-                                ${fs.existsSync("${network}-plots/cache_vs_height.png") ? `
-                                  <h4 class="text-lg font-semibold mt-6 mb-4">Additional Plots</h4>
-                                  <div>
-                                    <img src="${network}-plots/height_vs_time.png" alt="Height vs Time" class="mb-4 max-w-full h-auto">
-                                    <img src="${network}-plots/cache_vs_height.png" alt="Cache vs Height" class="mb-4 max-w-full h-auto">
-                                    <img src="${network}-plots/cache_vs_time.png" alt="Cache vs Time" class="mb-4 max-w-full h-auto">
-                                    <img src="${network}-plots/tx_vs_height.png" alt="Tx vs Height" class="mb-4 max-w-full h-auto">
-                                    <img src="${network}-plots/coins_cache_vs_time.png" alt="Coins cache vs Time" class="mb-4 max-w-full h-auto">
-                                  </div>
-                                ` : ''}
+                                ${plots}
                               `;
                             }).join('')}
                         </div>
@@ -291,5 +289,5 @@ jobs:
         run: |
           gh pr comment ${{ needs.build.outputs.pr-number }} \
             --repo ${{ github.repository }} \
-            --body "📊 Benchmark results for this run (${{ github.event.workflow_run.id }}) will be available at: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/results/pr-${{ needs.build.outputs.pr-number }}/${{ github.event.workflow_run.id }}/index.html after the github pages \"build and deployment\" action has completed.
+            --body "📊 Benchmark results for this run (${{ github.event.workflow_run.id }}) will be available at: https://${{ github.repository_owner }}.github.io/${{ github.repository.name }}/results/pr-${{ needs.build.outputs.pr-number }}/${{ github.event.workflow_run.id }}/index.html after the github pages \"build and deployment\" action has completed.
           🚀 Speedups: ${{ needs.build.outputs.speedups }}"

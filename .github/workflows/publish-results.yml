@@ -203,7 +203,7 @@ jobs:
                                     <img src="${network}-plots/cache_vs_height.png" alt="Cache vs Height" class="mb-4 max-w-full h-auto">
                                     <img src="${network}-plots/cache_vs_time.png" alt="Cache vs Time" class="mb-4 max-w-full h-auto">
                                     <img src="${network}-plots/tx_vs_height.png" alt="Tx vs Height" class="mb-4 max-w-full h-auto">
-                                    <img src="${network}-plots/coins_cache_vs_height.png" alt="Coins cache vs Height" class="mb-4 max-w-full h-auto">
+                                    <img src="${network}-plots/coins_cache_vs_time.png" alt="Coins cache vs Time" class="mb-4 max-w-full h-auto">
                                   </div>
                                 ` : ''}
                               `;

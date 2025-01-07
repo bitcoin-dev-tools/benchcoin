@@ -55,6 +55,7 @@ jobs:
         with:
           script: |
             const fs = require('fs');
+            const path = require('path');
             const networks = process.env.NETWORKS.split(',');
             let prNumber = 'master';
             let runId;
@@ -110,7 +111,7 @@ jobs:
 
                 // Calculate speedup if we have both measurements
                 if (baseMean && headMean) {
-                  const speedup = ((baseMean - headMean) / baseMean * 100).toFixed(1);
+                const speedup = baseMean > 0 ? ((baseMean - headMean) / baseMean * 100).toFixed(1) : 'N/A';
                   combinedResults.speedups[network] = speedup;
                 }
 

@@ -140,7 +140,7 @@ run_benchmark() {
     --export-json "${results_file}" \
     --command-name "base (${base_commit})" \
     --command-name "head (${head_commit})" \
-    "taskset -c 1 flamegraph -F 99 -- taskset -c 2-15 ${BINARIES_DIR}/bitcoind-{commit} -datadir=${TMP_DATADIR} -connect=${connect_address} -daemon=0 -chain=${chain} -stopatheight=${stop_at_height} -dbcache=${dbcache} -printtoconsole=0" \
+    "taskset -c 1 flamegraph -F 99 -- taskset -c 2-15 ${BINARIES_DIR}/bitcoind-{commit} -datadir=${TMP_DATADIR} -connect=${connect_address} -daemon=0 -chain=${chain} -stopatheight=${stop_at_height} -dbcache=${dbcache} -printtoconsole=0 -debug=coindb -debug=leveldb -debug=bench -debug=validation" \
     -L commit "base,head"
 }
 

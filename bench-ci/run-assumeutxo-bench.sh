@@ -137,7 +137,6 @@ run_benchmark() {
     --conclude "conclude_assumeutxo_snapshot_run {commit} ${TMP_DATADIR} ${png_dir}" \
     --cleanup "cleanup_assumeutxo_snapshot_run ${TMP_DATADIR}" \
     --runs 1 \
-    --show-output \
     --export-json "${results_file}" \
     --command-name "base (${base_commit})" \
     --command-name "head (${head_commit})" \

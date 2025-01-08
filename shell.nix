@@ -6,6 +6,37 @@ let
   inherit (pkgs.lib) optionals strings;
   inherit (pkgs) stdenv;
 
+  # Override the default cargo-flamegraph with a custom fork
+  cargo-flamegraph = pkgs.rustPlatform.buildRustPackage rec {
+    pname =
+      "flamegraph"; # Match the name in Cargo.toml, doesn't seem to work otherwise
+    version = "bitcoin-core";
+
+    src = pkgs.fetchFromGitHub {
+      owner = "willcl-ark";
+      repo = "flamegraph";
+      rev = "bitcoin-core";
+      sha256 = "sha256-tQbr3MYfAiOxeT12V9au5KQK5X5JeGuV6p8GR/Sgen4=";
+    };
+
+    doCheck = false;
+    cargoHash = "sha256-QWPqTyTFSZNJNayNqLmsQSu0rX26XBKfdLROZ9tRjrg=";
+
+    useFetchCargoVendor = true;
+
+    nativeBuildInputs =
+      pkgs.lib.optionals stdenv.hostPlatform.isLinux [ pkgs.makeWrapper ];
+    buildInputs = pkgs.lib.optionals stdenv.hostPlatform.isDarwin
+      [ pkgs.darwin.apple_sdk.frameworks.Security ];
+
+    postFixup = pkgs.lib.optionalString stdenv.hostPlatform.isLinux ''
+      wrapProgram $out/bin/cargo-flamegraph \
+        --set-default PERF ${pkgs.linuxPackages.perf}/bin/perf
+      wrapProgram $out/bin/flamegraph \
+        --set-default PERF ${pkgs.linuxPackages.perf}/bin/perf
+    '';
+  };
+
   # Hyperfine
   # Included here because we need master for the `--conclude` flag from pr 719
   hyperfine = pkgs.rustPlatform.buildRustPackage rec {

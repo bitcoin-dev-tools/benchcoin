@@ -29,10 +29,11 @@ jobs:
         env:
           CCACHE_DIR: /data/ccache
         run: |
-          mkdir -p ${{ runner.temp }}/binaries
+          mkdir -p ${{ runner.temp }}/binaries/base
+          mkdir -p ${{ runner.temp }}/binaries/head
           nix-shell --command "just build-assumeutxo-binaries $BASE_SHA $CHECKOUT_COMMIT"
-          cp build-base/src/bitcoind ${{ runner.temp }}/binaries/bitcoind-base
-          cp build-head/src/bitcoind ${{ runner.temp }}/binaries/bitcoind-head
+          cp build-base/src/bitcoind ${{ runner.temp }}/binaries/base/bitcoind
+          cp build-head/src/bitcoind ${{ runner.temp }}/binaries/head/bitcoind
       - name: Upload binaries
         uses: actions/upload-artifact@v4
         with:
@@ -73,8 +74,8 @@ jobs:
           path: ${{ runner.temp }}/binaries
       - name: Set binary permissions
         run: |
-          chmod +x ${{ runner.temp }}/binaries/bitcoind-base
-          chmod +x ${{ runner.temp }}/binaries/bitcoind-head
+          chmod +x ${{ runner.temp }}/binaries/base/bitcoind
+          chmod +x ${{ runner.temp }}/binaries/head/bitcoind
       - name: Fetch base commit
         run: |
           echo "CHECKOUT_COMMIT=$(git rev-parse HEAD)" >> "$GITHUB_ENV"

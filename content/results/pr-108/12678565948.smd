@@ -1,0 +1,15 @@
+---
+.title = "Pull Request 108",
+.date = @date("2025-01-09T00:00:00"),
+.author = "benchcoin contributors",
+.layout = "pr.shtml",
+.draft = false,
+---
+# Results from PR 108, run 12678565948
+
+```=html
+<object
+  data="/108/mainnet-large-head-flamegraph.svg"
+  type="image/svg+xml"
+  style="width: 100%; height: 100vh;">
+</object>

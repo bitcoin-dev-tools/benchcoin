@@ -1,8 +1,0 @@
----
-.title = "First Post!",
-.date = @date("2020-07-06T00:00:00"),
-.author = "Sample Author",
-.layout = "pr.shtml",
-.draft = false,
----
-This is my first post!

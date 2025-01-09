@@ -142,7 +142,11 @@ public:
     {
         unsigned int len = size();
         ::WriteCompactSize(s, len);
-        s << Span{vch, len};
+        if constexpr (ContainsSizeComputer<Stream>) {
+            s.GetStream().seek(len);
+        } else {
+            s << Span{vch, len};
+        }
     }
     template <typename Stream>
     void Unserialize(Stream& s)

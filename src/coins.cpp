@@ -34,8 +34,10 @@ bool CCoinsViewBacked::BatchWrite(CoinsViewCacheCursor& cursor, const uint256 &h
 std::unique_ptr<CCoinsViewCursor> CCoinsViewBacked::Cursor() const { return base->Cursor(); }
 size_t CCoinsViewBacked::EstimateSize() const { return base->EstimateSize(); }
 
-CCoinsViewCache::CCoinsViewCache(CCoinsView* baseIn, bool deterministic) :
-    CCoinsViewBacked(baseIn), m_deterministic(deterministic),
+CCoinsViewCache::CCoinsViewCache(CCoinsView* baseIn, size_t coinstip_cache_size_bytes, bool deterministic) :
+    CCoinsViewBacked(baseIn),
+    m_coinstip_cache_size_bytes(coinstip_cache_size_bytes),
+    m_deterministic(deterministic),
     cacheCoins(0, SaltedOutpointHasher(/*deterministic=*/deterministic), CCoinsMap::key_equal{}, &m_cache_coins_memory_resource)
 {
     m_sentinel.second.SelfRef(m_sentinel);
@@ -315,7 +317,15 @@ void CCoinsViewCache::ReallocateCache()
     cacheCoins.~CCoinsMap();
     m_cache_coins_memory_resource.~CCoinsMapMemoryResource();
     ::new (&m_cache_coins_memory_resource) CCoinsMapMemoryResource{};
-    ::new (&cacheCoins) CCoinsMap{0, SaltedOutpointHasher{/*deterministic=*/m_deterministic}, CCoinsMap::key_equal{}, &m_cache_coins_memory_resource};
+    auto x = sizeof(CoinsCachePair) + 20; // TODO (cache size bytes / cache count) = ~133
+    size_t max_cache_size = m_coinstip_cache_size_bytes / x;
+    LogInfo("CCoinsViewCache::ReallocateCache: creating new CCoinsMap with %d elements", max_cache_size);
+    ::new (&cacheCoins) CCoinsMap{
+        max_cache_size,
+        SaltedOutpointHasher{/*deterministic=*/m_deterministic},
+        CCoinsMap::key_equal{},
+        &m_cache_coins_memory_resource
+    };
 }
 
 void CCoinsViewCache::SanityCheck() const

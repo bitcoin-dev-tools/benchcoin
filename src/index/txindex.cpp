@@ -65,7 +65,7 @@ bool TxIndex::CustomAppend(const interfaces::BlockInfo& block)
     vPos.reserve(block.data->vtx.size());
     for (const auto& tx : block.data->vtx) {
         vPos.emplace_back(tx->GetHash(), pos);
-        pos.nTxOffset += ::GetSerializeSize(TX_WITH_WITNESS(*tx));
+        pos.nTxOffset += tx->SizeWithWitness();
     }
     return m_db->WriteTxs(vPos);
 }

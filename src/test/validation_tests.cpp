@@ -250,7 +250,7 @@ BOOST_AUTO_TEST_CASE(block_malleation)
             block.vtx.push_back(MakeTransactionRef(mtx));
             block.hashMerkleRoot = block.vtx.back()->GetHash();
             assert(block.vtx.back()->IsCoinBase());
-            assert(GetSerializeSize(TX_NO_WITNESS(block.vtx.back())) == 64);
+            assert(block.vtx.back()->SizeNoWitness() == 64);
         }
         BOOST_CHECK(is_not_mutated(block, /*check_witness_root=*/false));
     }
@@ -281,13 +281,12 @@ BOOST_AUTO_TEST_CASE(block_malleation)
         CMutableTransaction tx3;
         BOOST_CHECK(DecodeHexTx(tx3, "cdaf22d00002c6a7f848f8ae4d30054e61dcf3303d6fe01d282163341f06feecc10032b3160fcab87bdfe3ecfb769206ef2d991b92f8a268e423a6ef4d485f06", /*try_no_witness=*/true, /*try_witness=*/false));
         {
-            // Verify that double_sha256(txid1||txid2) == txid3
             HashWriter hasher;
             hasher.write(tx1.GetHash());
             hasher.write(tx2.GetHash());
             assert(hasher.GetHash() == tx3.GetHash());
-            // Verify that tx3 is 64 bytes in size (without witness).
-            assert(GetSerializeSize(TX_NO_WITNESS(tx3)) == 64);
+
+            assert(CTransaction{tx3}.SizeNoWitness() == 64);
         }
 
         CBlock block;

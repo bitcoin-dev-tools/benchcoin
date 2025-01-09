@@ -839,7 +839,7 @@ static UniValue OrphanToJSON(const TxOrphanage::OrphanTxBase& orphan)
     UniValue o(UniValue::VOBJ);
     o.pushKV("txid", orphan.tx->GetHash().ToString());
     o.pushKV("wtxid", orphan.tx->GetWitnessHash().ToString());
-    o.pushKV("bytes", orphan.tx->GetTotalSize());
+    o.pushKV("bytes", orphan.tx->SizeWithWitness());
     o.pushKV("vsize", GetVirtualTransactionSize(*orphan.tx));
     o.pushKV("weight", GetTransactionWeight(*orphan.tx));
     o.pushKV("entry", int64_t{TicksSinceEpoch<std::chrono::seconds>(orphan.nTimeExpire - ORPHAN_TX_EXPIRE_TIME)});

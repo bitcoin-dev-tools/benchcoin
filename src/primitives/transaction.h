@@ -313,11 +313,14 @@ private:
     const bool m_has_witness;
     const Txid hash;
     const Wtxid m_witness_hash;
+    const size_t m_size_with_witness;
+    const size_t m_size_no_witness;
 
     Txid ComputeHash() const;
     Wtxid ComputeWitnessHash() const;
-
     bool ComputeHasWitness() const;
+    size_t ComputeSizeWithWitness() const;
+    size_t ComputeSizeNoWitness() const;
 
 public:
     /** Convert a CMutableTransaction into a CTransaction. */
@@ -351,7 +354,8 @@ public:
      * "Total Size" defined in BIP141 and BIP144.
      * @return Total transaction size in bytes
      */
-    unsigned int GetTotalSize() const;
+    size_t SizeWithWitness() const { return m_size_with_witness; }
+    size_t SizeNoWitness() const { return m_size_no_witness; }
 
     bool IsCoinBase() const
     {

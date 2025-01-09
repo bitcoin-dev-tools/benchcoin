@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8">
+    <title :text="$site.title"></title>
+  </head>
+  <body>
+    <h1>Blog</h1>
+    <h2 :text="$page.title"></h2>
+    <h3>by <span :text="$page.author"></span></h3>
+    <h4>
+      Posted on: 
+      <span 
+        :text="$page.date.format('January 02, 2006')"
+      ></span>
+    </h4>
+    <div :html="$page.content()"></div>
+  </body>
+</html>

@@ -1,8 +1,11 @@
 ---
-.title = "Home",
-.date = @date("2020-07-06T00:00:00"),
-.author = "Sample Author",
+.title = "benchcoin",
+.date = @date("2025-01-09T00:00:00"),
+.author = "The benchcoin contributors",
 .layout = "home.shtml",
 .draft = false,
 ---
-Hello World!
+
+| PUll Request| Link |
+|---|---|
+| 0001 | [#0001](/pr/0001)) |

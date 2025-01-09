@@ -4,8 +4,32 @@
     <meta charset="UTF-8">
     <title :text="$site.title"></title>
   </head>
-  <body>
-    <h1 :text="$page.title"></h1>
-    <div :html="$page.content()"></div>
+  <body class="min-h-screen bg-white p-8">
+    <div class="max-w-4xl mx-auto">
+      <h1 :text="$page.title" class="text-5xl font-bold mb-12"></h1>
+      <div>
+        <div :html="$page.content()"></div>
+        <style>
+          table { width: 100%; }
+          th {
+            text-align: left;
+            padding: 0.5rem 1rem;
+            font-size: 1.5rem;
+            font-weight: 600;
+          }
+          td {
+            padding: 0.5rem 1rem;
+            font-size: 1.25rem;
+          }
+          a {
+            color: #2563EB;
+            text-decoration: none;
+          }
+          a:hover {
+            text-decoration: underline;
+          }
+        </style>
+      </div>
+    </div>
   </body>
 </html>

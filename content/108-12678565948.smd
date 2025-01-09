@@ -1,0 +1,57 @@
+---
+.title = "Pull Request 108",
+.date = @date("2025-01-09T00:00:00"),
+.author = "benchcoin contributors",
+.layout = "pr.shtml",
+.draft = false,
+---
+# Results from PR 108, run 12678565948
+
+## Mainnet large head
+
+[]($link.siteAsset('pr-108/12678565948/mainnet-large-head-flamegraph.svg'))
+
+```=html
+<object
+  data="/pr-108/12678565948/mainnet-large-head-flamegraph.svg"
+  type="image/svg+xml"
+  style="width: 100%; height: 100vh;">
+</object>
+```
+
+## Mainnet large base
+
+[]($link.siteAsset('pr-108/12678565948/mainnet-large-base-flamegraph.svg'))
+
+```=html
+<object
+  data="/pr-108/12678565948/mainnet-large-base-flamegraph.svg"
+  type="image/svg+xml"
+  style="width: 100%; height: 100vh;">
+</object>
+```
+
+## Mainnet default head
+
+[]($link.siteAsset('pr-108/12678565948/mainnet-default-head-flamegraph.svg'))
+
+```=html
+<object
+  data="/pr-108/12678565948/mainnet-default-head-flamegraph.svg"
+  type="image/svg+xml"
+  style="width: 100%; height: 100vh;">
+</object>
+```
+
+## Mainnet default base
+
+[]($link.siteAsset('pr-108/12678565948/mainnet-default-base-flamegraph.svg'))
+
+```=html
+<object
+  data="/pr-108/12678565948/mainnet-default-base-flamegraph.svg"
+  type="image/svg+xml"
+  style="width: 100%; height: 100vh;">
+</object>
+```
+

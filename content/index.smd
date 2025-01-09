@@ -1,5 +1,5 @@
 ---
-.title = "benchcoin",
+.title = "benchcoin results",
 .date = @date("2025-01-09T00:00:00"),
 .author = "The benchcoin contributors",
 .layout = "home.shtml",
@@ -8,4 +8,4 @@
 
 | Pull Request | Link |
 |---|---|
-| 108/12678565948 | [#108/12678565948](/results/pr-108/12678565948/)) |
+| 108/12678565948 | [#108/12678565948](/108-12678565948/) |

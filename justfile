@@ -38,12 +38,12 @@ run-assumeutxo-signet-ci base_commit head_commit TMP_DATADIR UTXO_PATH results_f
 # Run mainnet assumeutxo CI workflow for default cache
 [group('ci')]
 run-assumeutxo-mainnet-default-ci base_commit head_commit TMP_DATADIR UTXO_PATH results_file dbcache png_dir binaries_dir:
-    ./bench-ci/run-assumeutxo-bench.sh {{ base_commit }} {{ head_commit }} {{ TMP_DATADIR }} {{ UTXO_PATH }} {{ results_file }} {{ png_dir }} main 855000 "148.251.128.115:33333" {{ dbcache }} {{ binaries_dir }}
+    ./bench-ci/run-assumeutxo-bench.sh {{ base_commit }} {{ head_commit }} {{ TMP_DATADIR }} {{ UTXO_PATH }} {{ results_file }} {{ png_dir }} main 870000 "148.251.128.115:33333" {{ dbcache }} {{ binaries_dir }}
 
 # Run mainnet assumeutxo CI workflow for large cache
 [group('ci')]
 run-assumeutxo-mainnet-large-ci base_commit head_commit TMP_DATADIR UTXO_PATH results_file dbcache png_dir binaries_dir:
-    ./bench-ci/run-assumeutxo-bench.sh {{ base_commit }} {{ head_commit }} {{ TMP_DATADIR }} {{ UTXO_PATH }} {{ results_file }} {{ png_dir }} main 855000 "148.251.128.115:33333" {{ dbcache }} {{ binaries_dir }}
+    ./bench-ci/run-assumeutxo-bench.sh {{ base_commit }} {{ head_commit }} {{ TMP_DATADIR }} {{ UTXO_PATH }} {{ results_file }} {{ png_dir }} main 870000 "148.251.128.115:33333" {{ dbcache }} {{ binaries_dir }}
 
 # Run a signet benchmark locally
 [group('local')]

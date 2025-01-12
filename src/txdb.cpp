@@ -116,21 +116,33 @@ bool CCoinsViewDB::BatchWrite(CoinsViewCacheCursor& cursor, const uint256 &hashB
     batch.Erase(DB_BEST_BLOCK);
     batch.Write(DB_HEAD_BLOCKS, Vector(hashBlock, old_tip));
 
-    for (auto it{cursor.Begin()}; it != cursor.End();) {
+    auto SortedWrite{[&](std::vector<CoinsCachePair*>& entries) {
+        std::ranges::sort(entries, [](auto* a, auto* b) { return b->first < a->first; });
+        for (const auto entry : entries) {
+            if (entry->second.coin.IsSpent()) {
+                batch.Erase(CoinEntry(&entry->first));
+            } else {
+                batch.Write(CoinEntry(&entry->first), entry->second.coin);
+            }
+        }
+        entries.clear();
+        m_db->WriteBatch(batch);
+        batch.Clear();
+    }};
+
+    std::vector<CoinsCachePair*> dirty_entries;
+    dirty_entries.reserve(m_options.batch_write_bytes / sizeof(CoinsCachePair));
+    // Collect dirty entries from the cursor
+    for (auto it{cursor.Begin()}; it != cursor.End(); it = cursor.NextAndMaybeErase(*it)) {
         if (it->second.IsDirty()) {
-            CoinEntry entry(&it->first);
-            if (it->second.coin.IsSpent())
-                batch.Erase(entry);
-            else
-                batch.Write(entry, it->second.coin);
+            dirty_entries.emplace_back(it);
             changed++;
         }
         count++;
-        it = cursor.NextAndMaybeErase(*it);
+
         if (batch.SizeEstimate() > m_options.batch_write_bytes) {
             LogDebug(BCLog::COINDB, "Writing partial batch of %.2f MiB\n", batch.SizeEstimate() * (1.0 / 1048576.0));
-            m_db->WriteBatch(batch);
-            batch.Clear();
+            SortedWrite(dirty_entries);
             if (m_options.simulate_crash_ratio) {
                 static FastRandomContext rng;
                 if (rng.randrange(m_options.simulate_crash_ratio) == 0) {
@@ -140,6 +152,7 @@ bool CCoinsViewDB::BatchWrite(CoinsViewCacheCursor& cursor, const uint256 &hashB
             }
         }
     }
+    SortedWrite(dirty_entries);
 
     // In the last batch, mark the database as consistent with hashBlock again.
     batch.Erase(DB_HEAD_BLOCKS);

@@ -140,6 +140,69 @@ jobs:
             // Write combined results
             fs.writeFileSync(`${resultDir}/results.json`, JSON.stringify(combinedResults, null, 2));
 
+            // Function to generate content for a single column (Base or Head)
+            function generateColumnContent(results, network, commitType, resultDir) {
+              return `
+                <div class="w-1/2">
+                  <h3 class="text-center font-semibold mb-2">${commitType}</h3>
+                  ${results
+                    .filter(result => result.network === network && result.command.includes(commitType.toLowerCase()))
+                    .map(result => {
+                      const commitShortId = result.parameters.commit.slice(0, 8);
+                      const flameGraphFile = `${network}-${result.parameters.commit}-flamegraph.svg`;
+                      const flameGraphPath = `${resultDir}/${network}-${result.parameters.commit}-flamegraph.svg`;
+            
+                      // Query PNG files dynamically
+                      const plotDir = `${resultDir}/${network}-plots`;
+                      const plots = fs.existsSync(plotDir)
+                        ? fs.readdirSync(plotDir)
+                            .filter(plot => plot.startsWith(`${result.parameters.commit}-`))
+                            .map(
+                              plot => `
+                              <a href="${network}-plots/${plot}" target="_blank">
+                                <img src="${network}-plots/${plot}" alt="${plot}" class="mb-4 max-w-full h-auto">
+                              </a>
+                            `
+                            )
+                            .join('')
+                        : '';
+            
+                      return `
+                        <table class="min-w-full table-auto mb-4">
+                          <thead>
+                            <tr class="bg-gray-50">
+                              <th class="px-4 py-2">Command</th>
+                              <th class="px-4 py-2">Mean (s)</th>
+                              <th class="px-4 py-2">Std Dev</th>
+                              <th class="px-4 py-2">User (s)</th>
+                              <th class="px-4 py-2">System (s)</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr class="border-t">
+                              <td class="px-4 py-2 font-mono text-sm text-center">
+                                ${result.command.replace(
+                                  /\((\w+)\)/,
+                                  (_, commit) => `(<a href="https://github.com/bitcoin-dev-tools/benchcoin/commit/${commit}" target="_blank">${commit.slice(0, 8)}</a>)`
+                                )}
+                              </td>
+                              <td class="px-4 py-2 text-center">${result.mean.toFixed(3)}</td>
+                              <td class="px-4 py-2 text-center">${result.stddev?.toFixed(3) || 'N/A'}</td>
+                              <td class="px-4 py-2 text-center">${result.user.toFixed(3)}</td>
+                              <td class="px-4 py-2 text-center">${result.system.toFixed(3)}</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                        ${fs.existsSync(flameGraphPath) ? `
+                          <object data="${flameGraphFile}" type="image/svg+xml" width="100%" style="height: 100%;" class="mb-4"></object>
+                        ` : ''}
+                        ${plots}
+                      `;
+                    })
+                    .join('')}
+                </div>`;
+            }
+            
             // Create index.html for this run
             const indexHtml = `<!DOCTYPE html>
             <html>
@@ -152,7 +215,8 @@ jobs:
                   <h1 class="text-3xl font-bold mb-8 text-center">Benchmark Results</h1>
                   <div class="bg-white rounded-lg shadow p-6 mb-8">
                     <h2 class="text-xl font-semibold mb-4">PR #${prNumber} - Run ${runId}</h2>
-                    ${networks.map(network => `
+                    ${networks
+                      .map(network => `
                       <div class="mb-8">
                         <h3 class="text-center font-semibold mb-4 capitalize">
                           ${network} Results
@@ -160,62 +224,12 @@ jobs:
                             `<span class="text-sm font-normal ml-2">(${combinedResults.speedups[network]}% speedup)</span>`
                             : ''}
                         </h3>
-                        <div class="overflow-x-auto">
-                          ${combinedResults.results
-                            .filter(result => result.network === network)
-                            .map(result => {
-                              const commitShortId = result.parameters.commit.slice(0, 8);
-                              const flameGraphFile = `${network}-${result.parameters.commit}-flamegraph.svg`;
-                              const flameGraphPath = `${resultDir}/${network}-${result.parameters.commit}-flamegraph.svg`;
-
-                              // Query PNG files dynamically
-                              const plotDir = `${resultDir}/${network}-plots`;
-                              const plots = fs.existsSync(plotDir)
-                                ? fs.readdirSync(plotDir)
-                                    .filter(plot => plot.startsWith(`${result.parameters.commit}-`))
-                                    .map(plot => `
-                                      <a href="${network}-plots/${plot}" target="_blank">
-                                        <img src="${network}-plots/${plot}" alt="${plot}" class="mb-4 max-w-full h-auto">
-                                      </a>
-                                    `)
-                                    .join('')
-                                : '';
-
-                              return `
-                                <table class="min-w-full table-auto">
-                                  <thead>
-                                    <tr class="bg-gray-50">
-                                      <th class="px-4 py-2">Command</th>
-                                      <th class="px-4 py-2">Mean (s)</th>
-                                      <th class="px-4 py-2">Std Dev</th>
-                                      <th class="px-4 py-2">User (s)</th>
-                                      <th class="px-4 py-2">System (s)</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    <tr class="border-t">
-                                      <td class="px-4 py-2 font-mono text-sm text-center">
-                                        ${result.command.replace(
-                                          /\((\w+)\)/,
-                                          (_, commit) => `(<a href="https://github.com/bitcoin-dev-tools/benchcoin/commit/${commit}" target="_blank">${commit.slice(0, 8)}</a>)`
-                                        )}
-                                      </td>
-                                      <td class="px-4 py-2 text-center">${result.mean.toFixed(3)}</td>
-                                      <td class="px-4 py-2 text-center">${result.stddev?.toFixed(3) || 'N/A'}</td>
-                                      <td class="px-4 py-2 text-center">${result.user.toFixed(3)}</td>
-                                      <td class="px-4 py-2 text-center">${result.system.toFixed(3)}</td>
-                                    </tr>
-                                  </tbody>
-                                </table>
-                                ${fs.existsSync(flameGraphPath) ? `
-                                  <object data="${flameGraphFile}" type="image/svg+xml" width="100%" style="height: 100%;" class="mb-4"></object>
-                                ` : ''}
-                                ${plots}
-                              `;
-                            }).join('')}
+                        <div class="flex flex-row gap-4">
+                          ${generateColumnContent(combinedResults.results, network, 'Base', resultDir)}
+                          ${generateColumnContent(combinedResults.results, network, 'Head', resultDir)}
                         </div>
-                      </div>
-                    `).join('')}
+                      </div>`)
+                      .join('')}
                   </div>
                 </div>
               </body>

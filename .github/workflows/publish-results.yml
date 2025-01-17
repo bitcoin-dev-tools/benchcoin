@@ -147,14 +147,14 @@ jobs:
                 <title>Benchmark Results</title>
                 <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
               </head>
-              <body class="bg-gray-100 p-8">
-                <div class="w-9/10 mx-auto">
-                  <h1 class="text-3xl font-bold mb-8">Benchmark Results</h1>
+              <body class="bg-gray-100 p-2">
+                <div class="w-full mx-auto">
+                  <h1 class="text-3xl font-bold mb-8 text-center">Benchmark Results</h1>
                   <div class="bg-white rounded-lg shadow p-6 mb-8">
                     <h2 class="text-xl font-semibold mb-4">PR #${prNumber} - Run ${runId}</h2>
                     ${networks.map(network => `
                       <div class="mb-8">
-                        <h3 class="text-lg font-semibold mb-4 capitalize">
+                        <h3 class="text-center font-semibold mb-4 capitalize">
                           ${network} Results
                           ${combinedResults.speedups[network] ?
                             `<span class="text-sm font-normal ml-2">(${combinedResults.speedups[network]}% speedup)</span>`

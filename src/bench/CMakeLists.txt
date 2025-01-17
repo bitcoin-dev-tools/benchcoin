@@ -20,6 +20,7 @@ add_executable(bench_bitcoin
   chacha20.cpp
   checkblock.cpp
   checkblockindex.cpp
+  check_connectblock.cpp
   checkqueue.cpp
   cluster_linearize.cpp
   crypto_hash.cpp

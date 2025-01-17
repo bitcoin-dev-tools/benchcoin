@@ -108,6 +108,7 @@ endif()
 add_library(bitcoin_common STATIC EXCLUDE_FROM_ALL
   addresstype.cpp
   base58.cpp
+  batchverify.cpp
   bech32.cpp
   chainparams.cpp
   chainparamsbase.cpp
@@ -277,6 +278,7 @@ add_library(bitcoin_node STATIC EXCLUDE_FROM_ALL
   rpc/signmessage.cpp
   rpc/txoutproof.cpp
   script/sigcache.cpp
+  script/batchsigcache.cpp
   signet.cpp
   torcontrol.cpp
   txdb.cpp

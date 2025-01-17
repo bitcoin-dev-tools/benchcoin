@@ -6,14 +6,30 @@
 #define BITCOIN_CHECKQUEUE_H
 
 #include <logging.h>
+#include <batchverify.h>
 #include <sync.h>
 #include <tinyformat.h>
 #include <util/threadnames.h>
 
 #include <algorithm>
+#include <concepts>
 #include <iterator>
 #include <optional>
 #include <vector>
+
+template <typename T, typename Obj, typename R>
+concept HasOperatorWithObj = requires(T t, Obj* obj, bool f) {
+    {
+        t(obj, f)
+    } -> std::same_as<std::optional<R>>;
+};
+
+template <typename T, typename R>
+concept HasOperatorNoArgs = requires(T t) {
+    {
+        t()
+    } -> std::same_as<std::optional<R>>;
+};
 
 /**
  * Queue for verifications that have to be performed.
@@ -30,6 +46,7 @@
   *
   */
 template <typename T, typename R = std::remove_cvref_t<decltype(std::declval<T>()().value())>>
+    requires HasOperatorWithObj<T, BatchSchnorrVerifier, R> || HasOperatorNoArgs<T, R>
 class CCheckQueue
 {
 private:
@@ -72,6 +89,7 @@ private:
     std::optional<R> Loop(bool fMaster) EXCLUSIVE_LOCKS_REQUIRED(!m_mutex)
     {
         std::condition_variable& cond = fMaster ? m_master_cv : m_worker_cv;
+        BatchSchnorrVerifier batch;
         std::vector<T> vChecks;
         vChecks.reserve(nBatchSize);
         unsigned int nNow = 0;
@@ -127,8 +145,12 @@ private:
             }
             // execute work
             if (do_work) {
-                for (T& check : vChecks) {
-                    local_result = check();
+                for (size_t i = 0; i < vChecks.size(); i++) {
+                    bool fLastCheck = i == vChecks.size() - 1;
+                    if constexpr (HasOperatorWithObj<T, BatchSchnorrVerifier, R>)
+                        local_result = vChecks[i](&batch, fLastCheck);
+                    else
+                        local_result = vChecks[i]();
                     if (local_result.has_value()) break;
                 }
             }

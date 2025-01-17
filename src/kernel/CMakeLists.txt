@@ -17,6 +17,7 @@ add_library(bitcoinkernel
   disconnected_transactions.cpp
   mempool_removal_reason.cpp
   ../arith_uint256.cpp
+  ../batchverify.cpp
   ../chain.cpp
   ../coins.cpp
   ../compressor.cpp
@@ -50,6 +51,7 @@ add_library(bitcoinkernel
   ../script/script.cpp
   ../script/script_error.cpp
   ../script/sigcache.cpp
+  ../script/batchsigcache.cpp
   ../script/solver.cpp
   ../signet.cpp
   ../streams.cpp

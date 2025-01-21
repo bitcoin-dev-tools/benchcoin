@@ -179,9 +179,9 @@ UniValue blockToJSON(BlockManager& blockman, const CBlock& block, const CBlockIn
 {
     UniValue result = blockheaderToJSON(tip, blockindex);
 
-    result.pushKV("strippedsize", (int)::GetSerializeSize(TX_NO_WITNESS(block)));
-    result.pushKV("size", (int)::GetSerializeSize(TX_WITH_WITNESS(block)));
-    result.pushKV("weight", (int)::GetBlockWeight(block));
+    result.pushKV("strippedsize", (int)block.SizeNoWitness());
+    result.pushKV("size", (int)block.SizeWithWitness());
+    result.pushKV("weight", GetBlockWeight(block));
     UniValue txs(UniValue::VARR);
 
     switch (verbosity) {
@@ -1987,7 +1987,7 @@ static RPCHelpMan getblockstats()
         int64_t tx_size = 0;
         if (do_calculate_size) {
 
-            tx_size = tx->GetTotalSize();
+            tx_size = tx->SizeWithWitness();
             if (do_mediantxsize) {
                 txsize_array.push_back(tx_size);
             }

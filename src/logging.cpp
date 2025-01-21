@@ -315,25 +315,35 @@ std::string BCLog::Logger::LogTimestampStr(SystemClock::time_point now, std::chr
 }
 
 namespace BCLog {
-    /** Belts and suspenders: make sure outgoing log messages don't contain
-     * potentially suspicious characters, such as terminal control codes.
-     *
-     * This escapes control characters except newline ('\n') in C syntax.
-     * It escapes instead of removes them to still allow for troubleshooting
-     * issues where they accidentally end up in strings.
-     */
-    std::string LogEscapeMessage(std::string_view str) {
-        std::string ret;
-        for (char ch_in : str) {
-            uint8_t ch = (uint8_t)ch_in;
-            if ((ch >= 32 || ch == '\n') && ch != '\x7f') {
-                ret += ch_in;
-            } else {
-                ret += strprintf("\\x%02x", ch);
-            }
+static constexpr bool IsSuspicious(const char ch)
+{
+    const uint8_t uch{uint8_t(ch)};
+    return (uch < 32 && uch != '\n') || uch == '\x7f';
+}
+/** Belts and suspenders: make sure outgoing log messages don't contain
+ * potentially suspicious characters, such as terminal control codes.
+ *
+ * This escapes control characters except newline ('\n') in C syntax.
+ * It escapes instead of removes them to still allow for troubleshooting
+ * issues where they accidentally end up in strings.
+ */
+std::string LogEscapeMessage(const std::string& str)
+{
+    auto i{std::ranges::find_if(str, IsSuspicious)};
+    if (i == str.end()) return str;
+
+    std::string ret;
+    ret.reserve(str.size() + 3); // Assume a single escape
+    ret.append(str.begin(), i);
+    for (; i != str.end(); ++i) {
+        if (IsSuspicious(*i)) {
+            ret += strprintf("\\x%02x", *i);
+        } else {
+            ret += *i;
         }
-        return ret;
     }
+    return ret;
+}
 } // namespace BCLog
 
 std::string BCLog::Logger::GetLogPrefix(BCLog::LogFlags category, BCLog::Level level) const
@@ -384,13 +394,13 @@ void BCLog::Logger::FormatLogStrInPlace(std::string& str, BCLog::LogFlags catego
     str.insert(0, LogTimestampStr(now, mocktime));
 }
 
-void BCLog::Logger::LogPrintStr(std::string_view str, std::string_view logging_function, std::string_view source_file, int source_line, BCLog::LogFlags category, BCLog::Level level)
+void BCLog::Logger::LogPrintStr(const std::string& str, std::string_view logging_function, std::string_view source_file, int source_line, BCLog::LogFlags category, BCLog::Level level)
 {
     StdLockGuard scoped_lock(m_cs);
     return LogPrintStr_(str, logging_function, source_file, source_line, category, level);
 }
 
-void BCLog::Logger::LogPrintStr_(std::string_view str, std::string_view logging_function, std::string_view source_file, int source_line, BCLog::LogFlags category, BCLog::Level level)
+void BCLog::Logger::LogPrintStr_(const std::string& str, std::string_view logging_function, std::string_view source_file, int source_line, BCLog::LogFlags category, BCLog::Level level)
 {
     std::string str_prefixed = LogEscapeMessage(str);
 

@@ -60,9 +60,13 @@ const GenContentStep = struct {
             while (try iter.next()) |run_entry| {
                 if (run_entry.kind != .directory) continue;
                 log("  Run: {s}", .{run_entry.name});
+
                 const pr_num_string = try std.fmt.allocPrint(self.b.allocator, "{d}", .{pr_num});
                 defer self.b.allocator.free(pr_num_string);
+
                 try writeContentFile(&self.b.allocator, pr_num_string, run_entry.name);
+
+                try appendToIndex(self.b.allocator, "content/index.smd", pr_num_string, run_entry.name);
             }
         }
     }
@@ -123,5 +127,19 @@ const GenContentStep = struct {
         }
 
         return builder.toOwnedSlice();
+    }
+
+    pub fn appendToIndex(allocator: std.mem.Allocator, filePath: []const u8, pr_num: []const u8, run_num: []const u8) !void {
+        // Open the file in append mode
+        var file = try std.fs.cwd().openFile(filePath, .{ .mode = std.fs.File.OpenMode.read_write });
+        defer file.close();
+
+        // | 108/12678565948 | [#108/12678565948](/108-12678565948/) |
+        const link = try std.fmt.allocPrint(allocator, "\n| {s}/{s} | [#{s}/{s}](/{s}-{s}/) |", .{ pr_num, run_num, pr_num, run_num, pr_num, run_num });
+        defer allocator.free(link);
+
+        try file.seekFromEnd(0);
+        // Write the content to the file
+        try file.writer().print("{s}", .{link});
     }
 };

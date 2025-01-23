@@ -9,11 +9,11 @@
 
 ## Mainnet large head
 
-[]($link.siteAsset('pr-{{PR}}/{{RUN}}/mainnet-large-head-flamegraph.svg'))
+[Image]($link.siteAsset('{{PR}}/{{RUN}}/mainnet-large/head-flamegraph.svg'))
 
 ```=html
 <object
-  data="/pr-{{PR}}/{{RUN}}/mainnet-large-head-flamegraph.svg"
+  data="../{{PR}}/{{RUN}}/mainnet-large/head-flamegraph.svg"
   type="image/svg+xml"
   style="width: 100%; height: 100vh;">
 </object>
@@ -21,11 +21,11 @@
 
 ## Mainnet large base
 
-[]($link.siteAsset('pr-{{PR}}/{{RUN}}/mainnet-large-base-flamegraph.svg'))
+[Image]($link.siteAsset('{{PR}}/{{RUN}}/mainnet-large/base-flamegraph.svg'))
 
 ```=html
 <object
-  data="/pr-{{PR}}/{{RUN}}/mainnet-large-base-flamegraph.svg"
+  data="/../{{PR}}/{{RUN}}/mainnet-large/base-flamegraph.svg"
   type="image/svg+xml"
   style="width: 100%; height: 100vh;">
 </object>
@@ -33,11 +33,11 @@
 
 ## Mainnet default head
 
-[]($link.siteAsset('pr-{{PR}}/{{RUN}}/mainnet-default-head-flamegraph.svg'))
+[Image]($link.siteAsset('{{PR}}/{{RUN}}/mainnet-default/head-flamegraph.svg'))
 
 ```=html
 <object
-  data="/pr-{{PR}}/{{RUN}}/mainnet-default-head-flamegraph.svg"
+  data="../{{PR}}/{{RUN}}/mainnet-default/head-flamegraph.svg"
   type="image/svg+xml"
   style="width: 100%; height: 100vh;">
 </object>
@@ -45,11 +45,11 @@
 
 ## Mainnet default base
 
-[]($link.siteAsset('pr-{{PR}}/{{RUN}}/mainnet-default-base-flamegraph.svg'))
+[Image]($link.siteAsset('{{PR}}/{{RUN}}/mainnet-default/base-flamegraph.svg'))
 
 ```=html
 <object
-  data="/pr-{{PR}}/{{RUN}}/mainnet-default-base-flamegraph.svg"
+  data="../{{PR}}/{{RUN}}/mainnet-default/base-flamegraph.svg"
   type="image/svg+xml"
   style="width: 100%; height: 100vh;">
 </object>

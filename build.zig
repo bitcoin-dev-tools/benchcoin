@@ -61,7 +61,7 @@ const GenContentStep = struct {
                 if (run_entry.kind != .directory) continue;
                 log("  Run: {s}", .{run_entry.name});
 
-                const pr_num_string = try std.fmt.allocPrint(self.b.allocator, "{d}", .{pr_num});
+                const pr_num_string = try std.fmt.allocPrint(self.b.allocator, "{d:0>6}", .{pr_num});
                 defer self.b.allocator.free(pr_num_string);
 
                 try writeContentFile(&self.b.allocator, pr_num_string, run_entry.name);
@@ -135,7 +135,7 @@ const GenContentStep = struct {
         defer file.close();
 
         // | 108/12678565948 | [#108/12678565948](/108-12678565948/) |
-        const link = try std.fmt.allocPrint(allocator, "\n| {s}/{s} | [#{s}/{s}](/{s}-{s}/) |", .{ pr_num, run_num, pr_num, run_num, pr_num, run_num });
+        const link = try std.fmt.allocPrint(allocator, "| {s}/{s} | [#{s}/{s}](/{s}-{s}/) |\n", .{ pr_num, run_num, pr_num, run_num, pr_num, run_num });
         defer allocator.free(link);
 
         try file.seekFromEnd(0);

@@ -15,19 +15,12 @@ build-assumeutxo-binaries base_commit head_commit:
         commit="${build#*:}"
         git checkout "$commit"
         taskset -c 0-15 cmake -B "build-$name" \
-            -DBUILD_BENCH=OFF \
-            -DBUILD_CLI=OFF \
-            -DBUILD_TESTS=OFF \
-            -DBUILD_TX=OFF \
-            -DBUILD_UTIL=OFF \
-            -DENABLE_EXTERNAL_SIGNER=OFF \
-            -DENABLE_WALLET=OFF \
-            -DINSTALL_MAN=OFF \
+            -DENABLE_WALLET=OFF
             -DCMAKE_BUILD_TYPE=RelWithDebInfo \
             -DCMAKE_C_COMPILER_LAUNCHER=ccache \
             -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
             -DCMAKE_CXX_FLAGS="-fno-omit-frame-pointer -g"
-        taskset -c 0-15 cmake --build "build-$name" -j {{ num_cpus() }}
+        taskset -c 0-15 cmake --build "build-$name" --target bitcoind -j {{ num_cpus() }}
     done
 
 # Run signet assumeutxo CI workflow

@@ -130,6 +130,12 @@ run_benchmark() {
   export -f clean_logs
 
   ls -alR "${BINARIES_DIR}"
+  patch-binary "${BINARIES_DIR}/head/bitcoind"
+  stat "${BINARIES_DIR}/head/bitcoind"
+  file "${BINARIES_DIR}/head/bitcoind"
+  ldd "${BINARIES_DIR}/head/bitcoind"
+  "${BINARIES_DIR}/head/bitcoind" --version
+  "${BINARIES_DIR}/base/bitcoind" --version
 
   # Run hyperfine
   hyperfine \

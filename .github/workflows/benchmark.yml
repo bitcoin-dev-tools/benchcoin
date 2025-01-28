@@ -33,6 +33,7 @@ jobs:
           mkdir -p ${{ runner.temp }}/binaries/head
           nix-shell --command "just build-assumeutxo-binaries $BASE_SHA $CHECKOUT_COMMIT"
           cp build-base/src/bitcoind ${{ runner.temp }}/binaries/base/bitcoind
+          nix-shell --command "patch-binary bins/bitcoind-fanquake"
           cp bins/bitcoind-fanquake ${{ runner.temp }}/binaries/head/bitcoind
       - name: Upload binaries
         uses: actions/upload-artifact@v4

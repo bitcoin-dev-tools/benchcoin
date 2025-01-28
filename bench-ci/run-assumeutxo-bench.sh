@@ -129,6 +129,8 @@ run_benchmark() {
   export -f clean_datadir
   export -f clean_logs
 
+  ls -alR "${BINARIES_DIR}"
+
   # Run hyperfine
   hyperfine \
     --shell=bash \

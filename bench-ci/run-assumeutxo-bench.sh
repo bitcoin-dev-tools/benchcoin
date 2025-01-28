@@ -138,6 +138,8 @@ run_benchmark() {
     --cleanup "cleanup_assumeutxo_snapshot_run ${TMP_DATADIR}" \
     --runs 1 \
     --export-json "${results_file}" \
+    --show-output \
+    --reference "base" \
     --command-name "base (${base_commit})" \
     --command-name "head (${head_commit})" \
     "taskset -c 1 flamegraph --palette bitcoin --title 'bitcoind assumeutxo IBD@{commit}' -c 'record -F 101 --call-graph fp' -- taskset -c 2-15 ${BINARIES_DIR}/{commit}/bitcoind -datadir=${TMP_DATADIR} -connect=${connect_address} -daemon=0 -chain=${chain} -stopatheight=${stop_at_height} -dbcache=${dbcache} -printtoconsole=0 -debug=coindb -debug=leveldb -debug=bench -debug=validation" \

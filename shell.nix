@@ -93,6 +93,10 @@ in pkgs.mkShell {
     perf-tools
     util-linux
   ];
+  NIX_LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [
+    stdenv.cc.cc
+  ];
+  NIX_LD = pkgs.lib.fileContents "${stdenv.cc}/nix-support/dynamic-linker";
 
   shellHook = ''
     echo "Bitcoin Core build nix-shell"

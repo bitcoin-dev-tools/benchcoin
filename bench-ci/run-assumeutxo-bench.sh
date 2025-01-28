@@ -63,7 +63,10 @@ prepare_assumeutxo_snapshot_run() {
   # Run the actual preparation steps
   clean_datadir "${TMP_DATADIR}"
   # Use the pre-built binaries from BINARIES_DIR
-  taskset -c 0-15 "${BINARIES_DIR}/${commit}/bitcoind" -datadir="${TMP_DATADIR}" -connect="${CONNECT_ADDRESS}" -daemon=0 -chain="${CHAIN}" -stopatheight=1 -printtoconsole=1
+  CMD="taskset -c 0-15 \"${BINARIES_DIR}/${commit}/bitcoind\" -datadir=\"${TMP_DATADIR}\" -connect=\"${CONNECT_ADDRESS}\" -daemon=0 -chain=\"${CHAIN}\" -stopatheight=1 -printtoconsole=1"
+  echo "Runnning command:"
+  echo $CMD
+  sleep 600
   taskset -c 0-15 "${BINARIES_DIR}/${commit}/bitcoind" -datadir="${TMP_DATADIR}" -connect="${CONNECT_ADDRESS}" -daemon=0 -chain="${CHAIN}" -dbcache="${DBCACHE}" -pausebackgroundsync=1 -loadutxosnapshot="${UTXO_PATH}" -printtoconsole=1 || true
   clean_logs "${TMP_DATADIR}"
 }
@@ -155,7 +158,6 @@ run_benchmark() {
     --runs 1 \
     --export-json "${results_file}" \
     --show-output \
-    --reference "base" \
     --command-name "base (${base_commit})" \
     --command-name "head (${head_commit})" \
     "taskset -c 1 flamegraph --palette bitcoin --title 'bitcoind assumeutxo IBD@{commit}' -c 'record -F 101 --call-graph fp' -- taskset -c 2-15 ${BINARIES_DIR}/{commit}/bitcoind -datadir=${TMP_DATADIR} -connect=${connect_address} -daemon=0 -chain=${chain} -stopatheight=${stop_at_height} -dbcache=${dbcache} -printtoconsole=0 -debug=coindb -debug=leveldb -debug=bench -debug=validation" \

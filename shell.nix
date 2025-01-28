@@ -92,18 +92,35 @@ in pkgs.mkShell {
     linuxKernel.packages.linux_6_6.perf
     perf-tools
     util-linux
+
+    # Binary patching
+    patchelf
   ];
+  NIX_LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [
+    stdenv.cc.cc
+  ];
+  NIX_LD = pkgs.lib.fileContents "${stdenv.cc}/nix-support/dynamic-linker";
 
   shellHook = ''
     echo "Bitcoin Core build nix-shell"
     echo ""
     echo "Setting up python venv"
 
-    # fixes libstdc++ issues and libgl.so issues
-    export LD_LIBRARY_PATH=${stdenv.cc.cc.lib}/lib/:$LD_LIBRARY_PATH
 
     uv venv --python 3.10
     source .venv/bin/activate
     uv pip install -r pyproject.toml
+
+    patch-binary() {
+      if [ -z "$1" ]; then
+        echo "Usage: patch-binary <binary-path>"
+        return 1
+      fi
+      patchelf --set-interpreter "$(cat $NIX_CC/nix-support/dynamic-linker)" "$1"
+    }
+
+    echo "Added patch-binary command"
+    echo "    Usage: 'patch-binary <binary_path>'"
+
   '';
 }

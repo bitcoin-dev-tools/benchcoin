@@ -59,6 +59,7 @@ prepare_assumeutxo_snapshot_run() {
   local DBCACHE="$5"
   local commit="$6"
   local BINARIES_DIR="$7"
+  env
 
   # Run the actual preparation steps
   clean_datadir "${TMP_DATADIR}"
@@ -129,6 +130,22 @@ run_benchmark() {
   export -f clean_datadir
   export -f clean_logs
 
+  ls -alR "${BINARIES_DIR}"
+
+  inspect_binary() {
+    local binary="$1"
+    echo "=== Inspecting ${binary} ==="
+    stat "$binary"
+    file "$binary"
+    ldd "$binary"
+    "$binary" --version
+    echo "==="
+  }
+
+  for variant in base head; do
+    inspect_binary "${BINARIES_DIR}/${variant}/bitcoind"
+  done
+
   # Run hyperfine
   hyperfine \
     --shell=bash \
@@ -138,6 +155,7 @@ run_benchmark() {
     --cleanup "cleanup_assumeutxo_snapshot_run ${TMP_DATADIR}" \
     --runs 1 \
     --export-json "${results_file}" \
+    --show-output \
     --command-name "base (${base_commit})" \
     --command-name "head (${head_commit})" \
     "taskset -c 1 flamegraph --palette bitcoin --title 'bitcoind assumeutxo IBD@{commit}' -c 'record -F 101 --call-graph fp' -- taskset -c 2-15 ${BINARIES_DIR}/{commit}/bitcoind -datadir=${TMP_DATADIR} -connect=${connect_address} -daemon=0 -chain=${chain} -stopatheight=${stop_at_height} -dbcache=${dbcache} -printtoconsole=0 -debug=coindb -debug=leveldb -debug=bench -debug=validation" \

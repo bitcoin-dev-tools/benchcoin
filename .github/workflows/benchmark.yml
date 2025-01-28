@@ -93,6 +93,7 @@ jobs:
         run: |
           env
           mkdir -p "$TMP_DATADIR"
+          nix-shell --command "patch-binary $BINARIES_DIR/head/bitcoind"
           CMD="nix-shell --command \"just run-assumeutxo-${{ matrix.network }}-ci $BASE_SHA $CHECKOUT_COMMIT $TMP_DATADIR $UTXO_PATH ${{ runner.temp }}/results.json ${{ matrix.dbcache }} ${{ runner.temp }}/pngs $BINARIES_DIR\""
           echo "Running command: $CMD"
           eval "$CMD"

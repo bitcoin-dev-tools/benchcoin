@@ -130,12 +130,20 @@ run_benchmark() {
   export -f clean_logs
 
   ls -alR "${BINARIES_DIR}"
-  patch-binary "${BINARIES_DIR}/head/bitcoind"
-  stat "${BINARIES_DIR}/head/bitcoind"
-  file "${BINARIES_DIR}/head/bitcoind"
-  ldd "${BINARIES_DIR}/head/bitcoind"
-  "${BINARIES_DIR}/head/bitcoind" --version
-  "${BINARIES_DIR}/base/bitcoind" --version
+
+  inspect_binary() {
+    local binary="$1"
+    echo "=== Inspecting ${binary} ==="
+    stat "$binary"
+    file "$binary"
+    ldd "$binary"
+    "$binary" --version
+    echo "==="
+  }
+
+  for variant in base head; do
+    inspect_binary "${BINARIES_DIR}/${variant}/bitcoind"
+  done
 
   # Run hyperfine
   hyperfine \

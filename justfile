@@ -115,3 +115,16 @@ pick-pr pr_number:
     fi
 
     git fetch upstream pull/{{ pr_number }}/head:bench-{{ pr_number }} && git cherry-pick $(git rev-list bench-{{ pr_number }} --not upstream/master)
+
+check-bin binary:
+    #!/usr/bin/env bash
+    if ! version_output=$("{{binary}}" --version); then
+        echo "Error: Version check failed"
+        exit 1
+    fi
+    if ! echo "$version_output" | grep -q "Bitcoin Core"; then
+        echo "Error: Not a Bitcoin Core binary"
+        exit 1
+    fi
+    echo "✓ Valid Bitcoin Core binary"
+    echo "$version_output" | head -n 1

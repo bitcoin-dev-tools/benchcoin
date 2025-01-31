@@ -64,8 +64,8 @@ prepare_assumeutxo_snapshot_run() {
   clean_datadir "${TMP_DATADIR}"
   # Use the pre-built binaries from BINARIES_DIR
   "${BINARIES_DIR}/${commit}/bitcoind" --help
-  taskset -c 0-15 "${BINARIES_DIR}/${commit}/bitcoind" -datadir="${TMP_DATADIR}" -connect="${CONNECT_ADDRESS}" -daemon=0 -chain="${CHAIN}" -stopatheight=1 -printtoconsole=0
-  taskset -c 0-15 "${BINARIES_DIR}/${commit}/bitcoind" -datadir="${TMP_DATADIR}" -connect="${CONNECT_ADDRESS}" -daemon=0 -chain="${CHAIN}" -dbcache="${DBCACHE}" -pausebackgroundsync=1 -loadutxosnapshot="${UTXO_PATH}" -printtoconsole=0 || true
+  taskset -c 0-15 "${BINARIES_DIR}/${commit}/bitcoind" -datadir="${TMP_DATADIR}" -connect="${CONNECT_ADDRESS}" -daemon=0 -chain="${CHAIN}" -stopatheight=1 -printtoconsole=1
+  taskset -c 0-15 "${BINARIES_DIR}/${commit}/bitcoind" -datadir="${TMP_DATADIR}" -connect="${CONNECT_ADDRESS}" -daemon=0 -chain="${CHAIN}" -dbcache="${DBCACHE}" -pausebackgroundsync=1 -loadutxosnapshot="${UTXO_PATH}" -printtoconsole=1 || true
   clean_logs "${TMP_DATADIR}"
 }
 
@@ -138,6 +138,7 @@ run_benchmark() {
     --conclude "conclude_assumeutxo_snapshot_run {commit} ${TMP_DATADIR} ${png_dir}" \
     --cleanup "cleanup_assumeutxo_snapshot_run ${TMP_DATADIR}" \
     --runs 1 \
+    --show-output \
     --export-json "${results_file}" \
     --command-name "base (${base_commit})" \
     --command-name "head (${head_commit})" \

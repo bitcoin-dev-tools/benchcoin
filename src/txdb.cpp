@@ -168,6 +168,7 @@ public:
 
     bool GetKey(COutPoint &key) const override;
     bool GetValue(Coin &coin) const override;
+    bool SeekAndGetValue(const COutPoint& key, Coin &coin) const override;
 
     bool Valid() const override;
     void Next() override;
@@ -210,6 +211,14 @@ bool CCoinsViewDBCursor::GetKey(COutPoint &key) const
 
 bool CCoinsViewDBCursor::GetValue(Coin &coin) const
 {
+    return pcursor->GetValue(coin);
+}
+
+bool CCoinsViewDBCursor::SeekAndGetValue(const COutPoint& key, Coin &coin) const
+{
+    pcursor->Seek(CoinEntry(&key));
+    if (!pcursor->Valid()) return false;
+    if (CoinEntry e(&keyTmp.second); !pcursor->GetKey(e) || keyTmp.second != key) return false; // TODO should compare the serialized form
     return pcursor->GetValue(coin);
 }
 

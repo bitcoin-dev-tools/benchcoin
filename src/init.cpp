@@ -36,6 +36,7 @@
 #include <kernel/context.h>
 #include <key.h>
 #include <logging.h>
+#include <logging/timer.h>
 #include <mapport.h>
 #include <net.h>
 #include <net_permissions.h>
@@ -1314,6 +1315,113 @@ static ChainstateLoadResult InitAndLoadChainstate(
     return {status, error};
 };
 
+bool operator==(const Coin& a, const Coin& b)
+{
+    return a.fCoinBase == b.fCoinBase &&
+           a.nHeight == b.nHeight &&
+           a.out == b.out;
+}
+
+void BenchmarkLoadAllUTXOs(const CCoinsViewDB& coins_db)
+{
+    constexpr int max_utxo_count{200'000'000};
+    std::vector<std::pair<COutPoint, Coin>> utxos;
+
+    {
+        LOG_TIME_SECONDS("Loading all UTXOs from disk");
+        for (const auto cursor{coins_db.Cursor()}; cursor->Valid(); cursor->Next()) {
+            COutPoint key;
+            Coin coin;
+            if (cursor->GetKey(key) && cursor->GetValue(coin)) {
+                utxos.emplace_back(key, coin);
+            }
+        }
+        assert(utxos.size() < max_utxo_count);
+        assert(utxos.size() > max_utxo_count / 2);
+    }
+    {
+        LOG_TIME_SECONDS("Populating new cache with all UTXOs");
+        CCoinsView viewDummy;
+        CCoinsViewCache view(&viewDummy);
+        for (const auto& [outpoint, coin] : utxos) {
+            view.AddCoin(outpoint, Coin{coin}, /*possible_overwrite=*/false);
+        }
+        assert(view.GetCacheSize() == utxos.size());
+    }
+
+    // Raw gets vs cursor gets
+
+    {
+        LOG_TIME_SECONDS("Loading UTXOs one-by-one");
+        for (const auto& [outpoint, coin] : utxos) {
+            assert(coins_db.GetCoin(outpoint) == coin);
+        }
+    }
+    {
+        LOG_TIME_SECONDS("Loading UTXOs using cursor");
+        const auto cursor = coins_db.Cursor();
+        Coin next;
+        for (const auto& [outpoint, coin] : utxos) {
+            assert(cursor->SeekAndGetValue(outpoint, next));
+            assert(next == coin);
+        }
+    }
+
+    std::ranges::shuffle(utxos, FastRandomContext());
+    {
+        LOG_TIME_SECONDS("Loading shuffled UTXOs one-by-one");
+        for (const auto& [outpoint, coin] : utxos) {
+            assert(coins_db.GetCoin(outpoint) == coin);
+        }
+    }
+    {
+        LOG_TIME_SECONDS("Loading shuffled UTXOs using cursor");
+        const auto cursor = coins_db.Cursor();
+        Coin next;
+        for (const auto& [outpoint, coin] : utxos) {
+            assert(cursor->SeekAndGetValue(outpoint, next));
+            assert(next == coin);
+        }
+    }
+
+    std::ranges::sort(utxos, [](auto& a, auto& b) { return a.first < b.first; });
+    {
+        LOG_TIME_SECONDS("Loading ascending UTXOs one-by-one");
+        for (const auto& [outpoint, coin] : utxos) {
+            assert(coins_db.GetCoin(outpoint) == coin);
+        }
+    }
+    {
+        LOG_TIME_SECONDS("Loading ascending UTXOs using cursor");
+        const auto cursor = coins_db.Cursor();
+        Coin next;
+        for (const auto& [outpoint, coin] : utxos) {
+            assert(cursor->SeekAndGetValue(outpoint, next));
+            assert(next == coin);
+        }
+    }
+
+    std::ranges::reverse(utxos);
+    {
+        LOG_TIME_SECONDS("Loading descending UTXOs one-by-one");
+        for (const auto& [outpoint, coin] : utxos) {
+            assert(coins_db.GetCoin(outpoint) == coin);
+        }
+    }
+    {
+        LOG_TIME_SECONDS("Loading descending UTXOs using cursor");
+        const auto cursor = coins_db.Cursor();
+        Coin next;
+        for (const auto& [outpoint, coin] : utxos) {
+            assert(cursor->SeekAndGetValue(outpoint, next));
+            assert(next == coin);
+        }
+    }
+
+    fflush(stdout);
+    throw "Done!";
+}
+
 bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
 {
     const ArgsManager& args = *Assert(node.args);
@@ -1706,6 +1814,8 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
     }
 
     ChainstateManager& chainman = *Assert(node.chainman);
+    CCoinsViewDB& coins_db{WITH_LOCK(cs_main, return chainman.ActiveChainstate().CoinsDB())};
+    BenchmarkLoadAllUTXOs(coins_db);
 
     if (args.IsArgSet("-loadutxosnapshot")) {
         fs::path snapshot_path = fs::u8path(args.GetArg("-loadutxosnapshot", ""));

@@ -466,6 +466,35 @@ struct CNodeState {
     int64_t m_last_block_announcement{0};
 };
 
+class PeerManagerImpl;
+class BlockValidationThread {
+private:
+    std::queue<std::pair<std::shared_ptr<const CBlock>, NodeId>> m_block_queue;
+    std::mutex m_queue_mutex;
+    std::condition_variable m_condition;
+    std::stop_source m_stop_source;
+    std::jthread m_worker;
+    PeerManagerImpl& m_peerman;
+
+    void run();
+
+public:
+    explicit BlockValidationThread(PeerManagerImpl& peerman);
+    ~BlockValidationThread();
+
+    void push_block(std::shared_ptr<const CBlock> block, NodeId peer_id);
+    void stop();
+};
+
+BlockValidationThread::BlockValidationThread(PeerManagerImpl& peerman)
+    : m_peerman(peerman) {
+    m_worker = std::jthread([this] { run(); });
+}
+
+BlockValidationThread::~BlockValidationThread() {
+    stop();
+}
+
 class PeerManagerImpl final : public PeerManager
 {
 public:
@@ -517,6 +546,23 @@ public:
         EXCLUSIVE_LOCKS_REQUIRED(!m_peer_mutex, !m_most_recent_block_mutex, !m_headers_presync_mutex, g_msgproc_mutex, !m_tx_download_mutex);
     void UpdateLastBlockAnnounceTime(NodeId node, int64_t time_in_seconds) override;
     ServiceFlags GetDesirableServiceFlags(ServiceFlags services) const override;
+
+    // For BlockValidationThread
+    /** Have we requested this block from a peer */
+    bool IsBlockRequested(const uint256& hash) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+    /** Remove this block from our tracked requested blocks. Called if:
+     *  - the block has been received from a peer
+     *  - the request for the block has timed out
+     * If "from_peer" is specified, then only remove the block if it is in
+     * flight from that peer (to avoid one peer's network traffic from
+     * affecting another's state).
+     */
+    void RemoveBlockRequest(const uint256& hash, std::optional<NodeId> node) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+    /** Calculate an anti-DoS work threshold for headers chains */
+    arith_uint256 GetAntiDoSWorkThreshold();
+    std::map<uint256, std::pair<NodeId, bool>>& BlockSource() EXCLUSIVE_LOCKS_REQUIRED(cs_main) { return mapBlockSource; }
+
+    ChainstateManager& GetChainman();
 
 private:
     /** Consider evicting an outbound peer based on the amount of time they've been behind our tip */
@@ -620,8 +666,6 @@ private:
     /** Various helpers for headers processing, invoked by ProcessHeadersMessage() */
     /** Return true if headers are continuous and have valid proof-of-work (DoS points assigned on failure) */
     bool CheckHeadersPoW(const std::vector<CBlockHeader>& headers, const Consensus::Params& consensusParams, Peer& peer);
-    /** Calculate an anti-DoS work threshold for headers chains */
-    arith_uint256 GetAntiDoSWorkThreshold();
     /** Deal with state tracking and headers sync for peers that send
      * non-connecting headers (this can happen due to BIP 130 headers
      * announcements for blocks interacting with the 2hr (MAX_FUTURE_BLOCK_TIME) rule). */
@@ -848,20 +892,8 @@ private:
     /** Height of the highest block announced using BIP 152 high-bandwidth mode. */
     int m_highest_fast_announce GUARDED_BY(::cs_main){0};
 
-    /** Have we requested this block from a peer */
-    bool IsBlockRequested(const uint256& hash) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
-
     /** Have we requested this block from an outbound peer */
     bool IsBlockRequestedFromOutbound(const uint256& hash) EXCLUSIVE_LOCKS_REQUIRED(cs_main, !m_peer_mutex);
-
-    /** Remove this block from our tracked requested blocks. Called if:
-     *  - the block has been received from a peer
-     *  - the request for the block has timed out
-     * If "from_peer" is specified, then only remove the block if it is in
-     * flight from that peer (to avoid one peer's network traffic from
-     * affecting another's state).
-     */
-    void RemoveBlockRequest(const uint256& hash, std::optional<NodeId> from_peer) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
 
     /* Mark a block as in flight
      * Returns false, still setting pit, if the block was already in flight from the same peer
@@ -1040,6 +1072,7 @@ private:
 
     void AddAddressKnown(Peer& peer, const CAddress& addr) EXCLUSIVE_LOCKS_REQUIRED(g_msgproc_mutex);
     void PushAddress(Peer& peer, const CAddress& addr) EXCLUSIVE_LOCKS_REQUIRED(g_msgproc_mutex);
+    BlockValidationThread m_validation_thread;
 };
 
 const CNodeState* PeerManagerImpl::State(NodeId pnode) const
@@ -1085,6 +1118,7 @@ void PeerManagerImpl::PushAddress(Peer& peer, const CAddress& addr)
         }
     }
 }
+
 
 static void AddKnownTx(Peer& peer, const uint256& hash)
 {
@@ -1891,13 +1925,18 @@ PeerManagerImpl::PeerManagerImpl(CConnman& connman, AddrMan& addrman,
       m_mempool(pool),
       m_txdownloadman(node::TxDownloadOptions{pool, m_rng, opts.max_orphan_txs, opts.deterministic_rng}),
       m_warnings{warnings},
-      m_opts{opts}
+      m_opts{opts},
+      m_validation_thread{*this}
 {
     // While Erlay support is incomplete, it must be enabled explicitly via -txreconciliation.
     // This argument can go away after Erlay support is complete.
     if (opts.reconcile_txs) {
         m_txreconciliation = std::make_unique<TxReconciliationTracker>(TXRECONCILIATION_VERSION);
     }
+}
+
+ChainstateManager& PeerManagerImpl::GetChainman() {
+    return m_chainman;
 }
 
 void PeerManagerImpl::StartScheduledTasks(CScheduler& scheduler)
@@ -4589,37 +4628,7 @@ void PeerManagerImpl::ProcessMessage(CNode& pfrom, const std::string& msg_type, 
 
         LogDebug(BCLog::NET, "received block %s peer=%d\n", pblock->GetHash().ToString(), pfrom.GetId());
 
-        const CBlockIndex* prev_block{WITH_LOCK(m_chainman.GetMutex(), return m_chainman.m_blockman.LookupBlockIndex(pblock->hashPrevBlock))};
-
-        // Check for possible mutation if it connects to something we know so we can check for DEPLOYMENT_SEGWIT being active
-        if (prev_block && IsBlockMutated(/*block=*/*pblock,
-                           /*check_witness_root=*/DeploymentActiveAfter(prev_block, m_chainman, Consensus::DEPLOYMENT_SEGWIT))) {
-            LogDebug(BCLog::NET, "Received mutated block from peer=%d\n", peer->m_id);
-            Misbehaving(*peer, "mutated block");
-            WITH_LOCK(cs_main, RemoveBlockRequest(pblock->GetHash(), peer->m_id));
-            return;
-        }
-
-        bool forceProcessing = false;
-        const uint256 hash(pblock->GetHash());
-        bool min_pow_checked = false;
-        {
-            LOCK(cs_main);
-            // Always process the block if we requested it, since we may
-            // need it even when it's not a candidate for a new best tip.
-            forceProcessing = IsBlockRequested(hash);
-            RemoveBlockRequest(hash, pfrom.GetId());
-            // mapBlockSource is only used for punishing peers and setting
-            // which peers send us compact blocks, so the race between here and
-            // cs_main in ProcessNewBlock is fine.
-            mapBlockSource.emplace(hash, std::make_pair(pfrom.GetId(), true));
-
-            // Check claimed work on this block against our anti-dos thresholds.
-            if (prev_block && prev_block->nChainWork + CalculateClaimedHeadersWork({{pblock->GetBlockHeader()}}) >= GetAntiDoSWorkThreshold()) {
-                min_pow_checked = true;
-            }
-        }
-        ProcessBlock(pfrom, pblock, forceProcessing, min_pow_checked);
+        m_validation_thread.push_block(pblock, pfrom.GetId());
         return;
     }
 
@@ -5904,4 +5913,63 @@ bool PeerManagerImpl::SendMessages(CNode* pto)
     } // release cs_main
     MaybeSendFeefilter(*pto, *peer, current_time);
     return true;
+}
+
+void BlockValidationThread::push_block(std::shared_ptr<const CBlock> block, NodeId peer_id) {
+    {
+        std::scoped_lock lock(m_queue_mutex);
+        m_block_queue.emplace(std::move(block), peer_id);
+    }
+    m_condition.notify_one();
+}
+
+void BlockValidationThread::stop() {
+    m_stop_source.request_stop();
+    m_condition.notify_all();
+}
+
+void BlockValidationThread::run() {
+    util::ThreadRename(strprintf("validation"));
+
+    while (true) {
+        std::pair<std::shared_ptr<const CBlock>, NodeId> task;
+
+        {
+            std::unique_lock<std::mutex> lock(m_queue_mutex);
+
+            m_condition.wait(lock, [this] {
+                return !m_block_queue.empty() || m_stop_source.stop_requested();
+            });
+
+            if (m_stop_source.stop_requested() && m_block_queue.empty()) {
+                return;
+            }
+
+            task = std::move(m_block_queue.front());
+            m_block_queue.pop();
+        }
+
+        const auto& [block, peer_id] = task;
+        const uint256 block_hash = block->GetHash();
+        const CBlockIndex* prev_block;
+        bool force_processing = false;
+        bool min_pow_checked = false;
+
+        {
+            LOCK(cs_main);
+            prev_block = m_peerman.GetChainman().m_blockman.LookupBlockIndex(block->hashPrevBlock);
+
+            force_processing = m_peerman.IsBlockRequested(block_hash);
+            m_peerman.RemoveBlockRequest(block_hash, peer_id);
+            m_peerman.BlockSource().emplace(block_hash, std::make_pair(peer_id, true));
+
+            CBlockHeader block_header = block->GetBlockHeader();
+            if (prev_block && prev_block->nChainWork + CalculateClaimedHeadersWork(std::span<const CBlockHeader>(&block_header, 1)) >= m_peerman.GetAntiDoSWorkThreshold()) {
+                min_pow_checked = true;
+            }
+        }
+
+        bool new_block = false;
+        m_peerman.GetChainman().ProcessNewBlock(block, force_processing, min_pow_checked, &new_block);
+    }
 }

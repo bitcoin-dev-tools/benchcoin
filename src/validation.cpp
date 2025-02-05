@@ -4311,12 +4311,6 @@ static bool ContextualCheckBlockHeader(const CBlockHeader& block, BlockValidatio
         }
     }
 
-    // Check timestamp
-    if (!CheckHeaderNotFuture(block, state)) {
-        // state was filled by CheckHeaderNotFuture.
-        return false;
-    }
-
     // Reject blocks with outdated version
     if ((block.nVersion < 2 && DeploymentActiveAfter(pindexPrev, chainman, Consensus::DEPLOYMENT_HEIGHTINCB)) ||
         (block.nVersion < 3 && DeploymentActiveAfter(pindexPrev, chainman, Consensus::DEPLOYMENT_DERSIG)) ||
@@ -4413,6 +4407,10 @@ bool ChainstateManager::AcceptBlockHeader(const CBlockHeader& block, BlockValida
 
         if (!CheckBlockHeader(block, state, GetConsensus())) {
             LogDebug(BCLog::VALIDATION, "%s: Consensus::CheckBlockHeader: %s, %s\n", __func__, hash.ToString(), state.ToString());
+            return false;
+        }
+        if (!CheckHeaderNotFuture(block, state)) {
+            LogDebug(BCLog::VALIDATION, "%s: Consensus::CheckHeaderNotFuture: %s, %s\n", __func__, hash.ToString(), state.ToString());
             return false;
         }
 
@@ -4741,6 +4739,10 @@ bool TestBlockValidity(BlockValidationState& state,
     indexDummy.phashBlock = &block_hash;
 
     // NOTE: CheckBlockHeader is called by CheckBlock
+    if (!CheckHeaderNotFuture(block, state)) {
+        LogError("%s: Consensus::CheckHeaderNotFuture: %s\n", __func__, state.ToString());
+        return false;
+    }
     if (!ContextualCheckBlockHeader(block, state, chainstate.m_blockman, chainstate.m_chainman, pindexPrev)) {
         LogError("%s: Consensus::ContextualCheckBlockHeader: %s\n", __func__, state.ToString());
         return false;

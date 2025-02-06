@@ -2433,6 +2433,9 @@ static unsigned int GetBlockScriptFlags(const CBlockIndex& block_index, const Ch
     return flags;
 }
 
+static bool ContextualCheckBlockHeader(const CBlockHeader& block, BlockValidationState& state, BlockManager& blockman, const ChainstateManager& chainman, const CBlockIndex* pindexPrev) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+
+static bool ContextualCheckBlock(const CBlock& block, BlockValidationState& state, const ChainstateManager& chainman, const CBlockIndex* pindexPrev);
 
 /** Apply the effects of this block (with given index) on the UTXO set represented by coins.
  *  Validity checks that depend on the UTXO set are also done; ConnectBlock()
@@ -2451,16 +2454,8 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
     const CChainParams& params{m_chainman.GetParams()};
 
     // Check it again in case a previous version let a bad block in
-    // NOTE: We don't currently (re-)invoke ContextualCheckBlock() or
-    // ContextualCheckBlockHeader() here. This means that if we add a new
-    // consensus rule that is enforced in one of those two functions, then we
-    // may have let in a block that violates the rule prior to updating the
-    // software, and we would NOT be enforcing the rule here. Fully solving
-    // upgrade from one software version to the next after a consensus rule
-    // change is potentially tricky and issue-specific (see NeedsRedownload()
-    // for one approach that was used for BIP 141 deployment).
-    // Also, currently the rule against blocks more than 2 hours in the future
-    // is enforced in ContextualCheckBlockHeader(); we wouldn't want to
+    // Note the rule against blocks more than 2 hours in the future
+    // is not enforced in ContextualCheckBlockHeader(); we wouldn't want to
     // re-enforce that rule here (at least until we make it impossible for
     // the clock to go backward).
     if (!CheckBlock(block, state, params.GetConsensus(), !fJustCheck, !fJustCheck)) {
@@ -2471,6 +2466,14 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
             return FatalError(m_chainman.GetNotifications(), state, _("Corrupt block found indicating potential hardware failure."));
         }
         LogError("%s: Consensus::CheckBlock: %s\n", __func__, state.ToString());
+        return false;
+    }
+    if (pindex->pprev && !ContextualCheckBlockHeader(block, state, m_blockman, m_chainman, pindex->pprev)) {
+        LogError("%s: Consensus::ContextualCheckBlockHeader: %s\n", __func__, state.ToString());
+        return false;
+    }
+    if (!ContextualCheckBlock(block, state, m_chainman, pindex->pprev)) {
+        LogError("%s: Consensus::ContextualCheckBlock: %s\n", __func__, state.ToString());
         return false;
     }
 
@@ -4266,16 +4269,20 @@ arith_uint256 CalculateClaimedHeadersWork(std::span<const CBlockHeader> headers)
     return total_work;
 }
 
+/** Check the timestamp of the block header is not too far in the future. **/
+static bool CheckHeaderNotFuture(const CBlockHeader& block, BlockValidationState& state)
+{
+    if (block.Time() > NodeClock::now() + std::chrono::seconds{MAX_FUTURE_BLOCK_TIME}) {
+        return state.Invalid(BlockValidationResult::BLOCK_TIME_FUTURE, "time-too-new", "block timestamp too far in the future");
+    }
+    return true;
+}
+
 /** Context-dependent validity checks.
  *  By "context", we mean only the previous block headers, but not the UTXO
  *  set; UTXO-related validity checks are done in ConnectBlock().
- *  NOTE: This function is not currently invoked by ConnectBlock(), so we
- *  should consider upgrade issues if we change which consensus rules are
- *  enforced in this function (eg by adding a new consensus rule). See comment
- *  in ConnectBlock().
- *  Note that -reindex-chainstate skips the validation that happens here!
  */
-static bool ContextualCheckBlockHeader(const CBlockHeader& block, BlockValidationState& state, BlockManager& blockman, const ChainstateManager& chainman, const CBlockIndex* pindexPrev) EXCLUSIVE_LOCKS_REQUIRED(::cs_main)
+static bool ContextualCheckBlockHeader(const CBlockHeader& block, BlockValidationState& state, BlockManager& blockman, const ChainstateManager& chainman, const CBlockIndex* pindexPrev)
 {
     AssertLockHeld(::cs_main);
     assert(pindexPrev != nullptr);
@@ -4285,18 +4292,6 @@ static bool ContextualCheckBlockHeader(const CBlockHeader& block, BlockValidatio
     const Consensus::Params& consensusParams = chainman.GetConsensus();
     if (block.nBits != GetNextWorkRequired(pindexPrev, &block, consensusParams))
         return state.Invalid(BlockValidationResult::BLOCK_INVALID_HEADER, "bad-diffbits", "incorrect proof of work");
-
-    // Check against checkpoints
-    if (chainman.m_options.checkpoints_enabled) {
-        // Don't accept any forks from the main chain prior to last checkpoint.
-        // GetLastCheckpoint finds the last checkpoint in MapCheckpoints that's in our
-        // BlockIndex().
-        const CBlockIndex* pcheckpoint = blockman.GetLastCheckpoint(chainman.GetParams().Checkpoints());
-        if (pcheckpoint && nHeight < pcheckpoint->nHeight) {
-            LogPrintf("ERROR: %s: forked chain older than last checkpoint (height %d)\n", __func__, nHeight);
-            return state.Invalid(BlockValidationResult::BLOCK_CHECKPOINT, "bad-fork-prior-to-checkpoint");
-        }
-    }
 
     // Check timestamp against prev
     if (block.GetBlockTime() <= pindexPrev->GetMedianTimePast())
@@ -4314,11 +4309,6 @@ static bool ContextualCheckBlockHeader(const CBlockHeader& block, BlockValidatio
         }
     }
 
-    // Check timestamp
-    if (block.Time() > NodeClock::now() + std::chrono::seconds{MAX_FUTURE_BLOCK_TIME}) {
-        return state.Invalid(BlockValidationResult::BLOCK_TIME_FUTURE, "time-too-new", "block timestamp too far in the future");
-    }
-
     // Reject blocks with outdated version
     if ((block.nVersion < 2 && DeploymentActiveAfter(pindexPrev, chainman, Consensus::DEPLOYMENT_HEIGHTINCB)) ||
         (block.nVersion < 3 && DeploymentActiveAfter(pindexPrev, chainman, Consensus::DEPLOYMENT_DERSIG)) ||
@@ -4330,12 +4320,6 @@ static bool ContextualCheckBlockHeader(const CBlockHeader& block, BlockValidatio
     return true;
 }
 
-/** NOTE: This function is not currently invoked by ConnectBlock(), so we
- *  should consider upgrade issues if we change which consensus rules are
- *  enforced in this function (eg by adding a new consensus rule). See comment
- *  in ConnectBlock().
- *  Note that -reindex-chainstate skips the validation that happens here!
- */
 static bool ContextualCheckBlock(const CBlock& block, BlockValidationState& state, const ChainstateManager& chainman, const CBlockIndex* pindexPrev)
 {
     const int nHeight = pindexPrev == nullptr ? 0 : pindexPrev->nHeight + 1;
@@ -4415,6 +4399,10 @@ bool ChainstateManager::AcceptBlockHeader(const CBlockHeader& block, BlockValida
 
         if (!CheckBlockHeader(block, state, GetConsensus())) {
             LogDebug(BCLog::VALIDATION, "%s: Consensus::CheckBlockHeader: %s, %s\n", __func__, hash.ToString(), state.ToString());
+            return false;
+        }
+        if (!CheckHeaderNotFuture(block, state)) {
+            LogDebug(BCLog::VALIDATION, "%s: Consensus::CheckHeaderNotFuture: %s, %s\n", __func__, hash.ToString(), state.ToString());
             return false;
         }
 
@@ -4743,6 +4731,10 @@ bool TestBlockValidity(BlockValidationState& state,
     indexDummy.phashBlock = &block_hash;
 
     // NOTE: CheckBlockHeader is called by CheckBlock
+    if (!CheckHeaderNotFuture(block, state)) {
+        LogError("%s: Consensus::CheckHeaderNotFuture: %s\n", __func__, state.ToString());
+        return false;
+    }
     if (!ContextualCheckBlockHeader(block, state, chainstate.m_blockman, chainstate.m_chainman, pindexPrev)) {
         LogError("%s: Consensus::ContextualCheckBlockHeader: %s\n", __func__, state.ToString());
         return false;

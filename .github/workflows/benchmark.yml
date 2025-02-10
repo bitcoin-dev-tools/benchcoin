@@ -88,8 +88,8 @@ jobs:
           env
 
           # Patch binary shared object dependencies
-          nix-shell --command "patch-binary $BINARIES_DIR/head/bitcoind"
-          nix-shell --command "patch-binary $BINARIES_DIR/base/bitcoind"
+          # nix-shell --command "patch-binary $BINARIES_DIR/head/bitcoind"
+          # nix-shell --command "patch-binary $BINARIES_DIR/base/bitcoind"
 
           # Run test
           mkdir -p "$TMP_DATADIR"

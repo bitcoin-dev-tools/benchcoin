@@ -37,31 +37,6 @@ let
     '';
   };
 
-  # Hyperfine
-  # Included here because we need master for the `--conclude` flag from pr 719
-  hyperfine = pkgs.rustPlatform.buildRustPackage rec {
-    pname = "hyperfine";
-    name = "hyperfine";
-    version = "e3e86174d9e11dd3a8951990f279c3b85f5fc0b9";
-
-    src = pkgs.fetchFromGitHub {
-      owner = "sharkdp";
-      repo = "hyperfine";
-      rev = version;
-      sha256 = "sha256-WCc7gURd8dFgUC8moxB7y16e1jNKtImwsfXnqU36IrE=";
-    };
-
-    nativeBuildInputs = with pkgs; [ sqlite ];
-
-    cargoHash = "sha256-E46//75Dgg+XClhD2iV86PYYwEE7bLeYMLK5UkyRpyg=";
-
-    meta = with pkgs.lib; {
-      description = "A command-line benchmarking tool.";
-      homepage = "https://github.com/sharkdp/hyperfine";
-      license = licenses.mit;
-    };
-  };
-
 in pkgs.mkShell {
   nativeBuildInputs = with pkgs; [
     autoconf

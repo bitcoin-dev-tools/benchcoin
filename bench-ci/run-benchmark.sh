@@ -120,10 +120,9 @@ run_benchmark() {
     --runs 3 \
     --export-json "${results_file}" \
     --show-output \
-    --command-name "base (${base_commit})" \
-    --command-name "head (${head_commit})" \
-    "taskset -c 2-15 chrt -o 0 ${BINARIES_DIR}/{commit}/bitcoind -datadir=${TMP_DATADIR} -connect=${connect_address} -daemon=0 -prune=10000 -chain=${chain} -stopatheight=${stop_at_height} -dbcache=${dbcache} -printtoconsole=0" \
-    -L commit "base,head"
+    "taskset -c 2-15 chrt -o 0 ${BINARIES_DIR}/{branch}/bitcoind -datadir=${TMP_DATADIR} -connect=${connect_address} -daemon=0 -prune=10000 -chain=${chain} -stopatheight=${stop_at_height} -dbcache=${dbcache} -printtoconsole=0" \
+    -L branch "base,head" \
+    -L commit "${base_commit},${head_commit}" # not used in the hyperfine command, but squeezing some more detail into the results.json
 }
 
 # Main execution

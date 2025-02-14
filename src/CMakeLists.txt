@@ -54,7 +54,8 @@ foreach(config IN LISTS CMAKE_BUILD_TYPE CMAKE_CONFIGURATION_TYPES)
     continue()
   endif()
   string(TOUPPER "${config}" config)
-  set(CMAKE_C_FLAGS_${config} "${CMAKE_C_FLAGS_RELWITHDEBINFO}")
+  string(REGEX REPLACE "-O[0-3]" "" CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO}")
+  set(CMAKE_C_FLAGS_${config} "${CMAKE_C_FLAGS_RELWITHDEBINFO} -O3")
 endforeach()
 # If the CFLAGS environment variable is defined during building depends
 # and configuring this build system, its content might be duplicated.

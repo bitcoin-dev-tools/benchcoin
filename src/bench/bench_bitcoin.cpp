@@ -29,6 +29,7 @@ static void SetupBenchArgs(ArgsManager& argsman)
 {
     SetupHelpOptions(argsman);
     SetupCommonTestArgs(argsman);
+    SetupServerBenchArgs(argsman);
 
     argsman.AddArg("-asymptote=<n1,n2,n3,...>", "Test asymptotic growth of the runtime of an algorithm, if supported by the benchmark", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     argsman.AddArg("-filter=<regex>", strprintf("Regular expression filter to select benchmark by name (default: %s)", DEFAULT_BENCH_FILTER), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
@@ -66,7 +67,7 @@ static std::vector<std::string> parseTestSetupArgs(const ArgsManager& argsman)
 {
     // Parses unit test framework arguments supported by the benchmark framework.
     std::vector<std::string> args;
-    static std::vector<std::string> AVAILABLE_ARGS = {"-testdatadir"};
+    static std::vector<std::string> AVAILABLE_ARGS = {"-testdatadir", "-disableschnorr"};
     for (const std::string& arg_name : AVAILABLE_ARGS) {
         auto op_arg = argsman.GetArg(arg_name);
         if (op_arg) args.emplace_back(strprintf("%s=%s", arg_name, *op_arg));

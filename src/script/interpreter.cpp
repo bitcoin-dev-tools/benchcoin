@@ -1641,7 +1641,7 @@ bool GenericTransactionSignatureChecker<T>::VerifyECDSASignature(const std::vect
 template <class T>
 bool GenericTransactionSignatureChecker<T>::VerifySchnorrSignature(Span<const unsigned char> sig, const XOnlyPubKey& pubkey, const uint256& sighash) const
 {
-    return pubkey.VerifySchnorr(sighash, sig);
+    return pubkey.VerifySchnorr(sighash, sig, m_flags & SCRIPT_DISABLE_SCHNORR_VERIFY);
 }
 
 template <class T>

@@ -1,0 +1,186 @@
+{
+  "results": [
+    {
+      "command": "base (8d190124343f2a78c394be7ef5c0275a579f1345)",
+      "mean": 1034.5125726692,
+      "stddev": null,
+      "median": 1034.5125726692,
+      "user": 1080.8022318800001,
+      "system": 211.14754083999998,
+      "min": 1034.5125726692,
+      "max": 1034.5125726692,
+      "times": [
+        1034.5125726692
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "base"
+      },
+      "network": "mainnet-default-instrumented"
+    },
+    {
+      "command": "head (76c93166caeb35ce54c257701d41bd80d30cd52a)",
+      "mean": 1070.5446067602,
+      "stddev": null,
+      "median": 1070.5446067602,
+      "user": 1074.07742588,
+      "system": 197.48972483999998,
+      "min": 1070.5446067602,
+      "max": 1070.5446067602,
+      "times": [
+        1070.5446067602
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "head"
+      },
+      "network": "mainnet-default-instrumented"
+    },
+    {
+      "command": "base (8d190124343f2a78c394be7ef5c0275a579f1345)",
+      "mean": 669.4605713092,
+      "stddev": null,
+      "median": 669.4605713092,
+      "user": 832.5782591799999,
+      "system": 136.3402929,
+      "min": 669.4605713092,
+      "max": 669.4605713092,
+      "times": [
+        669.4605713092
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "base"
+      },
+      "network": "mainnet-large-instrumented"
+    },
+    {
+      "command": "head (76c93166caeb35ce54c257701d41bd80d30cd52a)",
+      "mean": 680.8006125602,
+      "stddev": null,
+      "median": 680.8006125602,
+      "user": 824.7385621799999,
+      "system": 125.1831079,
+      "min": 680.8006125602,
+      "max": 680.8006125602,
+      "times": [
+        680.8006125602
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "head"
+      },
+      "network": "mainnet-large-instrumented"
+    },
+    {
+      "command": "base (8d190124343f2a78c394be7ef5c0275a579f1345)",
+      "mean": 1314.61332053626,
+      "stddev": 34.35636893738108,
+      "median": 1311.19639107426,
+      "user": 1024.7139952933333,
+      "system": 180.15728220000003,
+      "min": 1282.09309070626,
+      "max": 1350.55047982826,
+      "times": [
+        1282.09309070626,
+        1311.19639107426,
+        1350.55047982826
+      ],
+      "exit_codes": [
+        0,
+        0,
+        0
+      ],
+      "parameters": {
+        "commit": "base"
+      },
+      "network": "mainnet-default-uninstrumented"
+    },
+    {
+      "command": "head (76c93166caeb35ce54c257701d41bd80d30cd52a)",
+      "mean": 1354.4106394789267,
+      "stddev": 10.843506545297066,
+      "median": 1355.19074346926,
+      "user": 1010.2009752933333,
+      "system": 179.21051853333333,
+      "min": 1343.19814725426,
+      "max": 1364.84302771326,
+      "times": [
+        1343.19814725426,
+        1355.19074346926,
+        1364.84302771326
+      ],
+      "exit_codes": [
+        0,
+        0,
+        0
+      ],
+      "parameters": {
+        "commit": "head"
+      },
+      "network": "mainnet-default-uninstrumented"
+    },
+    {
+      "command": "base (8d190124343f2a78c394be7ef5c0275a579f1345)",
+      "mean": 871.2051710153866,
+      "stddev": 7.503275973882174,
+      "median": 874.59981403972,
+      "user": 750.9158503333333,
+      "system": 93.62538053333333,
+      "min": 862.60448442572,
+      "max": 876.41121458072,
+      "times": [
+        874.59981403972,
+        876.41121458072,
+        862.60448442572
+      ],
+      "exit_codes": [
+        0,
+        0,
+        0
+      ],
+      "parameters": {
+        "commit": "base"
+      },
+      "network": "mainnet-large-uninstrumented"
+    },
+    {
+      "command": "head (76c93166caeb35ce54c257701d41bd80d30cd52a)",
+      "mean": 868.4743748653867,
+      "stddev": 12.262474706975365,
+      "median": 874.63229710672,
+      "user": 750.8341959999999,
+      "system": 93.53971086666667,
+      "min": 854.35329976272,
+      "max": 876.43752772672,
+      "times": [
+        874.63229710672,
+        854.35329976272,
+        876.43752772672
+      ],
+      "exit_codes": [
+        0,
+        0,
+        0
+      ],
+      "parameters": {
+        "commit": "head"
+      },
+      "network": "mainnet-large-uninstrumented"
+    }
+  ],
+  "speedups": {
+    "mainnet-default-instrumented": "-3.5",
+    "mainnet-large-instrumented": "-1.7",
+    "mainnet-default-uninstrumented": "-3.0",
+    "mainnet-large-uninstrumented": "0.3"
+  }
+}

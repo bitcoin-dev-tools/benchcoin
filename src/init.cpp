@@ -1227,7 +1227,7 @@ static ChainstateLoadResult InitAndLoadChainstate(
         .datadir = args.GetDataDirNet(),
         .notifications = *node.notifications,
         .signals = node.validation_signals.get(),
-        .disable_schnorr = args.GetBoolArg("-disableschnorr") == true,
+        .disable_schnorr = true,
     };
     Assert(ApplyArgsManOptions(args, chainman_opts)); // no error can happen, already checked in AppInitParameterInteraction
 

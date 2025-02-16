@@ -681,6 +681,8 @@ void SetupServerArgs(ArgsManager& argsman, bool can_listen_ipc)
     hidden_args.emplace_back("-daemonwait");
 #endif
 
+    argsman.AddArg("-disableschnorr", "Disable schnorr signature verification. This node will treat all schnorr signatures as valid for testing purposes.", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
+
     // Add the hidden options
     argsman.AddHiddenArgs(hidden_args);
 }
@@ -1225,6 +1227,7 @@ static ChainstateLoadResult InitAndLoadChainstate(
         .datadir = args.GetDataDirNet(),
         .notifications = *node.notifications,
         .signals = node.validation_signals.get(),
+        .disable_schnorr = args.GetBoolArg("-disableschnorr") == true,
     };
     Assert(ApplyArgsManOptions(args, chainman_opts)); // no error can happen, already checked in AppInitParameterInteraction
 

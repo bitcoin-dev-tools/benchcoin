@@ -98,6 +98,11 @@ void SetupCommonTestArgs(ArgsManager& argsman)
                    ArgsManager::ALLOW_ANY, OptionsCategory::DEBUG_TEST);
 }
 
+void SetupServerBenchArgs(ArgsManager& argsman)
+{
+    argsman.AddArg("-disableschnorr", "Disable schnorr signature verification", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
+}
+
 /** Test setup failure */
 static void ExitFailure(std::string_view str_err)
 {
@@ -242,6 +247,7 @@ ChainTestingSetup::ChainTestingSetup(const ChainType chainType, TestOpts opts)
             .notifications = *m_node.notifications,
             .signals = m_node.validation_signals.get(),
             .worker_threads_num = 2,
+            .disable_schnorr = m_node.args->GetBoolArg("-disableschnorr") == true,
         };
         if (opts.min_validation_cache) {
             chainman_opts.script_execution_cache_bytes = 0;

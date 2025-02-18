@@ -20,7 +20,9 @@
 #include <limits>
 #include <map>
 #include <memory>
+#include <ranges>
 #include <set>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
@@ -413,10 +415,26 @@ struct CheckVarIntMode {
     }
 };
 
+static constexpr size_t GetVarUInt32Size(uint32_t n) noexcept
+{
+    if (n < (1 << 7)) { // 128
+        return 1;
+    } else if (n < (1 << 7) + (1 << 2 * 7)) { // 16'512
+        return 2;
+    } else {
+        return 3
+            + (n >= (1 << 7) + (1 << 2 * 7) + (1 << 3 * 7)) // 2'113'664
+            + (n >= (1 << 7) + (1 << 2 * 7) + (1 << 3 * 7) + (1 << 4 * 7)); // 270'549'120
+    }
+}
 template<VarIntMode Mode, typename I>
-inline unsigned int GetSizeOfVarInt(I n)
+unsigned int GetSizeOfVarInt(I n)
 {
     CheckVarIntMode<Mode, I>();
+    if constexpr (std::is_same_v<I, uint32_t>) {
+        return GetVarUInt32Size(n);
+    }
+
     int nRet = 0;
     while(true) {
         nRet++;
@@ -427,6 +445,23 @@ inline unsigned int GetSizeOfVarInt(I n)
     return nRet;
 }
 
+inline void WriteVarUInt32(std::span<std::byte> out, uint32_t n)
+{
+    if (out.size() == 1) {
+        out[0] = static_cast<std::byte>(n);
+    } else if (out.size() == 2) {
+        out[0] = static_cast<std::byte>(((n >> 7) - 1) | 0x80);
+        out[1] = static_cast<std::byte>(n & 0x7F); // TODO make sure tests fail without the mask
+    } else {
+        auto rev{std::ranges::reverse_view(out)};
+        rev[0] = static_cast<std::byte>(n & 0x7F);
+        for (size_t i{1}; i < out.size(); ++i) {
+            n = (n >> 7) - 1;
+            rev[i] = static_cast<std::byte>((n & 0x7F) | 0x80);
+        }
+    }
+}
+
 template<typename I>
 inline void WriteVarInt(SizeComputer& os, I n);
 
@@ -434,6 +469,7 @@ template<typename Stream, VarIntMode Mode, typename I>
 void WriteVarInt(Stream& os, I n)
 {
     CheckVarIntMode<Mode, I>();
+    // TODO if constexpr (std::is_same_v<I, uint32_t>) {
     unsigned char tmp[(sizeof(n)*8+6)/7];
     int len=0;
     while(true) {

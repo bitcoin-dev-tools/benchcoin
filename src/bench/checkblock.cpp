@@ -80,6 +80,16 @@ static std::vector<COutPoint> GetOutpoints()
     return outpoints;
 }
 
+// namespace {
+// struct CoinEntry {
+//     COutPoint* outpoint;
+//     uint8_t key;
+//     explicit CoinEntry(const COutPoint* ptr) : outpoint(const_cast<COutPoint*>(ptr)), key(DB_COIN)  {}
+//
+//     SERIALIZE_METHODS(CoinEntry, obj) { READWRITE(obj.key, obj.outpoint->hash, VARINT(obj.outpoint->n)); }
+// };
+// }
+
 static void SerializeCOutPoint(benchmark::Bench& bench)
 {
     std::vector<CoinEntry> outpoints;

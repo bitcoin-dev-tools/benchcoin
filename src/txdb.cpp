@@ -51,12 +51,16 @@ void CCoinsViewDB::ResizeCache(size_t new_cache_size)
 
 std::optional<Coin> CCoinsViewDB::GetCoin(const COutPoint& outpoint) const
 {
-    if (Coin coin; m_db->Read(CoinEntry(&outpoint), coin)) return coin; // TODO WriteCOutPoint
+    std::string key_str;
+    const Span key{WriteCOutPoint(key_str, outpoint)};
+    if (Coin coin; m_db->ReadSpan(key, coin)) return coin;
     return std::nullopt;
 }
 
 bool CCoinsViewDB::HaveCoin(const COutPoint &outpoint) const {
-    return m_db->Exists(CoinEntry(&outpoint)); // TODO WriteCOutPoint
+    std::string key_str;
+    const auto key{WriteCOutPoint(key_str, outpoint)};
+    return m_db->ExistsImpl(key);
 }
 
 uint256 CCoinsViewDB::GetBestBlock() const {
@@ -100,13 +104,14 @@ bool CCoinsViewDB::BatchWrite(CoinsViewCacheCursor& cursor, const uint256 &hashB
     batch.Erase(DB_BEST_BLOCK);
     batch.Write(DB_HEAD_BLOCKS, Vector(hashBlock, old_tip));
 
+    std::string key_str;
     for (auto it{cursor.Begin()}; it != cursor.End();) {
         if (it->second.IsDirty()) {
-            CoinEntry entry(&it->first); // TODO WriteCOutPoint
+            const auto key{WriteCOutPoint(key_str, it->first)};
             if (it->second.coin.IsSpent())
-                batch.Erase(entry);
+                batch.EraseImpl(key);
             else
-                batch.Write(entry, it->second.coin);
+                batch.WriteSpan(key, it->second.coin);
             changed++;
         }
         count++;

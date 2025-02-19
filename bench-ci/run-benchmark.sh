@@ -122,7 +122,7 @@ run_benchmark() {
     --show-output \
     --command-name "base (${base_commit})" \
     --command-name "head (${head_commit})" \
-    "taskset -c 2-15 chrt -o 0 ${BINARIES_DIR}/{commit}/bitcoind -datadir=${TMP_DATADIR} -connect=${connect_address} -daemon=0 -prune=10000 -chain=${chain} -stopatheight=${stop_at_height} -dbcache=${dbcache} -printtoconsole=0" \
+    "taskset -c 2-15 chrt -o 0 ${BINARIES_DIR}/{commit}/bitcoind -datadir=${TMP_DATADIR} -connect=${connect_address} -daemon=0 -prune=10000 -chain=${chain} -stopatheight=${stop_at_height} -dbcache=${dbcache} -printtoconsole=0 -assumevalid=0" \
     -L commit "base,head"
 }
 

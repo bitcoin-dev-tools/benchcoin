@@ -56,6 +56,10 @@ class LEVELDB_EXPORT WriteBatch {
   // Clear all updates buffered in this batch.
   void Clear();
 
+  void Reserve(size_t size);
+  size_t Size() const;
+  size_t Capacity() const;
+
   // The size of the database changes caused by this batch.
   //
   // This number is tied to implementation details, and may change across

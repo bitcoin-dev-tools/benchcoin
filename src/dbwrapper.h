@@ -83,8 +83,6 @@ private:
     DataStream ssKey{};
     DataStream ssValue{};
 
-    size_t size_estimate{0};
-
     void WriteImpl(Span<const std::byte> key, DataStream& ssValue);
     void EraseImpl(Span<const std::byte> key);
 
@@ -95,29 +93,64 @@ public:
     explicit CDBBatch(const CDBWrapper& _parent);
     ~CDBBatch();
     void Clear();
+    void Reserve(size_t size) const;
+    size_t Size() const;
+    size_t Capacity() const;
 
     template <typename K, typename V>
-    void Write(const K& key, const V& value)
+    size_t SerializeWrite(const K& key, const V& value)
     {
         ssKey.reserve(DBWRAPPER_PREALLOC_KEY_SIZE);
         ssValue.reserve(DBWRAPPER_PREALLOC_VALUE_SIZE);
         ssKey << key;
         ssValue << value;
+        // LevelDB serializes writes as:
+        // - byte: header
+        // - varint: key length (1 byte up to 127B, 2 bytes up to 16383B, ...)
+        // - byte[]: key
+        // - varint: value length
+        // - byte[]: value
+        // The formula below assumes the key and value are both less than 16k.
+        return 3 + (ssKey.size() > 127) + ssKey.size() + (ssValue.size() > 127) + ssValue.size();
+    }
+    void WriteSerialized()
+    {
+        assert(!ssKey.empty() && !ssValue.empty());
         WriteImpl(ssKey, ssValue);
         ssKey.clear();
         ssValue.clear();
     }
+    template <typename K, typename V>
+    void Write(const K& key, const V& value)
+    {
+        SerializeWrite(key, value);
+        WriteSerialized();
+    }
 
     template <typename K>
-    void Erase(const K& key)
+    size_t SerializeErase(const K& key)
     {
         ssKey.reserve(DBWRAPPER_PREALLOC_KEY_SIZE);
         ssKey << key;
+        // LevelDB serializes erases as:
+        // - byte: header
+        // - varint: key length
+        // - byte[]: key
+        // The formula below assumes the key is less than 16kB.
+        return 2 + (ssKey.size() > 127) + ssKey.size();
+    }
+    void EraseSerialized()
+    {
+        assert(!ssKey.empty());
         EraseImpl(ssKey);
         ssKey.clear();
     }
-
-    size_t SizeEstimate() const { return size_estimate; }
+    template <typename K>
+    void Erase(const K& key)
+    {
+        SerializeErase(key);
+        EraseSerialized();
+    }
 };
 
 class CDBIterator

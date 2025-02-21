@@ -24,6 +24,35 @@ class uint256;
 //! -dbbatchsize default (bytes)
 static const int64_t nDefaultDbBatchSize = 16 << 20;
 
+static constexpr uint8_t DB_COIN{'C'};
+static constexpr uint8_t DB_BEST_BLOCK{'B'};
+static constexpr uint8_t DB_HEAD_BLOCKS{'H'};
+
+struct CoinEntry { // TODO remove
+    COutPoint* outpoint;
+    uint8_t key;
+    explicit CoinEntry(const COutPoint* ptr) : outpoint(const_cast<COutPoint*>(ptr)), key(DB_COIN)  {}
+
+    SERIALIZE_METHODS(CoinEntry, obj) { READWRITE(obj.key, obj.outpoint->hash, VARINT(obj.outpoint->n)); }
+};
+
+inline Span<const std::byte> WriteCOutPoint(std::string& out, const COutPoint& op) noexcept
+{
+    const size_t opn_size{GetVarUInt32Size(op.n)};
+    const size_t size{1 + sizeof(uint256) + opn_size};
+    out.resize(out.size() + size);
+
+    char* pos{out.data()};
+    *pos++ = DB_COIN;
+
+    std::memcpy(pos, op.hash.begin(), sizeof(uint256));
+    pos += sizeof(uint256);
+
+    WriteVarUInt32({reinterpret_cast<std::byte*>(pos), opn_size}, op.n);
+
+    return Span{reinterpret_cast<std::byte*>(out.data()), size};
+}
+
 //! User-controlled performance and debug options.
 struct CoinsViewOptions {
     //! Maximum database write batch size in bytes.

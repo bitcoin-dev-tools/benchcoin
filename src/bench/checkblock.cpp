@@ -7,11 +7,16 @@
 #include <chainparams.h>
 #include <common/args.h>
 #include <consensus/validation.h>
+#include <cstdint>
+#include <cstring>
+#include <limits>
 #include <primitives/block.h>
 #include <primitives/transaction.h>
 #include <serialize.h>
 #include <span.h>
+#include <stdexcept>
 #include <streams.h>
+#include <string>
 #include <util/chaintype.h>
 #include <validation.h>
 
@@ -60,5 +65,65 @@ static void DeserializeAndCheckBlockTest(benchmark::Bench& bench)
     });
 }
 
+static std::vector<COutPoint> GetOutpoints()
+{
+    CBlock block;
+    DataStream(benchmark::data::block413567) >> TX_WITH_WITNESS(block);
+
+    std::vector<COutPoint> outpoints;
+    for (const auto& tx : block.vtx) {
+        for (const auto& in : tx->vin) {
+            outpoints.emplace_back(in.prevout);
+        }
+    }
+    outpoints.shrink_to_fit();
+    return outpoints;
+}
+
+// namespace {
+// struct CoinEntry {
+//     COutPoint* outpoint;
+//     uint8_t key;
+//     explicit CoinEntry(const COutPoint* ptr) : outpoint(const_cast<COutPoint*>(ptr)), key(DB_COIN)  {}
+//
+//     SERIALIZE_METHODS(CoinEntry, obj) { READWRITE(obj.key, obj.outpoint->hash, VARINT(obj.outpoint->n)); }
+// };
+// }
+
+static void SerializeCOutPoint(benchmark::Bench& bench)
+{
+    std::vector<CoinEntry> outpoints;
+    for (auto out : GetOutpoints()) {
+        outpoints.emplace_back(&out);
+    }
+
+    DataStream original;
+    for (auto& op : outpoints) original << op;
+
+    bench.warmup(1).batch(outpoints.size()).unit("outpoints").run([&] {
+        DataStream serialized;
+        serialized.reserve(original.size());
+        for (auto& op : outpoints) serialized << op;
+        assert(serialized.size() == original.size());
+    });
+}
+
+static void SerializeCOutPoint2(benchmark::Bench& bench)
+{
+    const auto& outpoints{GetOutpoints()};
+
+    DataStream original;
+    for (auto& outpoint : outpoints) original << CoinEntry{&outpoint};
+
+    bench.warmup(1).batch(outpoints.size()).unit("outpoints").run([&] {
+        std::string serialized;
+        serialized.reserve(original.size());
+        for (auto& op : outpoints) WriteCOutPoint(serialized, op);
+        assert(serialized.size() == original.size());
+    });
+}
+
+BENCHMARK(SerializeCOutPoint, benchmark::PriorityLevel::HIGH);
+BENCHMARK(SerializeCOutPoint2, benchmark::PriorityLevel::HIGH);
 BENCHMARK(DeserializeBlockTest, benchmark::PriorityLevel::HIGH);
 BENCHMARK(DeserializeAndCheckBlockTest, benchmark::PriorityLevel::HIGH);

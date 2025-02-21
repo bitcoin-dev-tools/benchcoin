@@ -19,32 +19,16 @@
 #include <iterator>
 #include <utility>
 
-static constexpr uint8_t DB_COIN{'C'};
-static constexpr uint8_t DB_BEST_BLOCK{'B'};
-static constexpr uint8_t DB_HEAD_BLOCKS{'H'};
-// Keys used in previous version that might still be found in the DB:
-static constexpr uint8_t DB_COINS{'c'};
-
 bool CCoinsViewDB::NeedsUpgrade()
 {
+    // Keys used in previous version that might still be found in the DB:
+    constexpr uint8_t DB_COINS{'c'};
+
     std::unique_ptr<CDBIterator> cursor{m_db->NewIterator()};
-    // DB_COINS was deprecated in v0.15.0, commit
-    // 1088b02f0ccd7358d2b7076bb9e122d59d502d02
+    // DB_COINS was deprecated in v0.15.0, commit 1088b02f0ccd7358d2b7076bb9e122d59d502d02
     cursor->Seek(std::make_pair(DB_COINS, uint256{}));
     return cursor->Valid();
 }
-
-namespace {
-
-struct CoinEntry {
-    COutPoint* outpoint;
-    uint8_t key;
-    explicit CoinEntry(const COutPoint* ptr) : outpoint(const_cast<COutPoint*>(ptr)), key(DB_COIN)  {}
-
-    SERIALIZE_METHODS(CoinEntry, obj) { READWRITE(obj.key, obj.outpoint->hash, VARINT(obj.outpoint->n)); }
-};
-
-} // namespace
 
 CCoinsViewDB::CCoinsViewDB(DBParams db_params, CoinsViewOptions options) :
     m_db_params{std::move(db_params)},
@@ -67,12 +51,16 @@ void CCoinsViewDB::ResizeCache(size_t new_cache_size)
 
 std::optional<Coin> CCoinsViewDB::GetCoin(const COutPoint& outpoint) const
 {
-    if (Coin coin; m_db->Read(CoinEntry(&outpoint), coin)) return coin;
+    std::string key_str;
+    const Span key{WriteCOutPoint(key_str, outpoint)};
+    if (Coin coin; m_db->ReadSpan(key, coin)) return coin;
     return std::nullopt;
 }
 
 bool CCoinsViewDB::HaveCoin(const COutPoint &outpoint) const {
-    return m_db->Exists(CoinEntry(&outpoint));
+    std::string key_str;
+    const auto key{WriteCOutPoint(key_str, outpoint)};
+    return m_db->ExistsImpl(key);
 }
 
 uint256 CCoinsViewDB::GetBestBlock() const {
@@ -116,13 +104,14 @@ bool CCoinsViewDB::BatchWrite(CoinsViewCacheCursor& cursor, const uint256 &hashB
     batch.Erase(DB_BEST_BLOCK);
     batch.Write(DB_HEAD_BLOCKS, Vector(hashBlock, old_tip));
 
+    std::string key_str;
     for (auto it{cursor.Begin()}; it != cursor.End();) {
         if (it->second.IsDirty()) {
-            CoinEntry entry(&it->first);
+            const auto key{WriteCOutPoint(key_str, it->first)};
             if (it->second.coin.IsSpent())
-                batch.Erase(entry);
+                batch.EraseImpl(key);
             else
-                batch.Write(entry, it->second.coin);
+                batch.WriteSpan(key, it->second.coin);
             changed++;
         }
         count++;
@@ -189,7 +178,7 @@ std::unique_ptr<CCoinsViewCursor> CCoinsViewDB::Cursor() const
     i->pcursor->Seek(DB_COIN);
     // Cache key of first record
     if (i->pcursor->Valid()) {
-        CoinEntry entry(&i->keyTmp.second);
+        CoinEntry entry(&i->keyTmp.second); // TODO WriteCOutPoint
         i->pcursor->GetKey(entry);
         i->keyTmp.first = entry.key;
     } else {
@@ -221,7 +210,7 @@ bool CCoinsViewDBCursor::Valid() const
 void CCoinsViewDBCursor::Next()
 {
     pcursor->Next();
-    CoinEntry entry(&keyTmp.second);
+    CoinEntry entry(&keyTmp.second); // TODO WriteCOutPoint
     if (!pcursor->Valid() || !pcursor->GetKey(entry)) {
         keyTmp.first = 0; // Invalidate cached key after last record so that Valid() and GetKey() return false
     } else {

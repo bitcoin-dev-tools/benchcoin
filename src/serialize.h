@@ -1086,6 +1086,11 @@ public:
     size_t size() const {
         return nSize;
     }
+
+    void reset()
+    {
+        nSize = 0;
+    }
 };
 
 template<typename I>

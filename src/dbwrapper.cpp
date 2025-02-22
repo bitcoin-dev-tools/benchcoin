@@ -404,7 +404,8 @@ void CDBIterator::SeekImpl(Span<const std::byte> key)
 
 Span<const std::byte> CDBIterator::GetKeyImpl() const
 {
-    return MakeByteSpan(m_impl_iter->iter->key());
+    auto bytes = MakeByteSpan(m_impl_iter->iter->key());
+    return bytes;
 }
 
 Span<const std::byte> CDBIterator::GetValueImpl() const

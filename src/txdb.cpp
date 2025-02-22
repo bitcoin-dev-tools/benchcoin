@@ -18,6 +18,7 @@
 #include <cstdlib>
 #include <iterator>
 #include <utility>
+#include <consensus/consensus.h>
 
 bool CCoinsViewDB::NeedsUpgrade()
 {
@@ -51,12 +52,14 @@ void CCoinsViewDB::ResizeCache(size_t new_cache_size)
 
 std::optional<Coin> CCoinsViewDB::GetCoin(const COutPoint& outpoint, Span<std::byte> key_buffer) const
 {
-    if (Coin coin; m_db->Read(CoinEntry(&outpoint), coin)) return coin; // TODO WriteCOutPoint
+    WriteCOutPoint(key_buffer, outpoint);
+    if (Coin coin; m_db->ReadSpan(key_buffer, coin)) return coin;
     return std::nullopt;
 }
 
 bool CCoinsViewDB::HaveCoin(const COutPoint &outpoint, Span<std::byte> key_buffer) const {
-    return m_db->Exists(CoinEntry(&outpoint)); // TODO WriteCOutPoint
+    WriteCOutPoint(key_buffer, outpoint);
+    return m_db->ExistsImpl(key_buffer);
 }
 
 uint256 CCoinsViewDB::GetBestBlock() const {
@@ -100,13 +103,15 @@ bool CCoinsViewDB::BatchWrite(CoinsViewCacheCursor& cursor, const uint256 &hashB
     batch.Erase(DB_BEST_BLOCK);
     batch.Write(DB_HEAD_BLOCKS, Vector(hashBlock, old_tip));
 
+    DataStream key_buffer;
+    key_buffer.resize(MAX_COUTPOINT_SERIALIZED_SIZE);
     for (auto it{cursor.Begin()}; it != cursor.End();) {
         if (it->second.IsDirty()) {
-            CoinEntry entry(&it->first); // TODO WriteCOutPoint
+            WriteCOutPoint(key_buffer, it->first);
             if (it->second.coin.IsSpent())
-                batch.Erase(entry);
+                batch.EraseImpl(key_buffer);
             else
-                batch.Write(entry, it->second.coin);
+                batch.WriteSpan(key_buffer, it->second.coin);
             changed++;
         }
         count++;
@@ -173,9 +178,8 @@ std::unique_ptr<CCoinsViewCursor> CCoinsViewDB::Cursor() const
     i->pcursor->Seek(DB_COIN);
     // Cache key of first record
     if (i->pcursor->Valid()) {
-        CoinEntry entry(&i->keyTmp.second); // TODO WriteCOutPoint
-        i->pcursor->GetKey(entry);
-        i->keyTmp.first = entry.key;
+        ReadCOutPoint(i->pcursor->GetKeyImpl(), i->keyTmp.second);
+        i->keyTmp.first = DB_COIN;
     } else {
         i->keyTmp.first = 0; // Make sure Valid() and GetKey() return false
     }
@@ -205,10 +209,10 @@ bool CCoinsViewDBCursor::Valid() const
 void CCoinsViewDBCursor::Next()
 {
     pcursor->Next();
-    CoinEntry entry(&keyTmp.second); // TODO WriteCOutPoint
-    if (!pcursor->Valid() || !pcursor->GetKey(entry)) {
-        keyTmp.first = 0; // Invalidate cached key after last record so that Valid() and GetKey() return false
+    if (pcursor->Valid()) {
+        ReadCOutPoint(pcursor->GetKeyImpl(), keyTmp.second);
+        keyTmp.first = DB_COIN;
     } else {
-        keyTmp.first = entry.key;
+        keyTmp.first = 0; // Make sure Valid() and GetKey() return false
     }
 }

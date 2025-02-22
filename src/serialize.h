@@ -481,6 +481,7 @@ inline void ReadVarUInt32(const Span<const std::byte> in, uint32_t& n)
         n = ((n + 1) << 7) | static_cast<uint8_t>(in[in.size() - 1]);
     }
     assert(in.size() == GetVarUInt32Size(n));
+    // TODO check that reserializing it would still result in the same
 }
 
 template<typename I>

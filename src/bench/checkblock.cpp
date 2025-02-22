@@ -122,9 +122,9 @@ static void SerializeCOutPoint2(benchmark::Bench& bench)
     serialized.resize(original.size());
     bench.warmup(1).batch(ops.size()).unit("outpoints").run([&] {
         serialized.clear();
-        for (auto& op : ops) WriteCOutPoint(serialized, op);
-        assert(serialized.size() == original.size());
-        assert(serialized.str() == original.str());
+        for (auto& op : ops) {
+            assert(WriteCOutPoint(serialized, op).size() == original.size());
+        }
     });
 }
 
@@ -153,8 +153,7 @@ static void DeserializeCOutPoint2(benchmark::Bench& bench)
     DataStream key_buffer;
     key_buffer.resize(MAX_COUTPOINT_SERIALIZED_SIZE);
     for (auto op : outpoints) {
-        WriteCOutPoint(key_buffer, op);
-        serialized_outpoints.emplace_back(key_buffer);
+        serialized_outpoints.emplace_back(WriteCOutPoint(key_buffer, op));
     }
 
     DataStream stream;

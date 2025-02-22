@@ -28,20 +28,12 @@ static constexpr uint8_t DB_COIN{'C'};
 static constexpr uint8_t DB_BEST_BLOCK{'B'};
 static constexpr uint8_t DB_HEAD_BLOCKS{'H'};
 
-struct CoinEntry {
-    COutPoint* outpoint;
-    uint8_t key;
-    explicit CoinEntry(const COutPoint* ptr) : outpoint(const_cast<COutPoint*>(ptr)), key(DB_COIN)  {}
-
-    SERIALIZE_METHODS(CoinEntry, obj) { READWRITE(obj.key, obj.outpoint->hash, VARINT(obj.outpoint->n)); }
-};
-
 static constexpr size_t SerializedSize(const COutPoint& op) noexcept
 {
     return 1 + sizeof(uint256) + GetVarUInt32Size(op.n);
 }
 
-inline size_t WriteCOutPoint(Span<std::byte> out, const COutPoint& op) noexcept
+inline Span<std::byte> WriteCOutPoint(Span<std::byte> out, const COutPoint& op) noexcept
 {
     const size_t size{SerializedSize(op)};
     assert(out.size() >= size);
@@ -50,7 +42,7 @@ inline size_t WriteCOutPoint(Span<std::byte> out, const COutPoint& op) noexcept
     std::memcpy(&out[1], op.hash.begin(), sizeof(uint256));
     WriteVarUInt32(out.subspan(1 + sizeof(uint256)), op.n);
 
-    return size;
+    return out.first(size);
 }
 
 inline void ReadCOutPoint(Span<const std::byte> in, COutPoint& op)

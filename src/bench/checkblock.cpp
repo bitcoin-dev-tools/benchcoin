@@ -7,11 +7,16 @@
 #include <chainparams.h>
 #include <common/args.h>
 #include <consensus/validation.h>
+#include <cstdint>
+#include <cstring>
+#include <limits>
 #include <primitives/block.h>
 #include <primitives/transaction.h>
 #include <serialize.h>
 #include <span.h>
+#include <stdexcept>
 #include <streams.h>
+#include <string>
 #include <util/chaintype.h>
 #include <validation.h>
 
@@ -19,6 +24,7 @@
 #include <cstddef>
 #include <memory>
 #include <optional>
+#include <random.h>
 #include <vector>
 
 // These are the two major time-sinks which happen after we have fully received
@@ -60,5 +66,110 @@ static void DeserializeAndCheckBlockTest(benchmark::Bench& bench)
     });
 }
 
+static std::vector<COutPoint> GetOutpoints()
+{
+    CBlock block;
+    DataStream(benchmark::data::block413567) >> TX_WITH_WITNESS(block);
+
+    std::vector<COutPoint> outpoints;
+    for (const auto& tx : block.vtx) {
+        for (const auto& in : tx->vin) {
+            outpoints.emplace_back(in.prevout);
+        }
+    }
+    outpoints.shrink_to_fit();
+    std::ranges::shuffle(outpoints, FastRandomContext(/*fDeterministic=*/false));
+    return outpoints;
+}
+
+namespace {
+struct BenchCoinEntry {
+    COutPoint* outpoint;
+    uint8_t key;
+    explicit BenchCoinEntry(const COutPoint* ptr) : outpoint(const_cast<COutPoint*>(ptr)), key(DB_COIN)  {}
+
+    SERIALIZE_METHODS(BenchCoinEntry, obj) { READWRITE(obj.key, obj.outpoint->hash, VARINT(obj.outpoint->n)); }
+};
+}
+
+static void SerializeCOutPoint(benchmark::Bench& bench)
+{
+    const auto& ops{GetOutpoints()};
+
+    std::vector<BenchCoinEntry> bench_coin_entries;
+    bench_coin_entries.reserve(ops.size());
+    for (auto& op : ops) bench_coin_entries.emplace_back(&op);
+
+    DataStream original;
+    for (auto& op : bench_coin_entries) original << op;
+
+    bench.warmup(1).batch(ops.size()).unit("outpoints").run([&] {
+        DataStream serialized;
+        for (auto& op : bench_coin_entries) serialized << op;
+        assert(serialized.size() == original.size());
+        // assert(serialized.str() == original.str());
+    });
+}
+
+static void SerializeCOutPoint2(benchmark::Bench& bench)
+{
+    const auto& ops{GetOutpoints()};
+
+    DataStream original;
+    for (auto& op : ops) original << BenchCoinEntry{&op};
+
+    bench.warmup(1).batch(ops.size()).unit("outpoints").run([&] {
+        DataStream serialized;
+        serialized.resize(original.size());
+        for (auto& op : ops) WriteCOutPoint(serialized, op);
+        assert(serialized.size() == original.size());
+        assert(serialized.str() == original.str());
+    });
+}
+
+static void DeserializeCOutPoint(benchmark::Bench& bench)
+{
+    const auto& ops{GetOutpoints()};
+
+    DataStream serialized;
+    for (auto& op : ops) serialized << op;
+
+    COutPoint outpoint;
+    bench.batch(ops.size()).unit("outpoints").run([&] {
+        assert(serialized.Rewind(0));
+        for (auto& op : ops) {
+            serialized >> BenchCoinEntry{&outpoint};
+            assert(op == outpoint);
+        }
+    });
+}
+
+static void DeserializeCOutPoint2(benchmark::Bench& bench)
+{
+    const auto& outpoints{GetOutpoints()};
+
+    std::vector<DataStream> serialized_outpoints;
+    for (auto op : outpoints) {
+        DataStream key_buffer;
+        key_buffer.resize(SerializedSize(COutPoint()));
+        WriteCOutPoint(key_buffer, op);
+        serialized_outpoints.emplace_back(key_buffer);
+    }
+
+    DataStream stream;
+    for (auto& op : outpoints) stream << op;
+    COutPoint outpoint;
+    bench.batch(outpoints.size()).unit("outpoints").run([&] {
+        for (auto& op : outpoints) {
+            ReadCOutPoint(stream, outpoint);
+            assert(op == outpoint);
+        }
+    });
+}
+
 BENCHMARK(DeserializeBlockTest, benchmark::PriorityLevel::HIGH);
 BENCHMARK(DeserializeAndCheckBlockTest, benchmark::PriorityLevel::HIGH);
+BENCHMARK(SerializeCOutPoint, benchmark::PriorityLevel::LOW);
+BENCHMARK(SerializeCOutPoint2, benchmark::PriorityLevel::LOW);
+BENCHMARK(DeserializeCOutPoint, benchmark::PriorityLevel::LOW);
+BENCHMARK(DeserializeCOutPoint2, benchmark::PriorityLevel::LOW);

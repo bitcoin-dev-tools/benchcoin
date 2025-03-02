@@ -49,9 +49,11 @@ BOOST_AUTO_TEST_CASE(getcoinscachesizestate)
     if (view.DynamicMemoryUsage() != 32 && view.DynamicMemoryUsage() != 16) {
         // Add a bunch of coins to see that we at least flip over to CRITICAL.
 
+        DataStream key_buffer;
+        key_buffer.resize(MAX_COUTPOINT_SERIALIZED_SIZE);
         for (int i{0}; i < 1000; ++i) {
             const COutPoint res = AddTestCoin(m_rng, view);
-            BOOST_CHECK_EQUAL(view.AccessCoin(res).DynamicMemoryUsage(), COIN_SIZE);
+            BOOST_CHECK_EQUAL(view.AccessCoin(res, key_buffer).DynamicMemoryUsage(), COIN_SIZE);
         }
 
         BOOST_CHECK_EQUAL(
@@ -76,10 +78,12 @@ BOOST_AUTO_TEST_CASE(getcoinscachesizestate)
         chainstate.GetCoinsCacheSizeState(MAX_COINS_CACHE_BYTES, /*max_mempool_size_bytes*/ 0),
         CoinsCacheSizeState::OK);
 
+    DataStream key_buffer;
+    key_buffer.resize(MAX_COUTPOINT_SERIALIZED_SIZE);
     for (int i{0}; i < COINS_UNTIL_CRITICAL; ++i) {
         const COutPoint res = AddTestCoin(m_rng, view);
         print_view_mem_usage(view);
-        BOOST_CHECK_EQUAL(view.AccessCoin(res).DynamicMemoryUsage(), COIN_SIZE);
+        BOOST_CHECK_EQUAL(view.AccessCoin(res, key_buffer).DynamicMemoryUsage(), COIN_SIZE);
 
         // adding first coin causes the MemoryResource to allocate one 256 KiB chunk of memory,
         // pushing us immediately over to LARGE

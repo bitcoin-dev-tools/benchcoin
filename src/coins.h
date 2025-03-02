@@ -310,10 +310,10 @@ class CCoinsView
 {
 public:
     //! Retrieve the Coin (unspent transaction output) for a given outpoint.
-    virtual std::optional<Coin> GetCoin(const COutPoint& outpoint) const;
+    virtual std::optional<Coin> GetCoin(const COutPoint& outpoint, Span<std::byte> key_buffer) const;
 
     //! Just check whether a given outpoint is unspent.
-    virtual bool HaveCoin(const COutPoint &outpoint) const;
+    virtual bool HaveCoin(const COutPoint &outpoint, Span<std::byte> key_buffer) const;
 
     //! Retrieve the block hash whose state this CCoinsView currently represents
     virtual uint256 GetBestBlock() const;
@@ -347,8 +347,8 @@ protected:
 
 public:
     CCoinsViewBacked(CCoinsView *viewIn);
-    std::optional<Coin> GetCoin(const COutPoint& outpoint) const override;
-    bool HaveCoin(const COutPoint &outpoint) const override;
+    std::optional<Coin> GetCoin(const COutPoint& outpoint, Span<std::byte> key_buffer) const override;
+    bool HaveCoin(const COutPoint &outpoint, Span<std::byte> key_buffer) const override;
     uint256 GetBestBlock() const override;
     std::vector<uint256> GetHeadBlocks() const override;
     void SetBackend(CCoinsView &viewIn);
@@ -387,8 +387,8 @@ public:
     CCoinsViewCache(const CCoinsViewCache &) = delete;
 
     // Standard CCoinsView methods
-    std::optional<Coin> GetCoin(const COutPoint& outpoint) const override;
-    bool HaveCoin(const COutPoint &outpoint) const override;
+    std::optional<Coin> GetCoin(const COutPoint& outpoint, Span<std::byte> key_buffer) const override;
+    bool HaveCoin(const COutPoint &outpoint, Span<std::byte> key_buffer) const override;
     uint256 GetBestBlock() const override;
     void SetBestBlock(const uint256 &hashBlock);
     bool BatchWrite(CoinsViewCacheCursor& cursor, const uint256 &hashBlock) override;
@@ -413,7 +413,7 @@ public:
      * on! To be safe, best to not hold the returned reference through any other
      * calls to this cache.
      */
-    const Coin& AccessCoin(const COutPoint &output) const;
+    const Coin& AccessCoin(const COutPoint &output, Span<std::byte> key_buffer) const;
 
     /**
      * Add a coin. Set possible_overwrite to true if an unspent version may
@@ -435,7 +435,7 @@ public:
      * If no unspent output exists for the passed outpoint, this call
      * has no effect.
      */
-    bool SpendCoin(const COutPoint &outpoint, Coin* moveto = nullptr);
+    bool SpendCoin(const COutPoint &outpoint, Coin* moveto, Span<std::byte> key_buffer);
 
     /**
      * Push the modifications applied to this cache to its base and wipe local state.
@@ -467,7 +467,7 @@ public:
     size_t DynamicMemoryUsage() const;
 
     //! Check whether all prevouts of the transaction are present in the UTXO set represented by this view
-    bool HaveInputs(const CTransaction& tx) const;
+    bool HaveInputs(const CTransaction& tx, Span<std::byte> key_buffer) const;
 
     //! Force a reallocation of the cache map. This is required when downsizing
     //! the cache because the map's allocator may be hanging onto a lot of
@@ -484,7 +484,7 @@ private:
      * @note this is marked const, but may actually append to `cacheCoins`, increasing
      * memory usage.
      */
-    CCoinsMap::iterator FetchCoin(const COutPoint &outpoint) const;
+    CCoinsMap::iterator FetchCoin(const COutPoint &outpoint, Span<std::byte> key_buffer) const;
 };
 
 //! Utility function to add all of a transaction's outputs to a cache.
@@ -493,7 +493,7 @@ private:
 //! an overwrite.
 // TODO: pass in a boolean to limit these possible overwrites to known
 // (pre-BIP34) cases.
-void AddCoins(CCoinsViewCache& cache, const CTransaction& tx, int nHeight, bool check = false);
+void AddCoins(CCoinsViewCache& cache, const CTransaction& tx, int nHeight, bool check, Span<std::byte> key_buffer);
 
 //! Utility function to find any unspent output with a given txid.
 //! This function can be quite expensive because in the event of a transaction
@@ -517,8 +517,8 @@ public:
         m_err_callbacks.emplace_back(std::move(f));
     }
 
-    std::optional<Coin> GetCoin(const COutPoint& outpoint) const override;
-    bool HaveCoin(const COutPoint &outpoint) const override;
+    std::optional<Coin> GetCoin(const COutPoint& outpoint, Span<std::byte> key_buffer) const override;
+    bool HaveCoin(const COutPoint &outpoint, Span<std::byte> key_buffer) const override;
 
 private:
     /** A list of callbacks to execute upon leveldb read error. */

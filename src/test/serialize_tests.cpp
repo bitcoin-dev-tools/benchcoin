@@ -14,6 +14,7 @@
 #include <txdb.h>
 
 #include <boost/test/unit_test.hpp>
+#include <consensus/consensus.h>
 
 BOOST_FIXTURE_TEST_SUITE(serialize_tests, BasicTestingSetup)
 

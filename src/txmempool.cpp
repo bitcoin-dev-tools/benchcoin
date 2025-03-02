@@ -31,7 +31,9 @@
 #include <numeric>
 #include <optional>
 #include <ranges>
+#include <streams.h>
 #include <string_view>
+#include <txdb.h>
 #include <utility>
 
 TRACEPOINT_SEMAPHORE(mempool, added);
@@ -706,6 +708,8 @@ void CTxMemPool::check(const CCoinsViewCache& active_coins_tip, int64_t spendhei
 
     CCoinsViewCache mempoolDuplicate(const_cast<CCoinsViewCache*>(&active_coins_tip));
 
+    DataStream key_buffer;
+    key_buffer.resize(MAX_COUTPOINT_SERIALIZED_SIZE);
     for (const auto& it : GetSortedDepthAndScore()) {
         checkTotal += it->GetTxSize();
         check_total_fee += it->GetFee();
@@ -724,7 +728,7 @@ void CTxMemPool::check(const CCoinsViewCache& active_coins_tip, int64_t spendhei
             // We are iterating through the mempool entries sorted in order by ancestor count.
             // All parents must have been checked before their children and their coins added to
             // the mempoolDuplicate coins cache.
-            assert(mempoolDuplicate.HaveCoin(txin.prevout));
+            assert(mempoolDuplicate.HaveCoin(txin.prevout, key_buffer));
             // Check whether its inputs are marked in mapNextTx.
             auto it3 = mapNextTx.find(txin.prevout);
             assert(it3 != mapNextTx.end());
@@ -777,9 +781,9 @@ void CTxMemPool::check(const CCoinsViewCache& active_coins_tip, int64_t spendhei
         TxValidationState dummy_state; // Not used. CheckTxInputs() should always pass
         CAmount txfee = 0;
         assert(!tx.IsCoinBase());
-        assert(Consensus::CheckTxInputs(tx, dummy_state, mempoolDuplicate, spendheight, txfee));
-        for (const auto& input: tx.vin) mempoolDuplicate.SpendCoin(input.prevout);
-        AddCoins(mempoolDuplicate, tx, std::numeric_limits<int>::max());
+        assert(Consensus::CheckTxInputs(tx, dummy_state, mempoolDuplicate, spendheight, txfee, key_buffer));
+        for (const auto& input: tx.vin) mempoolDuplicate.SpendCoin(input.prevout, nullptr, key_buffer);
+        AddCoins(mempoolDuplicate, tx, std::numeric_limits<int>::max(), false, key_buffer);
     }
     for (auto it = mapNextTx.cbegin(); it != mapNextTx.cend(); it++) {
         uint256 hash = it->second->GetHash();
@@ -1024,7 +1028,7 @@ bool CTxMemPool::HasNoInputsOf(const CTransaction &tx) const
 
 CCoinsViewMemPool::CCoinsViewMemPool(CCoinsView* baseIn, const CTxMemPool& mempoolIn) : CCoinsViewBacked(baseIn), mempool(mempoolIn) { }
 
-std::optional<Coin> CCoinsViewMemPool::GetCoin(const COutPoint& outpoint) const
+std::optional<Coin> CCoinsViewMemPool::GetCoin(const COutPoint& outpoint, Span<std::byte> key_buffer) const
 {
     // Check to see if the inputs are made available by another tx in the package.
     // These Coins would not be available in the underlying CoinsView.
@@ -1044,7 +1048,7 @@ std::optional<Coin> CCoinsViewMemPool::GetCoin(const COutPoint& outpoint) const
         }
         return std::nullopt;
     }
-    return base->GetCoin(outpoint);
+    return base->GetCoin(outpoint, key_buffer);
 }
 
 void CCoinsViewMemPool::PackageAddTransaction(const CTransactionRef& tx)

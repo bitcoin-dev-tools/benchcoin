@@ -49,13 +49,13 @@ void CCoinsViewDB::ResizeCache(size_t new_cache_size)
     }
 }
 
-std::optional<Coin> CCoinsViewDB::GetCoin(const COutPoint& outpoint) const
+std::optional<Coin> CCoinsViewDB::GetCoin(const COutPoint& outpoint, Span<std::byte> key_buffer) const
 {
     if (Coin coin; m_db->Read(CoinEntry(&outpoint), coin)) return coin; // TODO WriteCOutPoint
     return std::nullopt;
 }
 
-bool CCoinsViewDB::HaveCoin(const COutPoint &outpoint) const {
+bool CCoinsViewDB::HaveCoin(const COutPoint &outpoint, Span<std::byte> key_buffer) const {
     return m_db->Exists(CoinEntry(&outpoint)); // TODO WriteCOutPoint
 }
 

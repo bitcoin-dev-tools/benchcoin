@@ -431,15 +431,17 @@ std::pair<CMutableTransaction, CAmount> TestChain100Setup::CreateValidTransactio
     // - Populate a CoinsViewCache with the unspent output
     CCoinsView coins_view;
     CCoinsViewCache coins_cache(&coins_view);
+    DataStream key_buffer;
+    key_buffer.resize(MAX_COUTPOINT_SERIALIZED_SIZE);
     for (const auto& input_transaction : input_transactions) {
-        AddCoins(coins_cache, *input_transaction.get(), input_height);
+        AddCoins(coins_cache, *input_transaction.get(), input_height, false, key_buffer);
     }
     // Build Outpoint to Coin map for SignTransaction
     std::map<COutPoint, Coin> input_coins;
     CAmount inputs_amount{0};
     for (const auto& outpoint_to_spend : inputs) {
         // Use GetCoin to properly populate utxo_to_spend
-        auto utxo_to_spend{coins_cache.GetCoin(outpoint_to_spend).value()};
+        auto utxo_to_spend{coins_cache.GetCoin(outpoint_to_spend, key_buffer).value()};
         input_coins.insert({outpoint_to_spend, utxo_to_spend});
         inputs_amount += utxo_to_spend.out.nValue;
     }

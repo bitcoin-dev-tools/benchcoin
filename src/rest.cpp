@@ -867,10 +867,12 @@ static bool rest_getutxos(const std::any& context, HTTPRequest* req, const std::
     ChainstateManager& chainman = *maybe_chainman;
     decltype(chainman.ActiveHeight()) active_height;
     uint256 active_hash;
+    DataStream key_buffer;
+    key_buffer.resize(MAX_COUTPOINT_SERIALIZED_SIZE);
     {
-        auto process_utxos = [&vOutPoints, &outs, &hits, &active_height, &active_hash, &chainman](const CCoinsView& view, const CTxMemPool* mempool) EXCLUSIVE_LOCKS_REQUIRED(chainman.GetMutex()) {
+        auto process_utxos = [&vOutPoints, &outs, &hits, &active_height, &active_hash, &chainman, &key_buffer](const CCoinsView& view, const CTxMemPool* mempool) EXCLUSIVE_LOCKS_REQUIRED(chainman.GetMutex()) {
             for (const COutPoint& vOutPoint : vOutPoints) {
-                auto coin = !mempool || !mempool->isSpent(vOutPoint) ? view.GetCoin(vOutPoint) : std::nullopt;
+                auto coin = !mempool || !mempool->isSpent(vOutPoint) ? view.GetCoin(vOutPoint, key_buffer) : std::nullopt;
                 hits.push_back(coin.has_value());
                 if (coin) outs.emplace_back(std::move(*coin));
             }

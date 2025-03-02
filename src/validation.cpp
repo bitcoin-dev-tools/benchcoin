@@ -183,8 +183,10 @@ std::optional<std::vector<int>> CalculatePrevHeights(
 {
     std::vector<int> prev_heights;
     prev_heights.resize(tx.vin.size());
+    DataStream key_buffer;
+    key_buffer.resize(MAX_COUTPOINT_SERIALIZED_SIZE);
     for (size_t i = 0; i < tx.vin.size(); ++i) {
-        if (auto coin{coins.GetCoin(tx.vin[i].prevout)}) {
+        if (auto coin{coins.GetCoin(tx.vin[i].prevout, key_buffer)}) {
             prev_heights[i] = coin->nHeight == MEMPOOL_HEIGHT
                               ? tip.nHeight + 1 // Assume all mempool transaction confirm in the next block.
                               : coin->nHeight;
@@ -369,9 +371,11 @@ void Chainstate::MaybeUpdateMempoolForReorg(
 
         // If the transaction spends any coinbase outputs, it must be mature.
         if (it->GetSpendsCoinbase()) {
+            DataStream key_buffer;
+            key_buffer.resize(MAX_COUTPOINT_SERIALIZED_SIZE);
             for (const CTxIn& txin : tx.vin) {
                 if (m_mempool->exists(GenTxid::Txid(txin.prevout.hash))) continue;
-                const Coin& coin{CoinsTip().AccessCoin(txin.prevout)};
+                const Coin& coin{CoinsTip().AccessCoin(txin.prevout, key_buffer)};
                 assert(!coin.IsSpent());
                 const auto mempool_spend_height{m_chain.Tip()->nHeight + 1};
                 if (coin.IsCoinBase() && mempool_spend_height - coin.nHeight < COINBASE_MATURITY) {
@@ -404,8 +408,10 @@ static bool CheckInputsFromMempoolAndCache(const CTransaction& tx, TxValidationS
     AssertLockHeld(pool.cs);
 
     assert(!tx.IsCoinBase());
+    DataStream key_buffer;
+    key_buffer.resize(MAX_COUTPOINT_SERIALIZED_SIZE);
     for (const CTxIn& txin : tx.vin) {
-        const Coin& coin = view.AccessCoin(txin.prevout);
+        const Coin& coin = view.AccessCoin(txin.prevout, key_buffer);
 
         // This coin was checked in PreChecks and MemPoolAccept
         // has been holding cs_main since then.
@@ -422,7 +428,7 @@ static bool CheckInputsFromMempoolAndCache(const CTransaction& tx, TxValidationS
             assert(txFrom->vout.size() > txin.prevout.n);
             assert(txFrom->vout[txin.prevout.n] == coin.out);
         } else {
-            const Coin& coinFromUTXOSet = coins_tip.AccessCoin(txin.prevout);
+            const Coin& coinFromUTXOSet = coins_tip.AccessCoin(txin.prevout, key_buffer);
             assert(!coinFromUTXOSet.IsSpent());
             assert(coinFromUTXOSet.out == coin.out);
         }
@@ -831,6 +837,8 @@ bool MemPoolAccept::PreChecks(ATMPArgs& args, Workspace& ws)
 
     const CCoinsViewCache& coins_cache = m_active_chainstate.CoinsTip();
     // do all inputs exist?
+    DataStream key_buffer;
+    key_buffer.resize(MAX_COUTPOINT_SERIALIZED_SIZE);
     for (const CTxIn& txin : tx.vin) {
         if (!coins_cache.HaveCoinInCache(txin.prevout)) {
             coins_to_uncache.push_back(txin.prevout);
@@ -839,7 +847,7 @@ bool MemPoolAccept::PreChecks(ATMPArgs& args, Workspace& ws)
         // Note: this call may add txin.prevout to the coins cache
         // (coins_cache.cacheCoins) by way of FetchCoin(). It should be removed
         // later (via coins_to_uncache) if this tx turns out to be invalid.
-        if (!m_view.HaveCoin(txin.prevout)) {
+        if (!m_view.HaveCoin(txin.prevout, key_buffer)) {
             // Are inputs missing because we already have the tx?
             for (size_t out = 0; out < tx.vout.size(); out++) {
                 // Optimistically just do efficient check of cache for outputs
@@ -874,7 +882,7 @@ bool MemPoolAccept::PreChecks(ATMPArgs& args, Workspace& ws)
     }
 
     // The mempool holds txs for the next block, so pass height+1 to CheckTxInputs
-    if (!Consensus::CheckTxInputs(tx, state, m_view, m_active_chainstate.m_chain.Height() + 1, ws.m_base_fees)) {
+    if (!Consensus::CheckTxInputs(tx, state, m_view, m_active_chainstate.m_chain.Height() + 1, ws.m_base_fees, key_buffer)) {
         return false; // state filled in by CheckTxInputs
     }
 
@@ -893,7 +901,7 @@ bool MemPoolAccept::PreChecks(ATMPArgs& args, Workspace& ws)
     // during reorgs to ensure COINBASE_MATURITY is still met.
     bool fSpendsCoinbase = false;
     for (const CTxIn &txin : tx.vin) {
-        const Coin &coin = m_view.AccessCoin(txin.prevout);
+        const Coin &coin = m_view.AccessCoin(txin.prevout, key_buffer);
         if (coin.IsCoinBase()) {
             fSpendsCoinbase = true;
             break;
@@ -1736,8 +1744,10 @@ PackageMempoolAcceptResult MemPoolAccept::AcceptPackage(const Package& package, 
         // This should be connecting directly to CoinsTip, not to m_viewmempool, because we specifically
         // require inputs to be confirmed if they aren't in the package.
         m_view.SetBackend(m_active_chainstate.CoinsTip());
-        const auto package_or_confirmed = [this, &unconfirmed_parent_txids](const auto& input) {
-             return unconfirmed_parent_txids.count(input.prevout.hash) > 0 || m_view.HaveCoin(input.prevout);
+        DataStream key_buffer;
+        key_buffer.resize(MAX_COUTPOINT_SERIALIZED_SIZE);
+        const auto package_or_confirmed = [this, &unconfirmed_parent_txids, &key_buffer](const auto& input) {
+             return unconfirmed_parent_txids.count(input.prevout.hash) > 0 || m_view.HaveCoin(input.prevout, key_buffer);
         };
         if (!std::all_of(child->vin.cbegin(), child->vin.cend(), package_or_confirmed)) {
             package_state_quit_early.Invalid(PackageValidationResult::PCKG_POLICY, "package-not-child-with-unconfirmed-parents");
@@ -2101,16 +2111,18 @@ void Chainstate::InvalidBlockFound(CBlockIndex* pindex, const BlockValidationSta
 void UpdateCoins(const CTransaction& tx, CCoinsViewCache& inputs, CTxUndo &txundo, int nHeight)
 {
     // mark inputs spent
+    DataStream key_buffer;
+    key_buffer.resize(MAX_COUTPOINT_SERIALIZED_SIZE);
     if (!tx.IsCoinBase()) {
         txundo.vprevout.reserve(tx.vin.size());
         for (const CTxIn &txin : tx.vin) {
             txundo.vprevout.emplace_back();
-            bool is_spent = inputs.SpendCoin(txin.prevout, &txundo.vprevout.back());
+            bool is_spent = inputs.SpendCoin(txin.prevout, &txundo.vprevout.back(), key_buffer);
             assert(is_spent);
         }
     }
     // add outputs
-    AddCoins(inputs, tx, nHeight);
+    AddCoins(inputs, tx, nHeight, false, key_buffer);
 }
 
 std::optional<std::pair<ScriptError, std::string>> CScriptCheck::operator()() {
@@ -2189,9 +2201,11 @@ bool CheckInputScripts(const CTransaction& tx, TxValidationState& state,
         std::vector<CTxOut> spent_outputs;
         spent_outputs.reserve(tx.vin.size());
 
+        DataStream key_buffer;
+        key_buffer.resize(MAX_COUTPOINT_SERIALIZED_SIZE);
         for (const auto& txin : tx.vin) {
             const COutPoint& prevout = txin.prevout;
-            const Coin& coin = inputs.AccessCoin(prevout);
+            const Coin& coin = inputs.AccessCoin(prevout, key_buffer);
             assert(!coin.IsSpent());
             spent_outputs.emplace_back(coin.out);
         }
@@ -2265,11 +2279,11 @@ bool FatalError(Notifications& notifications, BlockValidationState& state, const
  * @param out The out point that corresponds to the tx input.
  * @return A DisconnectResult as an int
  */
-int ApplyTxInUndo(Coin&& undo, CCoinsViewCache& view, const COutPoint& out)
+int ApplyTxInUndo(Coin&& undo, CCoinsViewCache& view, const COutPoint& out, Span<std::byte> key_buffer)
 {
     bool fClean = true;
 
-    if (view.HaveCoin(out)) fClean = false; // overwriting transaction output
+    if (view.HaveCoin(out, key_buffer)) fClean = false; // overwriting transaction output
 
     if (undo.nHeight == 0) {
         // Missing undo metadata (height and coinbase). Older versions included this
@@ -2327,13 +2341,14 @@ DisconnectResult Chainstate::DisconnectBlock(const CBlock& block, const CBlockIn
         bool is_coinbase = tx.IsCoinBase();
         bool is_bip30_exception = (is_coinbase && !fEnforceBIP30);
 
-        // Check that all outputs are available and match the outputs in the block itself
-        // exactly.
+        // Check that all outputs are available and match the outputs in the block itself exactly.
+        DataStream key_buffer;
+        key_buffer.resize(MAX_COUTPOINT_SERIALIZED_SIZE);
         for (size_t o = 0; o < tx.vout.size(); o++) {
             if (!tx.vout[o].scriptPubKey.IsUnspendable()) {
                 COutPoint out(hash, o);
                 Coin coin;
-                bool is_spent = view.SpendCoin(out, &coin);
+                bool is_spent = view.SpendCoin(out, &coin, key_buffer);
                 if (!is_spent || tx.vout[o] != coin.out || pindex->nHeight != coin.nHeight || is_coinbase != coin.fCoinBase) {
                     if (!is_bip30_exception) {
                         fClean = false; // transaction output mismatch
@@ -2349,10 +2364,12 @@ DisconnectResult Chainstate::DisconnectBlock(const CBlock& block, const CBlockIn
                 LogError("DisconnectBlock(): transaction and undo data inconsistent\n");
                 return DISCONNECT_FAILED;
             }
+            DataStream key_buffer;
+            key_buffer.resize(MAX_COUTPOINT_SERIALIZED_SIZE);
             for (unsigned int j = tx.vin.size(); j > 0;) {
                 --j;
                 const COutPoint& out = tx.vin[j].prevout;
-                int res = ApplyTxInUndo(std::move(txundo.vprevout[j]), view, out);
+                int res = ApplyTxInUndo(std::move(txundo.vprevout[j]), view, out, key_buffer);
                 if (res == DISCONNECT_FAILED) return DISCONNECT_FAILED;
                 fClean = fClean && res != DISCONNECT_UNCLEAN;
             }
@@ -2602,9 +2619,11 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
     // consensus change that ensures coinbases at those heights cannot
     // duplicate earlier coinbases.
     if (fEnforceBIP30 || pindex->nHeight >= BIP34_IMPLIES_BIP30_LIMIT) {
+        DataStream key_buffer;
+        key_buffer.resize(MAX_COUTPOINT_SERIALIZED_SIZE);
         for (const auto& tx : block.vtx) {
             for (size_t o = 0; o < tx->vout.size(); o++) {
-                if (view.HaveCoin(COutPoint(tx->GetHash(), o))) {
+                if (view.HaveCoin(COutPoint(tx->GetHash(), o), key_buffer)) {
                     state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-txns-BIP30",
                                   "tried to overwrite transaction");
                 }
@@ -2643,6 +2662,8 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
     int nInputs = 0;
     int64_t nSigOpsCost = 0;
     blockundo.vtxundo.reserve(block.vtx.size() - 1);
+    DataStream key_buffer;
+    key_buffer.resize(MAX_COUTPOINT_SERIALIZED_SIZE);
     for (unsigned int i = 0; i < block.vtx.size(); i++)
     {
         if (!state.IsValid()) break;
@@ -2654,7 +2675,7 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
         {
             CAmount txfee = 0;
             TxValidationState tx_state;
-            if (!Consensus::CheckTxInputs(tx, tx_state, view, pindex->nHeight, txfee)) {
+            if (!Consensus::CheckTxInputs(tx, tx_state, view, pindex->nHeight, txfee, key_buffer)) {
                 // Any transaction validation failure in ConnectBlock is a block consensus failure
                 state.Invalid(BlockValidationResult::BLOCK_CONSENSUS,
                               tx_state.GetRejectReason(),
@@ -2673,7 +2694,7 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
             // be in ConnectBlock because they require the UTXO set
             prevheights.resize(tx.vin.size());
             for (size_t j = 0; j < tx.vin.size(); j++) {
-                prevheights[j] = view.AccessCoin(tx.vin[j].prevout).nHeight;
+                prevheights[j] = view.AccessCoin(tx.vin[j].prevout, key_buffer).nHeight;
             }
 
             if (!SequenceLocks(tx, nLockTimeFlags, prevheights, *pindex)) {
@@ -4896,15 +4917,16 @@ bool Chainstate::RollforwardBlock(const CBlockIndex* pindex, CCoinsViewCache& in
         LogError("ReplayBlock(): ReadBlock failed at %d, hash=%s\n", pindex->nHeight, pindex->GetBlockHash().ToString());
         return false;
     }
-
+    DataStream key_buffer;
+    key_buffer.resize(MAX_COUTPOINT_SERIALIZED_SIZE);
     for (const CTransactionRef& tx : block.vtx) {
         if (!tx->IsCoinBase()) {
             for (const CTxIn &txin : tx->vin) {
-                inputs.SpendCoin(txin.prevout);
+                inputs.SpendCoin(txin.prevout, nullptr, key_buffer);
             }
         }
         // Pass check = true as every addition may be an overwrite.
-        AddCoins(inputs, *tx, pindex->nHeight, true);
+        AddCoins(inputs, *tx, pindex->nHeight, true, key_buffer);
     }
     return true;
 }

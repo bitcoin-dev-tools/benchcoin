@@ -16,8 +16,12 @@ void FindCoins(const NodeContext& node, std::map<COutPoint, Coin>& coins)
     LOCK2(cs_main, node.mempool->cs);
     CCoinsViewCache& chain_view = node.chainman->ActiveChainstate().CoinsTip();
     CCoinsViewMemPool mempool_view(&chain_view, *node.mempool);
+
+    DataStream key_buffer;
+    key_buffer.resize(MAX_COUTPOINT_SERIALIZED_SIZE);
+
     for (auto& [outpoint, coin] : coins) {
-        if (auto c{mempool_view.GetCoin(outpoint)}) {
+        if (auto c{mempool_view.GetCoin(outpoint, key_buffer)}) {
             coin = std::move(*c);
         } else {
             coin.Clear(); // Either the coin is not in the CCoinsViewCache or is spent

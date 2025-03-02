@@ -118,9 +118,10 @@ static void SerializeCOutPoint2(benchmark::Bench& bench)
     DataStream original;
     for (auto& op : ops) original << BenchCoinEntry{&op};
 
+    DataStream serialized;
+    serialized.resize(original.size());
     bench.warmup(1).batch(ops.size()).unit("outpoints").run([&] {
-        DataStream serialized;
-        serialized.resize(original.size());
+        serialized.clear();
         for (auto& op : ops) WriteCOutPoint(serialized, op);
         assert(serialized.size() == original.size());
         assert(serialized.str() == original.str());
@@ -136,7 +137,7 @@ static void DeserializeCOutPoint(benchmark::Bench& bench)
 
     COutPoint outpoint;
     bench.batch(ops.size()).unit("outpoints").run([&] {
-        assert(serialized.Rewind(0));
+        serialized.clear();
         for (auto& op : ops) {
             serialized >> BenchCoinEntry{&outpoint};
             assert(op == outpoint);
@@ -149,9 +150,9 @@ static void DeserializeCOutPoint2(benchmark::Bench& bench)
     const auto& outpoints{GetOutpoints()};
 
     std::vector<DataStream> serialized_outpoints;
+    DataStream key_buffer;
+    key_buffer.resize(MAX_COUTPOINT_SERIALIZED_SIZE);
     for (auto op : outpoints) {
-        DataStream key_buffer;
-        key_buffer.resize(SerializedSize(COutPoint()));
         WriteCOutPoint(key_buffer, op);
         serialized_outpoints.emplace_back(key_buffer);
     }

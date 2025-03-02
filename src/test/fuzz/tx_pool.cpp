@@ -217,8 +217,10 @@ FUZZ_TARGET(tx_pool_standard, .init = initialize_tx_pool)
 
     // Helper to query an amount
     const CCoinsViewMemPool amount_view{WITH_LOCK(::cs_main, return &chainstate.CoinsTip()), tx_pool};
+    DataStream key_buffer;
+    key_buffer.resize(MAX_COUTPOINT_SERIALIZED_SIZE);
     const auto GetAmount = [&](const COutPoint& outpoint) {
-        auto coin{amount_view.GetCoin(outpoint).value()};
+        auto coin{amount_view.GetCoin(outpoint, key_buffer).value()};
         return coin.out.nValue;
     };
 

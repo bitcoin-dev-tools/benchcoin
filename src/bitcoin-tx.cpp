@@ -615,6 +615,9 @@ static void MutateTxSign(CMutableTransaction& tx, const std::string& flagStr)
         throw std::runtime_error("prevtxs register variable must be set.");
     UniValue prevtxsObj = registers["prevtxs"];
     {
+        DataStream key_buffer;
+        key_buffer.resize(MAX_COUTPOINT_SERIALIZED_SIZE);
+
         for (unsigned int previdx = 0; previdx < prevtxsObj.size(); previdx++) {
             const UniValue& prevOut = prevtxsObj[previdx];
             if (!prevOut.isObject())
@@ -642,7 +645,7 @@ static void MutateTxSign(CMutableTransaction& tx, const std::string& flagStr)
             CScript scriptPubKey(pkData.begin(), pkData.end());
 
             {
-                const Coin& coin = view.AccessCoin(out);
+                const Coin& coin = view.AccessCoin(out, key_buffer);
                 if (!coin.IsSpent() && coin.out.scriptPubKey != scriptPubKey) {
                     std::string err("Previous output scriptPubKey mismatch:\n");
                     err = err + ScriptToAsmStr(coin.out.scriptPubKey) + "\nvs:\n"+
@@ -676,9 +679,11 @@ static void MutateTxSign(CMutableTransaction& tx, const std::string& flagStr)
     bool fHashSingle = ((nHashType & ~SIGHASH_ANYONECANPAY) == SIGHASH_SINGLE);
 
     // Sign what we can:
+    DataStream key_buffer;
+    key_buffer.resize(MAX_COUTPOINT_SERIALIZED_SIZE);
     for (unsigned int i = 0; i < mergedTx.vin.size(); i++) {
         CTxIn& txin = mergedTx.vin[i];
-        const Coin& coin = view.AccessCoin(txin.prevout);
+        const Coin& coin = view.AccessCoin(txin.prevout, key_buffer);
         if (coin.IsSpent()) {
             continue;
         }

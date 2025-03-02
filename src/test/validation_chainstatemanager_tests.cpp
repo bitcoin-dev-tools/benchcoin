@@ -200,9 +200,11 @@ struct SnapshotTestSetup : TestChain100Setup {
             initial_size = ibd_coinscache.GetCacheSize();
             size_t total_coins{0};
 
+            DataStream key_buffer;
+            key_buffer.resize(MAX_COUTPOINT_SERIALIZED_SIZE);
             for (CTransactionRef& txn : m_coinbase_txns) {
                 COutPoint op{txn->GetHash(), 0};
-                BOOST_CHECK(ibd_coinscache.HaveCoin(op));
+                BOOST_CHECK(ibd_coinscache.HaveCoin(op, key_buffer));
                 total_coins++;
             }
 
@@ -300,6 +302,8 @@ struct SnapshotTestSetup : TestChain100Setup {
             LOCK(::cs_main);
             int chains_tested{0};
 
+            DataStream key_buffer;
+            key_buffer.resize(MAX_COUTPOINT_SERIALIZED_SIZE);
             for (Chainstate* chainstate : chainman.GetAll()) {
                 BOOST_TEST_MESSAGE("Checking coins in " << chainstate->ToString());
                 CCoinsViewCache& coinscache = chainstate->CoinsTip();
@@ -311,7 +315,7 @@ struct SnapshotTestSetup : TestChain100Setup {
 
                 for (CTransactionRef& txn : m_coinbase_txns) {
                     COutPoint op{txn->GetHash(), 0};
-                    BOOST_CHECK(coinscache.HaveCoin(op));
+                    BOOST_CHECK(coinscache.HaveCoin(op, key_buffer));
                     total_coins++;
                 }
 
@@ -333,6 +337,8 @@ struct SnapshotTestSetup : TestChain100Setup {
             size_t coins_in_background{0};
             size_t coins_missing_from_background{0};
 
+            DataStream key_buffer;
+            key_buffer.resize(MAX_COUTPOINT_SERIALIZED_SIZE);
             for (Chainstate* chainstate : chainman.GetAll()) {
                 BOOST_TEST_MESSAGE("Checking coins in " << chainstate->ToString());
                 CCoinsViewCache& coinscache = chainstate->CoinsTip();
@@ -340,7 +346,7 @@ struct SnapshotTestSetup : TestChain100Setup {
 
                 for (CTransactionRef& txn : m_coinbase_txns) {
                     COutPoint op{txn->GetHash(), 0};
-                    if (coinscache.HaveCoin(op)) {
+                    if (coinscache.HaveCoin(op, key_buffer)) {
                         (is_background ? coins_in_background : coins_in_active)++;
                     } else if (is_background) {
                         coins_missing_from_background++;

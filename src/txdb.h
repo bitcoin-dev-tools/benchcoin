@@ -36,7 +36,7 @@ struct CoinEntry {
     SERIALIZE_METHODS(CoinEntry, obj) { READWRITE(obj.key, obj.outpoint->hash, VARINT(obj.outpoint->n)); }
 };
 
-inline size_t SerializedSize(const COutPoint& op) noexcept
+static constexpr size_t SerializedSize(const COutPoint& op) noexcept
 {
     return 1 + sizeof(uint256) + GetVarUInt32Size(op.n);
 }
@@ -84,8 +84,8 @@ protected:
 public:
     explicit CCoinsViewDB(DBParams db_params, CoinsViewOptions options);
 
-    std::optional<Coin> GetCoin(const COutPoint& outpoint) const override;
-    bool HaveCoin(const COutPoint &outpoint) const override;
+    std::optional<Coin> GetCoin(const COutPoint& outpoint, Span<std::byte> key_buffer) const override;
+    bool HaveCoin(const COutPoint &outpoint, Span<std::byte> key_buffer) const override;
     uint256 GetBestBlock() const override;
     std::vector<uint256> GetHeadBlocks() const override;
     bool BatchWrite(CoinsViewCacheCursor& cursor, const uint256 &hashBlock) override;

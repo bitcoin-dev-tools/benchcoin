@@ -155,8 +155,10 @@ void utxo_snapshot_fuzz(FuzzBufferType buffer)
         Assert(*chainman.ActiveChainstate().m_from_snapshot_blockhash ==
                *chainman.SnapshotBlockhash());
         const auto& coinscache{chainman.ActiveChainstate().CoinsTip()};
+        DataStream key_buffer;
+        key_buffer.resize(MAX_COUTPOINT_SERIALIZED_SIZE);
         for (const auto& block : *g_chain) {
-            Assert(coinscache.HaveCoin(COutPoint{block->vtx.at(0)->GetHash(), 0}));
+            Assert(coinscache.HaveCoin(COutPoint{block->vtx.at(0)->GetHash(), 0}, key_buffer));
             const auto* index{chainman.m_blockman.LookupBlockIndex(block->GetHash())};
             Assert(index);
             Assert(index->nTx == 0);

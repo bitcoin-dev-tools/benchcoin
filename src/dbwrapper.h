@@ -22,7 +22,7 @@
 
 static const size_t DBWRAPPER_PREALLOC_KEY_SIZE = 64;
 static const size_t DBWRAPPER_PREALLOC_VALUE_SIZE = 1024;
-static const size_t DBWRAPPER_MAX_FILE_SIZE = 32 << 20; // 32 MiB
+static const size_t DBWRAPPER_MAX_FILE_SIZE = 2 << 20; // 2 MiB
 
 //! User-controlled performance and debug options.
 struct DBOptions {

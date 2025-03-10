@@ -90,7 +90,8 @@ std::vector<uint256> CCoinsViewDB::GetHeadBlocks() const {
     return vhashHeadBlocks;
 }
 
-bool CCoinsViewDB::BatchWrite(CoinsViewCacheCursor& cursor, const uint256 &hashBlock) {
+bool CCoinsViewDB::BatchWrite(CoinsViewCacheCursor& cursor, const uint256& hashBlock)
+{
     CDBBatch batch(*m_db);
     size_t count = 0;
     size_t changed = 0;
@@ -116,30 +117,54 @@ bool CCoinsViewDB::BatchWrite(CoinsViewCacheCursor& cursor, const uint256 &hashB
     batch.Erase(DB_BEST_BLOCK);
     batch.Write(DB_HEAD_BLOCKS, Vector(hashBlock, old_tip));
 
-    for (auto it{cursor.Begin()}; it != cursor.End();) {
+    auto SortAndAddToBatch{[&](std::vector<std::pair<CoinEntry, Coin>>& entries) {
+        std::ranges::sort(entries, [](const auto& a, const auto& b) { return b.first.outpoint->hash < a.first.outpoint->hash; });
+        for (const auto& [outpoint, coin] : entries) {
+            assert (!coin.IsSpent());
+            batch.Write(outpoint, coin);
+        }
+        entries.clear();
+    }};
+
+    std::vector<std::pair<CoinEntry, Coin>> dirty_entries;
+    dirty_entries.reserve(m_options.batch_write_bytes / sizeof(std::pair<COutPoint, Coin>)); // TODO we need more precise estimation somehow
+    auto size_computer{SizeComputer()};
+    for (auto it{cursor.Begin()}; it != cursor.End(); it = cursor.NextAndMaybeErase(*it)) {
         if (it->second.IsDirty()) {
-            CoinEntry entry(&it->first);
-            if (it->second.coin.IsSpent())
-                batch.Erase(entry);
-            else
-                batch.Write(entry, it->second.coin);
+            auto& out_point{it->first};
+            CoinEntry coin_entry{&out_point};
+            auto& coin{it->second.coin};
+            if (coin.IsSpent()) {
+                batch.Erase(coin_entry);
+            } else {
+                size_computer << coin_entry << coin;
+                if (cursor.WillErase(*it)) {
+                    dirty_entries.emplace_back(coin_entry, std::move(coin));
+                } else {
+                    dirty_entries.emplace_back(coin_entry, coin);
+                }
+            }
             changed++;
         }
         count++;
-        it = cursor.NextAndMaybeErase(*it);
-        if (batch.SizeEstimate() > m_options.batch_write_bytes) {
-            LogDebug(BCLog::COINDB, "Writing partial batch of %.2f MiB\n", batch.SizeEstimate() * (1.0 / 1048576.0));
-            m_db->WriteBatch(batch);
-            batch.Clear();
-            if (m_options.simulate_crash_ratio) {
-                static FastRandomContext rng;
-                if (rng.randrange(m_options.simulate_crash_ratio) == 0) {
-                    LogPrintf("Simulating a crash. Goodbye.\n");
-                    _Exit(0);
-                }
-            }
-        }
+
+        // if (batch.SizeEstimate() + size_computer.size() > m_options.batch_write_bytes) {
+        //     SortAndAddToBatch(dirty_entries);
+        //     LogDebug(BCLog::COINDB, "Writing partial batch of %.2f MiB", batch.SizeEstimate() * (1.0 / 1048576.0));
+        //     m_db->WriteBatch(batch);
+        //     batch.Clear();
+        //     size_computer.reset();
+        //
+        //     if (m_options.simulate_crash_ratio) {
+        //         static FastRandomContext rng;
+        //         if (rng.randrange(m_options.simulate_crash_ratio) == 0) {
+        //             LogPrintf("Simulating a crash. Goodbye.\n");
+        //             _Exit(0);
+        //         }
+        //     }
+        // }
     }
+    SortAndAddToBatch(dirty_entries);
 
     // In the last batch, mark the database as consistent with hashBlock again.
     batch.Erase(DB_HEAD_BLOCKS);

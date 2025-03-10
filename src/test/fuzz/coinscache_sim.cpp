@@ -146,14 +146,14 @@ class CoinsViewBottom final : public CCoinsView
     std::map<COutPoint, Coin> m_data;
 
 public:
-    std::optional<Coin> GetCoin(const COutPoint& outpoint) const final
+    std::optional<Coin> GetCoin(const COutPoint& outpoint, Span<std::byte> key_buffer) const final
     {
         // TODO GetCoin shouldn't return spent coins
         if (auto it = m_data.find(outpoint); it != m_data.end()) return it->second;
         return std::nullopt;
     }
 
-    bool HaveCoin(const COutPoint& outpoint) const final
+    bool HaveCoin(const COutPoint& outpoint, Span<std::byte> key_buffer) const final
     {
         return m_data.count(outpoint);
     }
@@ -261,7 +261,9 @@ FUZZ_TARGET(coinscache_sim)
                 // Look up in simulation data.
                 auto sim = lookup(outpointidx);
                 // Look up in real caches.
-                auto realcoin = caches.back()->GetCoin(data.outpoints[outpointidx]);
+                DataStream key_buffer;
+                key_buffer.resize(MAX_COUTPOINT_SERIALIZED_SIZE);
+                auto realcoin = caches.back()->GetCoin(data.outpoints[outpointidx], key_buffer);
                 // Compare results.
                 if (!sim.has_value()) {
                     assert(!realcoin || realcoin->IsSpent());
@@ -279,7 +281,9 @@ FUZZ_TARGET(coinscache_sim)
                 // Look up in simulation data.
                 auto sim = lookup(outpointidx);
                 // Look up in real caches.
-                auto real = caches.back()->HaveCoin(data.outpoints[outpointidx]);
+                DataStream key_buffer;
+                key_buffer.resize(MAX_COUTPOINT_SERIALIZED_SIZE);
+                auto real = caches.back()->HaveCoin(data.outpoints[outpointidx], key_buffer);
                 // Compare results.
                 assert(sim.has_value() == real);
             },
@@ -295,7 +299,9 @@ FUZZ_TARGET(coinscache_sim)
                 // Look up in simulation data.
                 auto sim = lookup(outpointidx);
                 // Look up in real caches.
-                const auto& realcoin = caches.back()->AccessCoin(data.outpoints[outpointidx]);
+                DataStream key_buffer;
+                key_buffer.resize(MAX_COUTPOINT_SERIALIZED_SIZE);
+                const auto& realcoin = caches.back()->AccessCoin(data.outpoints[outpointidx], key_buffer);
                 // Compare results.
                 if (!sim.has_value()) {
                     assert(realcoin.IsSpent());
@@ -341,7 +347,9 @@ FUZZ_TARGET(coinscache_sim)
             [&]() { // SpendCoin (moveto = nullptr)
                 uint32_t outpointidx = provider.ConsumeIntegralInRange<uint32_t>(0, NUM_OUTPOINTS - 1);
                 // Invoke on real caches.
-                caches.back()->SpendCoin(data.outpoints[outpointidx], nullptr);
+                DataStream key_buffer;
+                key_buffer.resize(MAX_COUTPOINT_SERIALIZED_SIZE);
+                caches.back()->SpendCoin(data.outpoints[outpointidx], nullptr, key_buffer);
                 // Apply to simulation data.
                 sim_caches[caches.size()].entry[outpointidx].entrytype = EntryType::SPENT;
             },
@@ -352,7 +360,9 @@ FUZZ_TARGET(coinscache_sim)
                 auto sim = lookup(outpointidx);
                 // Invoke on real caches.
                 Coin realcoin;
-                caches.back()->SpendCoin(data.outpoints[outpointidx], &realcoin);
+                DataStream key_buffer;
+                key_buffer.resize(MAX_COUTPOINT_SERIALIZED_SIZE);
+                caches.back()->SpendCoin(data.outpoints[outpointidx], &realcoin, key_buffer);
                 // Apply to simulation data.
                 sim_caches[caches.size()].entry[outpointidx].entrytype = EntryType::SPENT;
                 // Compare *moveto with the value expected based on simulation data.
@@ -431,13 +441,15 @@ FUZZ_TARGET(coinscache_sim)
 
     // Full comparison between caches and simulation data, from bottom to top,
     // as AccessCoin on a higher cache may affect caches below it.
+    DataStream key_buffer;
+    key_buffer.resize(MAX_COUTPOINT_SERIALIZED_SIZE);
     for (unsigned sim_idx = 1; sim_idx <= caches.size(); ++sim_idx) {
         auto& cache = *caches[sim_idx - 1];
         size_t cache_size = 0;
 
         for (uint32_t outpointidx = 0; outpointidx < NUM_OUTPOINTS; ++outpointidx) {
             cache_size += cache.HaveCoinInCache(data.outpoints[outpointidx]);
-            const auto& real = cache.AccessCoin(data.outpoints[outpointidx]);
+            const auto& real = cache.AccessCoin(data.outpoints[outpointidx], key_buffer);
             auto sim = lookup(outpointidx, sim_idx);
             if (!sim.has_value()) {
                 assert(real.IsSpent());
@@ -454,8 +466,10 @@ FUZZ_TARGET(coinscache_sim)
     }
 
     // Compare the bottom coinsview (not a CCoinsViewCache) with sim_cache[0].
+    DataStream key_buffer;
+    key_buffer.resize(MAX_COUTPOINT_SERIALIZED_SIZE);
     for (uint32_t outpointidx = 0; outpointidx < NUM_OUTPOINTS; ++outpointidx) {
-        auto realcoin = bottom.GetCoin(data.outpoints[outpointidx]);
+        auto realcoin = bottom.GetCoin(data.outpoints[outpointidx], key_buffer);
         auto sim = lookup(outpointidx, 0);
         if (!sim.has_value()) {
             assert(!realcoin || realcoin->IsSpent());

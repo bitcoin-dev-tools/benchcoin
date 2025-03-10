@@ -191,9 +191,11 @@ bool AreInputsStandard(const CTransaction& tx, const CCoinsViewCache& mapInputs)
     if (tx.IsCoinBase()) {
         return true; // Coinbases don't use vin normally
     }
+    DataStream key_buffer;
+    key_buffer.resize(MAX_COUTPOINT_SERIALIZED_SIZE);
 
     for (unsigned int i = 0; i < tx.vin.size(); i++) {
-        const CTxOut& prev = mapInputs.AccessCoin(tx.vin[i].prevout).out;
+        const CTxOut& prev = mapInputs.AccessCoin(tx.vin[i].prevout, key_buffer).out;
 
         std::vector<std::vector<unsigned char> > vSolutions;
         TxoutType whichType = Solver(prev.scriptPubKey, vSolutions);
@@ -225,6 +227,8 @@ bool IsWitnessStandard(const CTransaction& tx, const CCoinsViewCache& mapInputs)
     if (tx.IsCoinBase())
         return true; // Coinbases are skipped
 
+    DataStream key_buffer;
+    key_buffer.resize(MAX_COUTPOINT_SERIALIZED_SIZE);
     for (unsigned int i = 0; i < tx.vin.size(); i++)
     {
         // We don't care if witness for this input is empty, since it must not be bloated.
@@ -232,7 +236,7 @@ bool IsWitnessStandard(const CTransaction& tx, const CCoinsViewCache& mapInputs)
         if (tx.vin[i].scriptWitness.IsNull())
             continue;
 
-        const CTxOut &prev = mapInputs.AccessCoin(tx.vin[i].prevout).out;
+        const CTxOut &prev = mapInputs.AccessCoin(tx.vin[i].prevout, key_buffer).out;
 
         // get the scriptPubKey corresponding to this input:
         CScript prevScript = prev.scriptPubKey;

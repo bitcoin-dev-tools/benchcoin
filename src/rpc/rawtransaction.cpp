@@ -667,8 +667,10 @@ static RPCHelpMan combinerawtransaction()
         CCoinsViewMemPool viewMempool(&viewChain, mempool);
         view.SetBackend(viewMempool); // temporarily switch cache backend to db+mempool view
 
+        DataStream key_buffer;
+        key_buffer.resize(MAX_COUTPOINT_SERIALIZED_SIZE);
         for (const CTxIn& txin : mergedTx.vin) {
-            view.AccessCoin(txin.prevout); // Load entries from viewChain into view; can fail.
+            view.AccessCoin(txin.prevout, key_buffer); // Load entries from viewChain into view; can fail.
         }
 
         view.SetBackend(viewDummy); // switch back to avoid locking mempool for too long
@@ -678,9 +680,11 @@ static RPCHelpMan combinerawtransaction()
     // transaction to avoid rehashing.
     const CTransaction txConst(mergedTx);
     // Sign what we can:
+    DataStream key_buffer;
+    key_buffer.resize(MAX_COUTPOINT_SERIALIZED_SIZE);
     for (unsigned int i = 0; i < mergedTx.vin.size(); i++) {
         CTxIn& txin = mergedTx.vin[i];
-        const Coin& coin = view.AccessCoin(txin.prevout);
+        const Coin& coin = view.AccessCoin(txin.prevout, key_buffer);
         if (coin.IsSpent()) {
             throw JSONRPCError(RPC_VERIFY_ERROR, "Input not found or already spent");
         }

@@ -359,7 +359,9 @@ public:
     std::optional<Coin> getUnspentOutput(const COutPoint& output) override
     {
         LOCK(::cs_main);
-        return chainman().ActiveChainstate().CoinsTip().GetCoin(output);
+        DataStream key_buffer;
+        key_buffer.resize(MAX_COUTPOINT_SERIALIZED_SIZE);
+        return chainman().ActiveChainstate().CoinsTip().GetCoin(output, key_buffer);
     }
     TransactionError broadcastTransaction(CTransactionRef tx, CAmount max_tx_fee, std::string& err_string) override
     {

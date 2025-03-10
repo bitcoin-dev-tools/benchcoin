@@ -84,7 +84,9 @@ FUZZ_TARGET(coins_view, .init = initialize_coins_view)
             },
             [&] {
                 Coin move_to;
-                (void)coins_view_cache.SpendCoin(random_out_point, fuzzed_data_provider.ConsumeBool() ? &move_to : nullptr);
+                DataStream key_buffer;
+                key_buffer.resize(MAX_COUTPOINT_SERIALIZED_SIZE);
+                (void)coins_view_cache.SpendCoin(random_out_point, fuzzed_data_provider.ConsumeBool() ? &move_to : nullptr, key_buffer);
             },
             [&] {
                 coins_view_cache.Uncache(random_out_point);
@@ -160,22 +162,26 @@ FUZZ_TARGET(coins_view, .init = initialize_coins_view)
     }
 
     {
-        const Coin& coin_using_access_coin = coins_view_cache.AccessCoin(random_out_point);
+        DataStream key_buffer;
+        key_buffer.resize(MAX_COUTPOINT_SERIALIZED_SIZE);
+        const Coin& coin_using_access_coin = coins_view_cache.AccessCoin(random_out_point, key_buffer);
         const bool exists_using_access_coin = !(coin_using_access_coin == EMPTY_COIN);
-        const bool exists_using_have_coin = coins_view_cache.HaveCoin(random_out_point);
+        DataStream key_buffer;
+        key_buffer.resize(MAX_BLOCK_SERIALIZED_SIZE);
+        const bool exists_using_have_coin = coins_view_cache.HaveCoin(random_out_point, key_buffer);
         const bool exists_using_have_coin_in_cache = coins_view_cache.HaveCoinInCache(random_out_point);
-        if (auto coin{coins_view_cache.GetCoin(random_out_point)}) {
+        if (auto coin{coins_view_cache.GetCoin(random_out_point, key_buffer)}) {
             assert(*coin == coin_using_access_coin);
             assert(exists_using_access_coin && exists_using_have_coin_in_cache && exists_using_have_coin);
         } else {
             assert(!exists_using_access_coin && !exists_using_have_coin_in_cache && !exists_using_have_coin);
         }
         // If HaveCoin on the backend is true, it must also be on the cache if the coin wasn't spent.
-        const bool exists_using_have_coin_in_backend = backend_coins_view.HaveCoin(random_out_point);
+        const bool exists_using_have_coin_in_backend = backend_coins_view.HaveCoin(random_out_point, key_buffer);
         if (!coin_using_access_coin.IsSpent() && exists_using_have_coin_in_backend) {
             assert(exists_using_have_coin);
         }
-        if (auto coin{backend_coins_view.GetCoin(random_out_point)}) {
+        if (auto coin{backend_coins_view.GetCoin(random_out_point, key_buffer)}) {
             assert(exists_using_have_coin_in_backend);
             // Note we can't assert that `coin_using_get_coin == *coin` because the coin in
             // the cache may have been modified but not yet flushed.
@@ -227,8 +233,10 @@ FUZZ_TARGET(coins_view, .init = initialize_coins_view)
                 bool expected_code_path = false;
                 const int height{int(fuzzed_data_provider.ConsumeIntegral<uint32_t>() >> 1)};
                 const bool possible_overwrite = fuzzed_data_provider.ConsumeBool();
+                DataStream key_buffer;
+                key_buffer.resize(MAX_COUTPOINT_SERIALIZED_SIZE);
                 try {
-                    AddCoins(coins_view_cache, transaction, height, possible_overwrite);
+                    AddCoins(coins_view_cache, transaction, height, possible_overwrite, key_buffer);
                     expected_code_path = true;
                 } catch (const std::logic_error& e) {
                     if (e.what() == std::string{"Attempted to overwrite an unspent coin (when possible_overwrite is false)"}) {
@@ -247,7 +255,7 @@ FUZZ_TARGET(coins_view, .init = initialize_coins_view)
                 const CTransaction transaction{random_mutable_transaction};
                 if (ContainsSpentInput(transaction, coins_view_cache)) {
                     // Avoid:
-                    // consensus/tx_verify.cpp:171: bool Consensus::CheckTxInputs(const CTransaction &, TxValidationState &, const CCoinsViewCache &, int, CAmount &): Assertion `!coin.IsSpent()' failed.
+                    // consensus/tx_verify.cpp:171: bool Consensus::CheckTxInputs(const CTransaction &, TxValidationState &, const CCoinsViewCache &, int, CAmount &): Assertion `!coin.IsSpent()' failed. // TODO
                     return;
                 }
                 TxValidationState dummy;
@@ -255,7 +263,9 @@ FUZZ_TARGET(coins_view, .init = initialize_coins_view)
                     // It is not allowed to call CheckTxInputs if CheckTransaction failed
                     return;
                 }
-                if (Consensus::CheckTxInputs(transaction, state, coins_view_cache, fuzzed_data_provider.ConsumeIntegralInRange<int>(0, std::numeric_limits<int>::max()), tx_fee_out)) {
+                DataStream key_buffer;
+                key_buffer.resize(MAX_COUTPOINT_SERIALIZED_SIZE);
+                if (Consensus::CheckTxInputs(transaction, state, coins_view_cache, fuzzed_data_provider.ConsumeIntegralInRange<int>(0, std::numeric_limits<int>::max()), tx_fee_out, key_buffer)) {
                     assert(MoneyRange(tx_fee_out));
                 }
             },

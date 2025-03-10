@@ -90,7 +90,8 @@ std::vector<uint256> CCoinsViewDB::GetHeadBlocks() const {
     return vhashHeadBlocks;
 }
 
-bool CCoinsViewDB::BatchWrite(CoinsViewCacheCursor& cursor, const uint256 &hashBlock) {
+bool CCoinsViewDB::BatchWrite(CoinsViewCacheCursor& cursor, const uint256& hashBlock)
+{
     CDBBatch batch(*m_db);
     size_t count = 0;
     size_t changed = 0;
@@ -116,17 +117,26 @@ bool CCoinsViewDB::BatchWrite(CoinsViewCacheCursor& cursor, const uint256 &hashB
     batch.Erase(DB_BEST_BLOCK);
     batch.Write(DB_HEAD_BLOCKS, Vector(hashBlock, old_tip));
 
-    for (auto it{cursor.Begin()}; it != cursor.End();) {
+    std::vector<COutPoint> unspent_dirty_outpoints;
+    unspent_dirty_outpoints.reserve(cursor.GetDirtyCount());
+    LogInfo("Reserving space for %s unspent dirty entries, estimated at %s bytes", cursor.GetDirtyCount(), cursor.GetDirtyCount() * sizeof(COutPoint));
+    for (auto it{cursor.Begin()}; it != cursor.End(); it = cursor.NextAndMaybeErase(*it)) {
         if (it->second.IsDirty()) {
-            CoinEntry entry(&it->first);
-            if (it->second.coin.IsSpent())
-                batch.Erase(entry);
-            else
-                batch.Write(entry, it->second.coin);
+            if (it->second.coin.IsSpent()) {
+                batch.Erase(CoinEntry{&it->first});
+            } else {
+                unspent_dirty_outpoints.emplace_back(it->first);
+            }
             changed++;
         }
         count++;
-        it = cursor.NextAndMaybeErase(*it);
+    }
+    std::ranges::sort(unspent_dirty_outpoints, [](const auto& a, const auto& b) { return b < a; });
+    CCoinsMap& coins_map{cursor.GetCoinsMap()};
+    for (const auto& outpoint : unspent_dirty_outpoints) {
+        auto& entry{coins_map.at(outpoint)};
+        assert(!entry.coin.IsSpent()); // dirty flag already erased from linked list
+        batch.Write(CoinEntry{&outpoint}, entry.coin);
         if (batch.SizeEstimate() > m_options.batch_write_bytes) {
             LogDebug(BCLog::COINDB, "Writing partial batch of %.2f MiB\n", batch.SizeEstimate() * (1.0 / 1048576.0));
             m_db->WriteBatch(batch);

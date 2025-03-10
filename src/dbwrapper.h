@@ -63,8 +63,7 @@ namespace dbwrapper_private {
  * Database obfuscation should be considered an implementation detail of the
  * specific database.
  */
-const std::vector<unsigned char>& GetObfuscateKey(const CDBWrapper &w);
-
+Obfuscation GetObfuscation(const CDBWrapper&);
 }; // namespace dbwrapper_private
 
 bool DestroyDB(const std::string& path_str);
@@ -83,8 +82,6 @@ private:
     DataStream ssKey{};
     DataStream ssValue{};
 
-    size_t size_estimate{0};
-
     void WriteImpl(Span<const std::byte> key, DataStream& ssValue);
     void EraseImpl(Span<const std::byte> key);
 
@@ -95,29 +92,63 @@ public:
     explicit CDBBatch(const CDBWrapper& _parent);
     ~CDBBatch();
     void Clear();
+    void Reserve(size_t size) const;
+    size_t ApproximateSize() const;
 
     template <typename K, typename V>
-    void Write(const K& key, const V& value)
+    size_t SerializeWrite(const K& key, const V& value)
     {
         ssKey.reserve(DBWRAPPER_PREALLOC_KEY_SIZE);
         ssValue.reserve(DBWRAPPER_PREALLOC_VALUE_SIZE);
         ssKey << key;
         ssValue << value;
+        // LevelDB serializes writes as:
+        // - byte: header
+        // - varint: key length (1 byte up to 127B, 2 bytes up to 16383B, ...)
+        // - byte[]: key
+        // - varint: value length
+        // - byte[]: value
+        // The formula below assumes the key and value are both less than 16k.
+        return 3 + (ssKey.size() > 127) + ssKey.size() + (ssValue.size() > 127) + ssValue.size();
+    }
+    void WriteSerialized()
+    {
+        assert(!ssKey.empty() && !ssValue.empty());
         WriteImpl(ssKey, ssValue);
         ssKey.clear();
         ssValue.clear();
     }
+    template <typename K, typename V>
+    void Write(const K& key, const V& value)
+    {
+        SerializeWrite(key, value);
+        WriteSerialized();
+    }
 
     template <typename K>
-    void Erase(const K& key)
+    size_t SerializeErase(const K& key)
     {
         ssKey.reserve(DBWRAPPER_PREALLOC_KEY_SIZE);
         ssKey << key;
+        // LevelDB serializes erases as:
+        // - byte: header
+        // - varint: key length
+        // - byte[]: key
+        // The formula below assumes the key is less than 16kB.
+        return 2 + (ssKey.size() > 127) + ssKey.size();
+    }
+    void EraseSerialized()
+    {
+        assert(!ssKey.empty());
         EraseImpl(ssKey);
         ssKey.clear();
     }
-
-    size_t SizeEstimate() const { return size_estimate; }
+    template <typename K>
+    void Erase(const K& key)
+    {
+        SerializeErase(key);
+        EraseSerialized();
+    }
 };
 
 class CDBIterator
@@ -168,7 +199,7 @@ public:
     template<typename V> bool GetValue(V& value) {
         try {
             DataStream ssValue{GetValueImpl()};
-            ssValue.Xor(dbwrapper_private::GetObfuscateKey(parent));
+            dbwrapper_private::GetObfuscation(parent)(ssValue);
             ssValue >> value;
         } catch (const std::exception&) {
             return false;
@@ -181,7 +212,7 @@ struct LevelDBContext;
 
 class CDBWrapper
 {
-    friend const std::vector<unsigned char>& dbwrapper_private::GetObfuscateKey(const CDBWrapper &w);
+    friend Obfuscation dbwrapper_private::GetObfuscation(const CDBWrapper&);
 private:
     //! holds all leveldb-specific fields of this class
     std::unique_ptr<LevelDBContext> m_db_context;
@@ -190,15 +221,10 @@ private:
     std::string m_name;
 
     //! a key used for optional XOR-obfuscation of the database
-    std::vector<unsigned char> obfuscate_key;
+    Obfuscation m_obfuscation;
 
     //! the key under which the obfuscation key is stored
     static const std::string OBFUSCATE_KEY_KEY;
-
-    //! the length of the obfuscate key in number of bytes
-    static const unsigned int OBFUSCATE_KEY_NUM_BYTES;
-
-    std::vector<unsigned char> CreateObfuscateKey() const;
 
     //! path to filesystem storage
     const fs::path m_path;
@@ -230,7 +256,7 @@ public:
         }
         try {
             DataStream ssValue{MakeByteSpan(*strValue)};
-            ssValue.Xor(obfuscate_key);
+            m_obfuscation(ssValue);
             ssValue >> value;
         } catch (const std::exception&) {
             return false;

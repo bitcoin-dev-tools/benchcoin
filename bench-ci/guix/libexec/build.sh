@@ -218,7 +218,7 @@ CONFIGFLAGS="-DREDUCE_EXPORTS=ON -DBUILD_BENCH=OFF -DBUILD_GUI_TESTS=OFF -DBUILD
 BENCHCOINFLAGS="-DBUILD_CLI=OFF -DBUILD_TESTS=OFF -DCMAKE_CXX_FLAGS=-fno-omit-frame-pointer"
 
 # CFLAGS
-HOST_CFLAGS="-O2 -g"
+HOST_CFLAGS="-O3 -g"
 HOST_CFLAGS+=$(find /gnu/store -maxdepth 1 -mindepth 1 -type d -exec echo -n " -ffile-prefix-map={}=/usr" \;)
 case "$HOST" in
     *mingw*)  HOST_CFLAGS+=" -fno-ident" ;;
@@ -234,7 +234,7 @@ esac
 
 # LDFLAGS
 case "$HOST" in
-    x86_64-linux-gnu) HOST_LDFLAGS=" -static-pie -static-libgcc -Wl,-O2" ;;
+    x86_64-linux-gnu) HOST_LDFLAGS=" -static-pie -static-libgcc -Wl,-O3 -g" ;;
     *linux*)  HOST_LDFLAGS="-Wl,--as-needed -Wl,--dynamic-linker=$glibc_dynamic_linker -static-libstdc++ -Wl,-O2" ;;
     *mingw*)  HOST_LDFLAGS="-Wl,--no-insert-timestamp" ;;
 esac
@@ -253,7 +253,8 @@ mkdir -p "$DISTSRC"
           --toolchain "${BASEPREFIX}/${HOST}/toolchain.cmake" \
           -DWITH_CCACHE=OFF \
           ${CONFIGFLAGS} \
-          ${BENCHCOINFLAGS}
+          ${BENCHCOINFLAGS} \
+          -DCMAKE_CXX_FLAGS_RELWITHDEBINFO="-O3 -g"
 
     # Build Bitcoin Core
     cmake --build build -j "$JOBS" ${V:+--verbose}

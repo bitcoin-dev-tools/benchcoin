@@ -24,6 +24,36 @@ class uint256;
 //! -dbbatchsize default (bytes)
 static const int64_t nDefaultDbBatchSize = 16 << 20;
 
+static constexpr uint8_t DB_COIN{'C'};
+static constexpr uint8_t DB_BEST_BLOCK{'B'};
+static constexpr uint8_t DB_HEAD_BLOCKS{'H'};
+
+static constexpr size_t SerializedSize(const COutPoint& op) noexcept
+{
+    return 1 + uint256::size() + GetVarUInt32Size(op.n);
+}
+
+inline Span<std::byte> WriteCOutPoint(Span<std::byte> out, const COutPoint& op) noexcept
+{
+    out = out.first(SerializedSize(op));
+    out[0] = std::byte{DB_COIN};
+    std::memcpy(&out[1], op.hash.begin(), uint256::size());
+    WriteVarUInt32(out.subspan(1 + uint256::size()), op.n);
+    return out;
+}
+
+inline void ReadCOutPoint(Span<const std::byte> in, COutPoint& op)
+{
+    // Assert(!in.empty());
+    assert(static_cast<uint8_t>(in[0]) == DB_COIN);
+    in = in.subspan(1);
+
+    // Assert(in.size() >= uint256::size());
+    op.hash = Txid::FromUint256(uint256({reinterpret_cast<const uint8_t*>(in.begin()), uint256::size()}));
+
+    ReadVarUInt32(in.subspan(uint256::size()), op.n);
+}
+
 //! User-controlled performance and debug options.
 struct CoinsViewOptions {
     //! Maximum database write batch size in bytes.
@@ -43,8 +73,8 @@ protected:
 public:
     explicit CCoinsViewDB(DBParams db_params, CoinsViewOptions options);
 
-    std::optional<Coin> GetCoin(const COutPoint& outpoint) const override;
-    bool HaveCoin(const COutPoint &outpoint) const override;
+    std::optional<Coin> GetCoin(const COutPoint& outpoint, Span<std::byte> key_buffer) const override;
+    bool HaveCoin(const COutPoint &outpoint, Span<std::byte> key_buffer) const override;
     uint256 GetBestBlock() const override;
     std::vector<uint256> GetHeadBlocks() const override;
     bool BatchWrite(CoinsViewCacheCursor& cursor, const uint256 &hashBlock) override;

@@ -22,8 +22,6 @@
 #include <string>
 #include <utility>
 
-constexpr uint8_t DB_BEST_BLOCK{'B'};
-
 constexpr auto SYNC_LOG_INTERVAL{30s};
 constexpr auto SYNC_LOCATOR_WRITE_INTERVAL{30s};
 

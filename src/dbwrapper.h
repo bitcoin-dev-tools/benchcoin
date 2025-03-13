@@ -86,7 +86,6 @@ private:
     size_t size_estimate{0};
 
     void WriteImpl(Span<const std::byte> key, DataStream& ssValue);
-    void EraseImpl(Span<const std::byte> key);
 
 public:
     /**
@@ -96,17 +95,24 @@ public:
     ~CDBBatch();
     void Clear();
 
+    template <typename V>
+    void WriteSpan(Span<const std::byte> key, const V& value)
+    {
+        ssValue.reserve(DBWRAPPER_PREALLOC_VALUE_SIZE);
+        ssValue << value;
+        WriteImpl(key, ssValue);
+        ssValue.clear();
+    }
     template <typename K, typename V>
     void Write(const K& key, const V& value)
     {
         ssKey.reserve(DBWRAPPER_PREALLOC_KEY_SIZE);
-        ssValue.reserve(DBWRAPPER_PREALLOC_VALUE_SIZE);
         ssKey << key;
-        ssValue << value;
-        WriteImpl(ssKey, ssValue);
+        WriteSpan<V>(ssKey, value);
         ssKey.clear();
-        ssValue.clear();
     }
+
+    void EraseImpl(Span<const std::byte> key);
 
     template <typename K>
     void Erase(const K& key)
@@ -130,7 +136,6 @@ private:
     const std::unique_ptr<IteratorImpl> m_impl_iter;
 
     void SeekImpl(Span<const std::byte> key);
-    Span<const std::byte> GetKeyImpl() const;
     Span<const std::byte> GetValueImpl() const;
 
 public:
@@ -154,6 +159,8 @@ public:
     }
 
     void Next();
+
+    Span<const std::byte> GetKeyImpl() const;
 
     template<typename K> bool GetKey(K& key) {
         try {
@@ -207,7 +214,6 @@ private:
     bool m_is_memory;
 
     std::optional<std::string> ReadImpl(Span<const std::byte> key) const;
-    bool ExistsImpl(Span<const std::byte> key) const;
     size_t EstimateSizeImpl(Span<const std::byte> key1, Span<const std::byte> key2) const;
     auto& DBContext() const LIFETIMEBOUND { return *Assert(m_db_context); }
 
@@ -218,24 +224,28 @@ public:
     CDBWrapper(const CDBWrapper&) = delete;
     CDBWrapper& operator=(const CDBWrapper&) = delete;
 
+    template <typename V>
+    bool ReadSpan(Span<const std::byte> key, V& value) const
+    {
+        if (auto strValue{ReadImpl(key)}) {
+            try {
+                DataStream ssValue{MakeByteSpan(*strValue)};
+                ssValue.Xor(obfuscate_key);
+                ssValue >> value;
+                return true;
+            }
+            catch (const std::exception&) {
+            }
+        }
+        return false;
+    }
     template <typename K, typename V>
     bool Read(const K& key, V& value) const
     {
         DataStream ssKey{};
         ssKey.reserve(DBWRAPPER_PREALLOC_KEY_SIZE);
         ssKey << key;
-        std::optional<std::string> strValue{ReadImpl(ssKey)};
-        if (!strValue) {
-            return false;
-        }
-        try {
-            DataStream ssValue{MakeByteSpan(*strValue)};
-            ssValue.Xor(obfuscate_key);
-            ssValue >> value;
-        } catch (const std::exception&) {
-            return false;
-        }
-        return true;
+        return ReadSpan<V>(ssKey, value);
     }
 
     template <typename K, typename V>
@@ -253,6 +263,8 @@ public:
         }
         return m_path;
     }
+
+    bool ExistsImpl(Span<const std::byte> key) const;
 
     template <typename K>
     bool Exists(const K& key) const

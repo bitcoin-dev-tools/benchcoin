@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <hash.h>
+#include <random.h>
 #include <serialize.h>
 #include <streams.h>
 #include <test/util/setup_common.h>
@@ -10,8 +11,10 @@
 
 #include <stdint.h>
 #include <string>
+#include <txdb.h>
 
 #include <boost/test/unit_test.hpp>
+#include <consensus/consensus.h>
 
 BOOST_FIXTURE_TEST_SUITE(serialize_tests, BasicTestingSetup)
 
@@ -494,6 +497,79 @@ BOOST_AUTO_TEST_CASE(with_params_derived)
 
     BOOST_CHECK_EQUAL(stream.str(), "\x0F\x02xy"
                                     "0f\x02XY");
+}
+
+BOOST_AUTO_TEST_CASE(varint_serialization_equivalence)
+{
+    FastRandomContext rng{/*fDeterministic=*/false};
+    for (size_t i{0}; i < 1000; ++i) {
+        // SizeOfVarInt
+        const auto num{rng.randbool() ? rng.randrange(rng.randbool() ? 128 : 16'512) : rng.rand32()};
+        const auto original_opn{GetSizeOfVarInt<VarIntMode::DEFAULT>(num)};
+        const auto actual_opn{GetVarUInt32Size(num)};
+        BOOST_CHECK_EQUAL(actual_opn, original_opn);
+
+        // VARINT
+        DataStream original;
+        original << VARINT(num);
+
+        DataStream actual;
+        actual.resize(actual_opn);
+        WriteVarUInt32(actual, num);
+
+        BOOST_CHECK_EQUAL(actual.str(), original.str());
+    }
+}
+
+namespace {
+struct TestCoinEntry {
+    COutPoint* outpoint;
+    uint8_t key;
+    explicit TestCoinEntry(const COutPoint* ptr) : outpoint(const_cast<COutPoint*>(ptr)), key(DB_COIN)  {}
+
+    SERIALIZE_METHODS(TestCoinEntry, obj) { READWRITE(obj.key, obj.outpoint->hash, VARINT(obj.outpoint->n)); }
+};
+}
+
+BOOST_AUTO_TEST_CASE(outpoint_serialization_equivalence)
+{
+    FastRandomContext rng{/*fDeterministic=*/false};
+
+    DataStream actual;
+    actual.resize(MAX_COUTPOINT_SERIALIZED_SIZE);
+
+    for (size_t i{0}; i < 1000; ++i) {
+        const COutPoint op{Txid::FromUint256(rng.rand256()), rng.randbool() ? rng.randrange(rng.randbool() ? 128 : 16'512) : rng.rand32()};
+
+        DataStream original;
+        original << TestCoinEntry(&op);
+        BOOST_CHECK_EQUAL(original.size(), SerializedSize(op));
+
+        auto serialized{WriteCOutPoint(actual, op)};
+        BOOST_CHECK_EQUAL(serialized.size(), original.size());
+        BOOST_CHECK_EQUAL(serialized.size() - 1 - sizeof(uint256), GetSizeOfVarInt<VarIntMode::DEFAULT>(op.n));
+        BOOST_CHECK_EQUAL_COLLECTIONS(serialized.begin(), serialized.end(), original.begin(), original.end());
+    }
+}
+
+BOOST_AUTO_TEST_CASE(outpoint_serialization_roundtrip)
+{
+    FastRandomContext rng{/*fDeterministic=*/false};
+
+    DataStream serialized;
+    serialized.resize(MAX_COUTPOINT_SERIALIZED_SIZE);
+
+    for (size_t i{0}; i < 1000; ++i) {
+        const COutPoint op{Txid::FromUint256(rng.rand256()), rng.randbool() ? rng.randrange(rng.randbool() ? 128 : 16'512) : rng.rand32()};
+
+        auto bytes{WriteCOutPoint(serialized, op)};
+
+        COutPoint deserialized;
+        ReadCOutPoint(bytes, deserialized);
+
+        BOOST_CHECK_EQUAL(op.hash, deserialized.hash);
+        BOOST_CHECK_EQUAL(op.n, deserialized.n);
+    }
 }
 
 BOOST_AUTO_TEST_SUITE_END()

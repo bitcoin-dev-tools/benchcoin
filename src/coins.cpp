@@ -7,26 +7,27 @@
 #include <consensus/consensus.h>
 #include <logging.h>
 #include <random.h>
+#include <streams.h>
 #include <util/trace.h>
 
 TRACEPOINT_SEMAPHORE(utxocache, add);
 TRACEPOINT_SEMAPHORE(utxocache, spent);
 TRACEPOINT_SEMAPHORE(utxocache, uncache);
 
-std::optional<Coin> CCoinsView::GetCoin(const COutPoint& outpoint) const { return std::nullopt; }
+std::optional<Coin> CCoinsView::GetCoin(const COutPoint& outpoint, Span<std::byte> key_buffer) const { return std::nullopt; }
 uint256 CCoinsView::GetBestBlock() const { return uint256(); }
 std::vector<uint256> CCoinsView::GetHeadBlocks() const { return std::vector<uint256>(); }
 bool CCoinsView::BatchWrite(CoinsViewCacheCursor& cursor, const uint256 &hashBlock) { return false; }
 std::unique_ptr<CCoinsViewCursor> CCoinsView::Cursor() const { return nullptr; }
 
-bool CCoinsView::HaveCoin(const COutPoint &outpoint) const
+bool CCoinsView::HaveCoin(const COutPoint &outpoint, Span<std::byte> key_buffer) const
 {
-    return GetCoin(outpoint).has_value();
+    return GetCoin(outpoint, key_buffer).has_value();
 }
 
 CCoinsViewBacked::CCoinsViewBacked(CCoinsView *viewIn) : base(viewIn) { }
-std::optional<Coin> CCoinsViewBacked::GetCoin(const COutPoint& outpoint) const { return base->GetCoin(outpoint); }
-bool CCoinsViewBacked::HaveCoin(const COutPoint &outpoint) const { return base->HaveCoin(outpoint); }
+std::optional<Coin> CCoinsViewBacked::GetCoin(const COutPoint& outpoint, Span<std::byte> key_buffer) const { return base->GetCoin(outpoint, key_buffer); }
+bool CCoinsViewBacked::HaveCoin(const COutPoint &outpoint, Span<std::byte> key_buffer) const { return base->HaveCoin(outpoint, key_buffer); }
 uint256 CCoinsViewBacked::GetBestBlock() const { return base->GetBestBlock(); }
 std::vector<uint256> CCoinsViewBacked::GetHeadBlocks() const { return base->GetHeadBlocks(); }
 void CCoinsViewBacked::SetBackend(CCoinsView &viewIn) { base = &viewIn; }
@@ -45,10 +46,10 @@ size_t CCoinsViewCache::DynamicMemoryUsage() const {
     return memusage::DynamicUsage(cacheCoins) + cachedCoinsUsage;
 }
 
-CCoinsMap::iterator CCoinsViewCache::FetchCoin(const COutPoint &outpoint) const {
+CCoinsMap::iterator CCoinsViewCache::FetchCoin(const COutPoint &outpoint, Span<std::byte> key_buffer) const {
     const auto [ret, inserted] = cacheCoins.try_emplace(outpoint);
     if (inserted) {
-        if (auto coin{base->GetCoin(outpoint)}) {
+        if (auto coin{base->GetCoin(outpoint, key_buffer)}) {
             ret->second.coin = std::move(*coin);
             cachedCoinsUsage += ret->second.coin.DynamicMemoryUsage();
             if (ret->second.coin.IsSpent()) { // TODO GetCoin cannot return spent coins
@@ -63,9 +64,9 @@ CCoinsMap::iterator CCoinsViewCache::FetchCoin(const COutPoint &outpoint) const 
     return ret;
 }
 
-std::optional<Coin> CCoinsViewCache::GetCoin(const COutPoint& outpoint) const
+std::optional<Coin> CCoinsViewCache::GetCoin(const COutPoint& outpoint, Span<std::byte> key_buffer) const
 {
-    if (auto it{FetchCoin(outpoint)}; it != cacheCoins.end() && !it->second.coin.IsSpent()) return it->second.coin;
+    if (auto it{FetchCoin(outpoint, key_buffer)}; it != cacheCoins.end() && !it->second.coin.IsSpent()) return it->second.coin;
     return std::nullopt;
 }
 
@@ -116,19 +117,19 @@ void CCoinsViewCache::EmplaceCoinInternalDANGER(COutPoint&& outpoint, Coin&& coi
     if (inserted) CCoinsCacheEntry::SetDirty(*it, m_sentinel);
 }
 
-void AddCoins(CCoinsViewCache& cache, const CTransaction &tx, int nHeight, bool check_for_overwrite) {
+void AddCoins(CCoinsViewCache& cache, const CTransaction &tx, int nHeight, bool check_for_overwrite, Span<std::byte> key_buffer) {
     bool fCoinbase = tx.IsCoinBase();
     const Txid& txid = tx.GetHash();
     for (size_t i = 0; i < tx.vout.size(); ++i) {
-        bool overwrite = check_for_overwrite ? cache.HaveCoin(COutPoint(txid, i)) : fCoinbase;
+        bool overwrite = check_for_overwrite ? cache.HaveCoin(COutPoint(txid, i), key_buffer) : fCoinbase;
         // Coinbase transactions can always be overwritten, in order to correctly
         // deal with the pre-BIP30 occurrences of duplicate coinbase transactions.
         cache.AddCoin(COutPoint(txid, i), Coin(tx.vout[i], nHeight, fCoinbase), overwrite);
     }
 }
 
-bool CCoinsViewCache::SpendCoin(const COutPoint &outpoint, Coin* moveout) {
-    CCoinsMap::iterator it = FetchCoin(outpoint);
+bool CCoinsViewCache::SpendCoin(const COutPoint &outpoint, Coin* moveout, Span<std::byte> key_buffer) {
+    CCoinsMap::iterator it = FetchCoin(outpoint, key_buffer);
     if (it == cacheCoins.end()) return false;
     cachedCoinsUsage -= it->second.coin.DynamicMemoryUsage();
     TRACEPOINT(utxocache, spent,
@@ -151,8 +152,8 @@ bool CCoinsViewCache::SpendCoin(const COutPoint &outpoint, Coin* moveout) {
 
 static const Coin coinEmpty;
 
-const Coin& CCoinsViewCache::AccessCoin(const COutPoint &outpoint) const {
-    CCoinsMap::const_iterator it = FetchCoin(outpoint);
+const Coin& CCoinsViewCache::AccessCoin(const COutPoint &outpoint, Span<std::byte> key_buffer) const {
+    CCoinsMap::const_iterator it = FetchCoin(outpoint, key_buffer);
     if (it == cacheCoins.end()) {
         return coinEmpty;
     } else {
@@ -160,8 +161,8 @@ const Coin& CCoinsViewCache::AccessCoin(const COutPoint &outpoint) const {
     }
 }
 
-bool CCoinsViewCache::HaveCoin(const COutPoint &outpoint) const {
-    CCoinsMap::const_iterator it = FetchCoin(outpoint);
+bool CCoinsViewCache::HaveCoin(const COutPoint &outpoint, Span<std::byte> key_buffer) const {
+    CCoinsMap::const_iterator it = FetchCoin(outpoint, key_buffer);
     return (it != cacheCoins.end() && !it->second.coin.IsSpent());
 }
 
@@ -290,11 +291,11 @@ unsigned int CCoinsViewCache::GetCacheSize() const {
     return cacheCoins.size();
 }
 
-bool CCoinsViewCache::HaveInputs(const CTransaction& tx) const
+bool CCoinsViewCache::HaveInputs(const CTransaction& tx, Span<std::byte> key_buffer) const
 {
     if (!tx.IsCoinBase()) {
         for (unsigned int i = 0; i < tx.vin.size(); i++) {
-            if (!HaveCoin(tx.vin[i].prevout)) {
+            if (!HaveCoin(tx.vin[i].prevout, key_buffer)) {
                 return false;
             }
         }
@@ -350,9 +351,11 @@ static const size_t MAX_OUTPUTS_PER_BLOCK = MAX_BLOCK_WEIGHT / MIN_TRANSACTION_O
 
 const Coin& AccessByTxid(const CCoinsViewCache& view, const Txid& txid)
 {
+    DataStream key_buffer;
+    key_buffer.resize(MAX_COUTPOINT_SERIALIZED_SIZE);
     COutPoint iter(txid, 0);
     while (iter.n < MAX_OUTPUTS_PER_BLOCK) {
-        const Coin& alternate = view.AccessCoin(iter);
+        const Coin& alternate = view.AccessCoin(iter, key_buffer);
         if (!alternate.IsSpent()) return alternate;
         ++iter.n;
     }
@@ -377,12 +380,12 @@ static ReturnType ExecuteBackedWrapper(Func func, const std::vector<std::functio
     }
 }
 
-std::optional<Coin> CCoinsViewErrorCatcher::GetCoin(const COutPoint& outpoint) const
+std::optional<Coin> CCoinsViewErrorCatcher::GetCoin(const COutPoint& outpoint, Span<std::byte> key_buffer) const
 {
-    return ExecuteBackedWrapper<std::optional<Coin>>([&]() { return CCoinsViewBacked::GetCoin(outpoint); }, m_err_callbacks);
+    return ExecuteBackedWrapper<std::optional<Coin>>([&]() { return CCoinsViewBacked::GetCoin(outpoint, key_buffer); }, m_err_callbacks);
 }
 
-bool CCoinsViewErrorCatcher::HaveCoin(const COutPoint& outpoint) const
+bool CCoinsViewErrorCatcher::HaveCoin(const COutPoint& outpoint, Span<std::byte> key_buffer) const
 {
-    return ExecuteBackedWrapper<bool>([&]() { return CCoinsViewBacked::HaveCoin(outpoint); }, m_err_callbacks);
+    return ExecuteBackedWrapper<bool>([&]() { return CCoinsViewBacked::HaveCoin(outpoint, key_buffer); }, m_err_callbacks);
 }

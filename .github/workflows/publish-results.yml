@@ -262,6 +262,7 @@ jobs:
             // Set outputs for use in PR comment
             const resultUrl = `https://${context.repo.owner}.github.io/${context.repo.name}/results/pr-${prNumber}/${runId}/index.html`;
             const speedupString = Object.entries(combinedResults.speedups)
+              .filter(([network]) => network.includes('uninstrumented'))
               .map(([network, speedup]) => `${network}: ${speedup}%`)
               .join(', ');
 

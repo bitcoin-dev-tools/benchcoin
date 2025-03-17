@@ -5597,6 +5597,10 @@ bool Chainstate::ResizeCoinsCaches(size_t coinstip_size, size_t coinsdb_size)
     } else {
         // Otherwise, flush state to disk and deallocate the in-memory coins map.
         ret = FlushStateToDisk(state, FlushStateMode::ALWAYS);
+        if (coinstip_size < old_coinstip_size) {
+            // Reallocation is required when downsizing since we can't shrink the cache.
+            CoinsTip().ReallocateCache();
+        }
     }
     return ret;
 }

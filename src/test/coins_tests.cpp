@@ -902,7 +902,7 @@ void TestFlushBehavior(
             // hashBlock must be filled before flushing to disk; value is
             // unimportant here. This is normally done during connect/disconnect block.
             cache->SetBestBlock(m_rng.rand256());
-            erase ? cache->Flush() : cache->Sync();
+            BOOST_CHECK(erase ? cache->Flush() : cache->Sync());
         }
     };
 

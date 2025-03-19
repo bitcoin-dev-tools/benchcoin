@@ -114,54 +114,55 @@ def generate_plot(x, y, x_label, y_label, title, output_file):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 3:
-        print(f"Usage: {sys.argv[0]} <log_directory> <png_directory>")
+    if len(sys.argv) != 4:
+        print(f"Usage: {sys.argv[0]} <commit> <log_directory> <png_directory>")
         sys.exit(1)
 
-    log_file = sys.argv[1]
+    commit = sys.argv[1]
+
+    log_file = sys.argv[2]
     if not os.path.isfile(log_file):
         print(f"File not found: {log_file}")
         sys.exit(1)
 
-    png_dir = sys.argv[2]
+    png_dir = sys.argv[3]
     os.makedirs(png_dir, exist_ok=True)
 
     update_tip_data, leveldb_compact_data, leveldb_gen_table_data, validation_txadd_data, coindb_write_batch_data, coindb_commit_data = parse_log_file(log_file)
     times, heights, tx_counts, cache_size, cache_count = zip(*update_tip_data)
     float_minutes = [(t - times[0]).total_seconds() / 60 for t in times]
 
-    generate_plot(float_minutes, heights, "Elapsed minutes", "Block Height", "Block Height vs Time", os.path.join(png_dir, "height_vs_time.png"))
-    generate_plot(heights, cache_size, "Block Height", "Cache Size (MiB)", "Cache Size vs Block Height", os.path.join(png_dir, "cache_vs_height.png"))
-    generate_plot(float_minutes, cache_size, "Elapsed minutes", "Cache Size (MiB)", "Cache Size vs Time", os.path.join(png_dir, "cache_vs_time.png"))
-    generate_plot(heights, tx_counts, "Block Height", "Transaction Count", "Transactions vs Block Height", os.path.join(png_dir, "tx_vs_height.png"))
-    generate_plot(times, cache_count, "Block Height", "Coins Cache Size", "Coins Cache Size vs Time", os.path.join(png_dir, "coins_cache_vs_time.png"))
+    generate_plot(float_minutes, heights, "Elapsed minutes", "Block Height", "Block Height vs Time", os.path.join(png_dir, f"{commit}-height_vs_time.png"))
+    generate_plot(heights, cache_size, "Block Height", "Cache Size (MiB)", "Cache Size vs Block Height", os.path.join(png_dir, f"{commit}-cache_vs_height.png"))
+    generate_plot(float_minutes, cache_size, "Elapsed minutes", "Cache Size (MiB)", "Cache Size vs Time", os.path.join(png_dir, f"{commit}-cache_vs_time.png"))
+    generate_plot(heights, tx_counts, "Block Height", "Transaction Count", "Transactions vs Block Height", os.path.join(png_dir, f"{commit}-tx_vs_height.png"))
+    generate_plot(times, cache_count, "Block Height", "Coins Cache Size", "Coins Cache Size vs Time", os.path.join(png_dir, f"{commit}-coins_cache_vs_time.png"))
 
     # LevelDB Compaction and Generated Tables
     if leveldb_compact_data:
         leveldb_compact_times = [(t - times[0]).total_seconds() / 60 for t in leveldb_compact_data]
         leveldb_compact_y = [1 for _ in leveldb_compact_times]  # dummy y axis to mark compactions
-        generate_plot(leveldb_compact_times, leveldb_compact_y, "Elapsed minutes", "LevelDB Compaction", "LevelDB Compaction Events vs Time", os.path.join(png_dir, "leveldb_compact_vs_time.png"))
+        generate_plot(leveldb_compact_times, leveldb_compact_y, "Elapsed minutes", "LevelDB Compaction", "LevelDB Compaction Events vs Time", os.path.join(png_dir, f"{commit}-leveldb_compact_vs_time.png"))
     if leveldb_gen_table_data:
         leveldb_gen_table_times, leveldb_gen_table_keys, leveldb_gen_table_bytes = zip(*leveldb_gen_table_data)
         leveldb_gen_table_float_minutes = [(t - times[0]).total_seconds() / 60 for t in leveldb_gen_table_times]
-        generate_plot(leveldb_gen_table_float_minutes, leveldb_gen_table_keys, "Elapsed minutes", "Number of keys", "LevelDB Keys Generated vs Time", os.path.join(png_dir, "leveldb_gen_keys_vs_time.png"))
-        generate_plot(leveldb_gen_table_float_minutes, leveldb_gen_table_bytes, "Elapsed minutes", "Number of bytes", "LevelDB Bytes Generated vs Time", os.path.join(png_dir, "leveldb_gen_bytes_vs_time.png"))
+        generate_plot(leveldb_gen_table_float_minutes, leveldb_gen_table_keys, "Elapsed minutes", "Number of keys", "LevelDB Keys Generated vs Time", os.path.join(png_dir, f"{commit}-leveldb_gen_keys_vs_time.png"))
+        generate_plot(leveldb_gen_table_float_minutes, leveldb_gen_table_bytes, "Elapsed minutes", "Number of bytes", "LevelDB Bytes Generated vs Time", os.path.join(png_dir, f"{commit}-leveldb_gen_bytes_vs_time.png"))
 
     # validation mempool add transaction lines
     if validation_txadd_data:
         validation_txadd_times = [(t - times[0]).total_seconds() / 60 for t in validation_txadd_data]
         validation_txadd_y = [1 for _ in validation_txadd_times]  # dummy y axis to mark transaction additions
-        generate_plot(validation_txadd_times, validation_txadd_y, "Elapsed minutes", "Transaction Additions", "Transaction Additions to Mempool vs Time", os.path.join(png_dir, "validation_txadd_vs_time.png"))
+        generate_plot(validation_txadd_times, validation_txadd_y, "Elapsed minutes", "Transaction Additions", "Transaction Additions to Mempool vs Time", os.path.join(png_dir, f"{commit}-validation_txadd_vs_time.png"))
 
     # coindb write batch lines
     if coindb_write_batch_data:
         coindb_write_batch_times, is_partial_strs, sizes_mb = zip(*coindb_write_batch_data)
         coindb_write_batch_float_minutes = [(t - times[0]).total_seconds() / 60 for t in coindb_write_batch_times]
-        generate_plot(coindb_write_batch_float_minutes, sizes_mb, "Elapsed minutes", "Batch Size MiB", "Coin Database Partial/Final Write Batch Size vs Time", os.path.join(png_dir, "coindb_write_batch_size_vs_time.png"))
+        generate_plot(coindb_write_batch_float_minutes, sizes_mb, "Elapsed minutes", "Batch Size MiB", "Coin Database Partial/Final Write Batch Size vs Time", os.path.join(png_dir, f"{commit}-coindb_write_batch_size_vs_time.png"))
     if coindb_commit_data:
         coindb_commit_times, txout_counts = zip(*coindb_commit_data)
         coindb_commit_float_minutes = [(t - times[0]).total_seconds() / 60 for t in coindb_commit_times]
-        generate_plot(coindb_commit_float_minutes, txout_counts, "Elapsed minutes", "Transaction Output Count", "Coin Database Transaction Output Committed vs Time", os.path.join(png_dir, "coindb_commit_txout_vs_time.png"))
-
+        generate_plot(coindb_commit_float_minutes, txout_counts, "Elapsed minutes", "Transaction Output Count", "Coin Database Transaction Output Committed vs Time", os.path.join(png_dir, f"{commit}-coindb_commit_txout_vs_time.png"))
 
     print("Plots saved!")

@@ -75,7 +75,7 @@ conclude_run() {
   if [ -n "${debug_log}" ]; then
     echo "Generating plots from ${debug_log}"
     if [ -x "bench-ci/parse_and_plot.py" ]; then
-      bench-ci/parse_and_plot.py "${debug_log}" "${PNG_DIR}"
+      bench-ci/parse_and_plot.py "${commit}" "${debug_log}" "${PNG_DIR}"
     else
       ls -al "bench-ci/"
       echo "parse_and_plot.py not found or not executable, skipping plot generation"

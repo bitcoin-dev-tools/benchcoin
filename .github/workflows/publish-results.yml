@@ -46,7 +46,7 @@ jobs:
 
             if [ -d "pngs-${network}" ]; then
               mkdir -p "${network}-plots"
-              mv "pngs-${network}"/*.png "${network}-plots/"
+              mv "pngs-${network}"/* "${network}-plots/"
             fi
           done
       - name: Organize results
@@ -172,6 +172,7 @@ jobs:
                               const plotDir = `${resultDir}/${network}-plots`;
                               const plots = fs.existsSync(plotDir)
                                 ? fs.readdirSync(plotDir)
+                                    .filter(plot => plot.startsWith(`${result.parameters.commit}-`))
                                     .map(plot => `
                                       <a href="${network}-plots/${plot}" target="_blank">
                                         <img src="${network}-plots/${plot}" alt="${plot}" class="mb-4 max-w-full h-auto">

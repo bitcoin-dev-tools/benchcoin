@@ -1,4 +1,4 @@
-// Copyright (c) 2009-2022 The Bitcoin Core developers
+// Copyright (c) 2009-present The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -188,7 +188,7 @@ void SerializeHDKeypaths(Stream& s, const std::map<CPubKey, KeyOriginInfo>& hd_k
         if (!keypath_pair.first.IsValid()) {
             throw std::ios_base::failure("Invalid CPubKey being serialized");
         }
-        SerializeToVector(s, type, Span{keypath_pair.first});
+        SerializeToVector(s, type, std::span{keypath_pair.first});
         SerializeHDKeypath(s, keypath_pair.second);
     }
 }
@@ -242,7 +242,7 @@ struct PSBTInput
         if (final_script_sig.empty() && final_script_witness.IsNull()) {
             // Write any partial signatures
             for (const auto& sig_pair : partial_sigs) {
-                SerializeToVector(s, CompactSizeWriter(PSBT_IN_PARTIAL_SIG), Span{sig_pair.second.first});
+                SerializeToVector(s, CompactSizeWriter(PSBT_IN_PARTIAL_SIG), std::span{sig_pair.second.first});
                 s << sig_pair.second.second;
             }
 
@@ -269,25 +269,25 @@ struct PSBTInput
 
             // Write any ripemd160 preimage
             for (const auto& [hash, preimage] : ripemd160_preimages) {
-                SerializeToVector(s, CompactSizeWriter(PSBT_IN_RIPEMD160), Span{hash});
+                SerializeToVector(s, CompactSizeWriter(PSBT_IN_RIPEMD160), std::span{hash});
                 s << preimage;
             }
 
             // Write any sha256 preimage
             for (const auto& [hash, preimage] : sha256_preimages) {
-                SerializeToVector(s, CompactSizeWriter(PSBT_IN_SHA256), Span{hash});
+                SerializeToVector(s, CompactSizeWriter(PSBT_IN_SHA256), std::span{hash});
                 s << preimage;
             }
 
             // Write any hash160 preimage
             for (const auto& [hash, preimage] : hash160_preimages) {
-                SerializeToVector(s, CompactSizeWriter(PSBT_IN_HASH160), Span{hash});
+                SerializeToVector(s, CompactSizeWriter(PSBT_IN_HASH160), std::span{hash});
                 s << preimage;
             }
 
             // Write any hash256 preimage
             for (const auto& [hash, preimage] : hash256_preimages) {
-                SerializeToVector(s, CompactSizeWriter(PSBT_IN_HASH256), Span{hash});
+                SerializeToVector(s, CompactSizeWriter(PSBT_IN_HASH256), std::span{hash});
                 s << preimage;
             }
 
@@ -308,7 +308,7 @@ struct PSBTInput
             for (const auto& [leaf, control_blocks] : m_tap_scripts) {
                 const auto& [script, leaf_ver] = leaf;
                 for (const auto& control_block : control_blocks) {
-                    SerializeToVector(s, PSBT_IN_TAP_LEAF_SCRIPT, Span{control_block});
+                    SerializeToVector(s, PSBT_IN_TAP_LEAF_SCRIPT, std::span{control_block});
                     std::vector<unsigned char> value_v(script.begin(), script.end());
                     value_v.push_back((uint8_t)leaf_ver);
                     s << value_v;
@@ -495,7 +495,7 @@ struct PSBTInput
                         throw std::ios_base::failure("Size of key was not the expected size for the type ripemd160 preimage");
                     }
                     // Read in the hash from key
-                    std::vector<unsigned char> hash_vec(key.begin() + 1, key.end());
+                    std::span<unsigned char, CRIPEMD160::OUTPUT_SIZE> hash_vec(key.begin() + 1, key.end());
                     uint160 hash(hash_vec);
                     if (ripemd160_preimages.count(hash) > 0) {
                         throw std::ios_base::failure("Duplicate Key, input ripemd160 preimage already provided");
@@ -516,7 +516,7 @@ struct PSBTInput
                         throw std::ios_base::failure("Size of key was not the expected size for the type sha256 preimage");
                     }
                     // Read in the hash from key
-                    std::vector<unsigned char> hash_vec(key.begin() + 1, key.end());
+                    std::span<unsigned char, CSHA256::OUTPUT_SIZE> hash_vec(key.begin() + 1, key.end());
                     uint256 hash(hash_vec);
                     if (sha256_preimages.count(hash) > 0) {
                         throw std::ios_base::failure("Duplicate Key, input sha256 preimage already provided");
@@ -537,7 +537,7 @@ struct PSBTInput
                         throw std::ios_base::failure("Size of key was not the expected size for the type hash160 preimage");
                     }
                     // Read in the hash from key
-                    std::vector<unsigned char> hash_vec(key.begin() + 1, key.end());
+                    std::span<unsigned char, CHash160::OUTPUT_SIZE> hash_vec(key.begin() + 1, key.end());
                     uint160 hash(hash_vec);
                     if (hash160_preimages.count(hash) > 0) {
                         throw std::ios_base::failure("Duplicate Key, input hash160 preimage already provided");
@@ -558,7 +558,7 @@ struct PSBTInput
                         throw std::ios_base::failure("Size of key was not the expected size for the type hash256 preimage");
                     }
                     // Read in the hash from key
-                    std::vector<unsigned char> hash_vec(key.begin() + 1, key.end());
+                    std::span<unsigned char, CHash256::OUTPUT_SIZE> hash_vec(key.begin() + 1, key.end());
                     uint256 hash(hash_vec);
                     if (hash256_preimages.count(hash) > 0) {
                         throw std::ios_base::failure("Duplicate Key, input hash256 preimage already provided");
@@ -594,7 +594,7 @@ struct PSBTInput
                     } else if (key.size() != 65) {
                         throw std::ios_base::failure("Input Taproot script signature key is not 65 bytes");
                     }
-                    SpanReader s_key{Span{key}.subspan(1)};
+                    SpanReader s_key{std::span{key}.subspan(1)};
                     XOnlyPubKey xonly;
                     uint256 hash;
                     s_key >> xonly;
@@ -636,7 +636,7 @@ struct PSBTInput
                     } else if (key.size() != 33) {
                         throw std::ios_base::failure("Input Taproot BIP32 keypath key is not at 33 bytes");
                     }
-                    SpanReader s_key{Span{key}.subspan(1)};
+                    SpanReader s_key{std::span{key}.subspan(1)};
                     XOnlyPubKey xonly;
                     s_key >> xonly;
                     std::set<uint256> leaf_hashes;
@@ -893,7 +893,7 @@ struct PSBTOutput
                     } else if (key.size() != 33) {
                         throw std::ios_base::failure("Output Taproot BIP32 keypath key is not at 33 bytes");
                     }
-                    XOnlyPubKey xonly(uint256(Span<uint8_t>(key).last(32)));
+                    XOnlyPubKey xonly(std::span(key).last<32>());
                     std::set<uint256> leaf_hashes;
                     uint64_t value_len = ReadCompactSize(s);
                     size_t before_hashes = s.size();
@@ -1279,6 +1279,6 @@ bool FinalizeAndExtractPSBT(PartiallySignedTransaction& psbtx, CMutableTransacti
 //! Decode a base64ed PSBT into a PartiallySignedTransaction
 [[nodiscard]] bool DecodeBase64PSBT(PartiallySignedTransaction& decoded_psbt, const std::string& base64_psbt, std::string& error);
 //! Decode a raw (binary blob) PSBT into a PartiallySignedTransaction
-[[nodiscard]] bool DecodeRawPSBT(PartiallySignedTransaction& decoded_psbt, Span<const std::byte> raw_psbt, std::string& error);
+[[nodiscard]] bool DecodeRawPSBT(PartiallySignedTransaction& decoded_psbt, std::span<const std::byte> raw_psbt, std::string& error);
 
 #endif // BITCOIN_PSBT_H

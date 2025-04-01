@@ -92,6 +92,8 @@ std::vector<uint256> CCoinsViewDB::GetHeadBlocks() const {
 
 bool CCoinsViewDB::BatchWrite(CoinsViewCacheCursor& cursor, const uint256 &hashBlock) {
     CDBBatch batch(*m_db);
+    batch.Reserve(m_options.batch_write_bytes);
+
     size_t count = 0;
     size_t changed = 0;
     assert(!hashBlock.IsNull());
@@ -116,38 +118,44 @@ bool CCoinsViewDB::BatchWrite(CoinsViewCacheCursor& cursor, const uint256 &hashB
     batch.Erase(DB_BEST_BLOCK);
     batch.Write(DB_HEAD_BLOCKS, Vector(hashBlock, old_tip));
 
-    for (auto it{cursor.Begin()}; it != cursor.End();) {
+    for (auto it{cursor.Begin()}; it != cursor.End(); it = cursor.NextAndMaybeErase(*it)) {
         if (it->second.IsDirty()) {
             CoinEntry entry(&it->first);
-            if (it->second.coin.IsSpent())
-                batch.Erase(entry);
-            else
-                batch.Write(entry, it->second.coin);
+            const size_t next_serialized_size{it->second.coin.IsSpent()
+                ? batch.SerializeErase(entry)
+                : batch.SerializeWrite(entry, it->second.coin)
+            };
             changed++;
-        }
-        count++;
-        it = cursor.NextAndMaybeErase(*it);
-        if (batch.SizeEstimate() > m_options.batch_write_bytes) {
-            LogDebug(BCLog::COINDB, "Writing partial batch of %.2f MiB\n", batch.SizeEstimate() * (1.0 / 1048576.0));
-            m_db->WriteBatch(batch);
-            batch.Clear();
-            if (m_options.simulate_crash_ratio) {
-                static FastRandomContext rng;
-                if (rng.randrange(m_options.simulate_crash_ratio) == 0) {
-                    LogPrintf("Simulating a crash. Goodbye.\n");
-                    _Exit(0);
+            if (batch.ApproximateSize() + next_serialized_size >= m_options.batch_write_bytes) {
+                LogDebug(BCLog::COINDB, "Writing partial batch of %.2f MiB\n", batch.ApproximateSize() * (1.0 / 1048576.0));
+                m_db->WriteBatch(batch);
+                batch.Clear();
+                if (m_options.simulate_crash_ratio) {
+                    static FastRandomContext rng;
+                    if (rng.randrange(m_options.simulate_crash_ratio) == 0) {
+                        LogPrintf("Simulating a crash. Goodbye.\n");
+                        _Exit(0);
+                    }
                 }
             }
+
+            if (it->second.coin.IsSpent()) {
+                batch.EraseSerialized();
+            } else {
+                batch.WriteSerialized();
+            }
         }
+        count++;
     }
 
     // In the last batch, mark the database as consistent with hashBlock again.
     batch.Erase(DB_HEAD_BLOCKS);
     batch.Write(DB_BEST_BLOCK, hashBlock);
 
-    LogDebug(BCLog::COINDB, "Writing final batch of %.2f MiB\n", batch.SizeEstimate() * (1.0 / 1048576.0));
+    LogDebug(BCLog::COINDB, "Writing final batch of %.2f MiB\n", batch.ApproximateSize() * (1.0 / 1048576.0));
     bool ret = m_db->WriteBatch(batch);
     LogDebug(BCLog::COINDB, "Committed %u changed transaction outputs (out of %u) to coin database...\n", (unsigned int)changed, (unsigned int)count);
+    assert(batch.ApproximateSize() <= m_options.batch_write_bytes);
     return ret;
 }
 

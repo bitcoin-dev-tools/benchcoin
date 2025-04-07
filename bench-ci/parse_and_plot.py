@@ -136,7 +136,7 @@ if __name__ == "__main__":
     generate_plot(heights, cache_size, "Block Height", "Cache Size (MiB)", "Cache Size vs Block Height", os.path.join(png_dir, f"{commit}-cache_vs_height.png"))
     generate_plot(float_minutes, cache_size, "Elapsed minutes", "Cache Size (MiB)", "Cache Size vs Time", os.path.join(png_dir, f"{commit}-cache_vs_time.png"))
     generate_plot(heights, tx_counts, "Block Height", "Transaction Count", "Transactions vs Block Height", os.path.join(png_dir, f"{commit}-tx_vs_height.png"))
-    generate_plot(times, cache_count, "Block Height", "Coins Cache Size", "Coins Cache Size vs Time", os.path.join(png_dir, f"{commit}-coins_cache_vs_time.png"))
+    generate_plot(heights, cache_count, "Block Height", "Coins Cache Size", "Coins Cache Size vs Height", os.path.join(png_dir, f"{commit}-coins_cache_vs_height.png"))
 
     # LevelDB Compaction and Generated Tables
     if leveldb_compact_data:

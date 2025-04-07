@@ -4,6 +4,7 @@ import os
 import re
 import datetime
 import matplotlib.pyplot as plt
+from collections import OrderedDict
 
 
 def parse_updatetip_line(line):
@@ -35,6 +36,7 @@ def parse_leveldb_generated_table_line(line):
     parsed_datetime = datetime.datetime.strptime(iso_str, "%Y-%m-%dT%H:%M:%SZ")
     return parsed_datetime, int(keys_count_str), int(bytes_count_str)
 
+
 def parse_validation_txadd_line(line):
     match = re.match(r'^([\d\-:TZ]+) \[validation] TransactionAddedToMempool: txid=.+wtxid=.+', line)
     if not match:
@@ -60,6 +62,7 @@ def parse_coindb_commit_line(line):
     iso_str, txout_count_str = match.groups()
     parsed_datetime = datetime.datetime.strptime(iso_str, "%Y-%m-%dT%H:%M:%SZ")
     return parsed_datetime, int(txout_count_str)
+
 
 def parse_log_file(log_file):
     with open(log_file, 'r', encoding='utf-8') as f:
@@ -94,7 +97,7 @@ def parse_log_file(log_file):
     return update_tip_data, leveldb_compact_data, leveldb_gen_table_data, validation_txadd_data, coindb_write_batch_data, coindb_commit_data
 
 
-def generate_plot(x, y, x_label, y_label, title, output_file):
+def generate_plot(x, y, x_label, y_label, title, output_file, is_height_based=False):
     if not x or not y:
         print(f"Skipping plot '{title}' as there is no data.")
         return
@@ -105,6 +108,82 @@ def generate_plot(x, y, x_label, y_label, title, output_file):
     plt.xlabel(x_label, fontsize=16)
     plt.ylabel(y_label, fontsize=16)
     plt.grid(True)
+
+    # Make sure the x-axis covers the full data range
+    min_x, max_x = min(x), max(x)
+    plt.xlim(min_x, max_x)
+
+    # Add vertical lines for major protocol upgrades if this is a height-based plot
+    if is_height_based:
+        # Define all notable heights from the chainparams file
+        fork_heights = OrderedDict([
+            ('BIP34', 227931),  # Block v2, coinbase includes height
+            ('BIP66', 363725),  # Strict DER signatures
+            ('BIP65', 388381),  # OP_CHECKLOCKTIMEVERIFY
+            ('CSV', 419328),  # BIP68, 112, 113 - OP_CHECKSEQUENCEVERIFY
+            ('Segwit', 481824),  # BIP141, 143, 144, 145 - Segregated Witness
+            ('Taproot', 709632),  # BIP341, 342 - Schnorr signatures & Taproot
+            ('Halving 1', 210000),  # First halving
+            ('Halving 2', 420000),  # Second halving
+            ('Halving 3', 630000),  # Third halving
+            ('Halving 4', 840000),  # Fourth halving
+        ])
+
+        # Colors for the different types of events
+        fork_colors = {
+            'BIP34': 'blue',
+            'BIP66': 'blue',
+            'BIP65': 'blue',
+            'CSV': 'blue',
+            'Segwit': 'green',
+            'Taproot': 'red',
+            'Halving 1': 'purple',
+            'Halving 2': 'purple',
+            'Halving 3': 'purple',
+            'Halving 4': 'purple',
+        }
+
+        # Line styles for different types of events
+        fork_styles = {
+            'BIP34': '--',
+            'BIP66': '--',
+            'BIP65': '--',
+            'CSV': '--',
+            'Segwit': '--',
+            'Taproot': '--',
+            'Halving 1': ':',
+            'Halving 2': ':',
+            'Halving 3': ':',
+            'Halving 4': ':',
+        }
+
+        max_y = max(y)
+
+        # Position text labels at different heights to avoid overlap
+        text_positions = {}
+        position_increment = max_y * 0.05
+        current_position = max_y * 0.9
+
+        # Add lines for forks that are in range
+        for fork_name, height in fork_heights.items():
+            if min_x <= height <= max_x:
+                plt.axvline(x=height, color=fork_colors[fork_name],
+                            linestyle=fork_styles[fork_name])
+
+                # Avoid label overlaps by staggering vertical positions
+                if height in text_positions:
+                    # If this x position already has a label, adjust position
+                    text_positions[height] -= position_increment
+                else:
+                    text_positions[height] = current_position
+                    current_position -= position_increment
+                    if current_position < max_y * 0.1:
+                        current_position = max_y * 0.9  # Reset if we're too low
+
+                plt.text(height, text_positions[height], f'{fork_name} ({height})',
+                         rotation=90, verticalalignment='top',
+                         color=fork_colors[fork_name])
+
     plt.xticks(rotation=90, fontsize=12)
     plt.yticks(fontsize=12)
     plt.tight_layout()
@@ -133,10 +212,10 @@ if __name__ == "__main__":
     float_minutes = [(t - times[0]).total_seconds() / 60 for t in times]
 
     generate_plot(float_minutes, heights, "Elapsed minutes", "Block Height", "Block Height vs Time", os.path.join(png_dir, f"{commit}-height_vs_time.png"))
-    generate_plot(heights, cache_size, "Block Height", "Cache Size (MiB)", "Cache Size vs Block Height", os.path.join(png_dir, f"{commit}-cache_vs_height.png"))
+    generate_plot(heights, cache_size, "Block Height", "Cache Size (MiB)", "Cache Size vs Block Height", os.path.join(png_dir, f"{commit}-cache_vs_height.png"), is_height_based=True)
     generate_plot(float_minutes, cache_size, "Elapsed minutes", "Cache Size (MiB)", "Cache Size vs Time", os.path.join(png_dir, f"{commit}-cache_vs_time.png"))
-    generate_plot(heights, tx_counts, "Block Height", "Transaction Count", "Transactions vs Block Height", os.path.join(png_dir, f"{commit}-tx_vs_height.png"))
-    generate_plot(heights, cache_count, "Block Height", "Coins Cache Size", "Coins Cache Size vs Height", os.path.join(png_dir, f"{commit}-coins_cache_vs_height.png"))
+    generate_plot(heights, tx_counts, "Block Height", "Transaction Count", "Transactions vs Block Height", os.path.join(png_dir, f"{commit}-tx_vs_height.png"), is_height_based=True)
+    generate_plot(heights, cache_count, "Block Height", "Coins Cache Size", "Coins Cache Size vs Height", os.path.join(png_dir, f"{commit}-coins_cache_vs_height.png"), is_height_based=True)
 
     # LevelDB Compaction and Generated Tables
     if leveldb_compact_data:

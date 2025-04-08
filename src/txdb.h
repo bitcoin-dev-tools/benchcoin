@@ -21,16 +21,13 @@
 class COutPoint;
 class uint256;
 
-//! -dbbatchsize default (bytes)
-static const int64_t nDefaultDbBatchSize = 16 << 20;
-
 //! User-controlled performance and debug options.
 struct CoinsViewOptions {
     //! Maximum database write batch size in bytes.
-    size_t batch_write_bytes = nDefaultDbBatchSize;
+    size_t batch_write_bytes{0};
     //! If non-zero, randomly exit when the database is flushed with (1/ratio)
     //! probability.
-    int simulate_crash_ratio = 0;
+    int simulate_crash_ratio{0};
 };
 
 /** CCoinsView backed by the coin database (chainstate/) */

@@ -75,6 +75,8 @@ class CDBBatch
     friend class CDBWrapper;
 
 private:
+    static constexpr size_t kHeader{12}; // See: src/leveldb/db/write_batch.cc#L27
+
     const CDBWrapper &parent;
 
     struct WriteBatchImpl;
@@ -117,7 +119,8 @@ public:
         ssKey.clear();
     }
 
-    size_t SizeEstimate() const { return size_estimate; }
+    size_t ApproximateSize() const;
+    size_t SizeEstimate() const { return size_estimate; } // TODO replace with ApproximateSize
 };
 
 class CDBIterator

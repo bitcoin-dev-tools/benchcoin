@@ -158,14 +158,18 @@ struct CDBBatch::WriteBatchImpl {
 
 CDBBatch::CDBBatch(const CDBWrapper& _parent)
     : parent{_parent},
-      m_impl_batch{std::make_unique<CDBBatch::WriteBatchImpl>()} {};
+      m_impl_batch{std::make_unique<CDBBatch::WriteBatchImpl>()}
+{
+    Clear();
+};
 
 CDBBatch::~CDBBatch() = default;
 
 void CDBBatch::Clear()
 {
     m_impl_batch->batch.Clear();
-    size_estimate = 0;
+    assert(m_impl_batch->batch.ApproximateSize() == kHeader);
+    size_estimate = kHeader;
 }
 
 void CDBBatch::WriteImpl(std::span<const std::byte> key, DataStream& ssValue)
@@ -194,6 +198,11 @@ void CDBBatch::EraseImpl(std::span<const std::byte> key)
     // - byte[]: key
     // The formula below assumes the key is less than 16kB.
     size_estimate += 2 + (slKey.size() > 127) + slKey.size();
+}
+
+size_t CDBBatch::ApproximateSize() const
+{
+    return m_impl_batch->batch.ApproximateSize();
 }
 
 struct LevelDBContext {

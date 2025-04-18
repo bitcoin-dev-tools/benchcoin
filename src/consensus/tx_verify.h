@@ -64,11 +64,12 @@ unsigned int GetP2SHSigOpCount(const CTransaction& tx, const T coins);
 /**
  * Compute total signature operation cost of a transaction.
  * @param[in] tx     Transaction for which we are computing the cost
- * @param[in] inputs Map of previous transactions that have outputs we're spending
- * @param[in] flags Script verification flags
+ * @param[in] coins  Sorted iterator of previous transaction outputs we're spending
+ * @param[in] flags  Script verification flags
  * @return Total signature operation cost of tx
  */
-int64_t GetTransactionSigOpCost(const CTransaction& tx, const CCoinsViewCache& inputs, uint32_t flags);
+template <ConstCoinIterable T>
+int64_t GetTransactionSigOpCost(const CTransaction& tx, const T coins, uint32_t flags);
 
 /**
  * Check if transaction is final and can be included in a block with the

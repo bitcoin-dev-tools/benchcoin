@@ -874,7 +874,8 @@ bool MemPoolAccept::PreChecks(ATMPArgs& args, Workspace& ws)
     }
 
     // The mempool holds txs for the next block, so pass height+1 to CheckTxInputs
-    if (!Consensus::CheckTxInputs(tx, state, m_view, m_active_chainstate.m_chain.Height() + 1, ws.m_base_fees)) {
+    std::vector<std::reference_wrapper<const Coin>> coins{m_view.AccessCoins(tx)};
+    if (!Consensus::CheckTxInputs(tx, state, m_view, std::span<std::reference_wrapper<const Coin>>{coins}, m_active_chainstate.m_chain.Height() + 1, ws.m_base_fees)) {
         return false; // state filled in by CheckTxInputs
     }
 
@@ -887,7 +888,6 @@ bool MemPoolAccept::PreChecks(ATMPArgs& args, Workspace& ws)
         return state.Invalid(TxValidationResult::TX_WITNESS_MUTATED, "bad-witness-nonstandard");
     }
 
-    std::vector<std::reference_wrapper<const Coin>> coins{m_view.AccessCoins(tx)};
     int64_t nSigOpsCost = GetTransactionSigOpCost(tx, std::span<std::reference_wrapper<const Coin>>{coins}, STANDARD_SCRIPT_VERIFY_FLAGS);
 
     // Keep track of transactions that spend a coinbase, which we re-scan
@@ -2648,14 +2648,15 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
     {
         if (!state.IsValid()) break;
         const CTransaction &tx = *(block.vtx[i]);
-
         nInputs += tx.vin.size();
 
         if (!tx.IsCoinBase())
         {
             CAmount txfee = 0;
             TxValidationState tx_state;
-            if (!Consensus::CheckTxInputs(tx, tx_state, view, pindex->nHeight, txfee)) {
+
+            std::vector<std::reference_wrapper<const Coin>> coins{view.AccessCoins(tx)};
+            if (!Consensus::CheckTxInputs(tx, tx_state, view, std::span<std::reference_wrapper<const Coin>>{coins}, pindex->nHeight, txfee)) {
                 // Any transaction validation failure in ConnectBlock is a block consensus failure
                 state.Invalid(BlockValidationResult::BLOCK_CONSENSUS,
                               tx_state.GetRejectReason(),

@@ -5,6 +5,7 @@
 #ifndef BITCOIN_CONSENSUS_TX_VERIFY_H
 #define BITCOIN_CONSENSUS_TX_VERIFY_H
 
+#include <coins.h>
 #include <consensus/amount.h>
 
 #include <stdint.h>
@@ -17,7 +18,21 @@ class TxValidationState;
 
 /** Transaction validation functions */
 
+template <typename T>
+concept ConstCoinIterable = requires(T c) {
+    // T must be iterable
+    { std::begin(c) } -> std::input_iterator;
+    { std::end(c) } -> std::input_iterator;
+
+    // The expression in the requires clause needs to be a valid expression or constraint
+    requires std::convertible_to<
+        std::iter_reference_t<decltype(std::begin(c))>,
+        const Coin&
+    >;
+};
+
 namespace Consensus {
+
 /**
  * Check whether all inputs of this transaction are valid (no double spends and amounts)
  * This does not modify the UTXO set. This does not check scripts and sigs.
@@ -39,11 +54,12 @@ unsigned int GetLegacySigOpCount(const CTransaction& tx);
 /**
  * Count ECDSA signature operations in pay-to-script-hash inputs.
  *
- * @param[in] mapInputs Map of previous transactions that have outputs we're spending
+ * @param[in] coins sorted iterator of previous transaction outputs we're spending
  * @return maximum number of sigops required to validate this transaction's inputs
  * @see CTransaction::FetchInputs
  */
-unsigned int GetP2SHSigOpCount(const CTransaction& tx, const CCoinsViewCache& mapInputs);
+template <ConstCoinIterable T>
+unsigned int GetP2SHSigOpCount(const CTransaction& tx, const T coins);
 
 /**
  * Compute total signature operation cost of a transaction.

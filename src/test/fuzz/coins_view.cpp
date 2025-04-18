@@ -266,7 +266,8 @@ FUZZ_TARGET(coins_view, .init = initialize_coins_view)
                     // consensus/tx_verify.cpp:130: unsigned int GetP2SHSigOpCount(const CTransaction &, const CCoinsViewCache &): Assertion `!coin.IsSpent()' failed.
                     return;
                 }
-                (void)GetP2SHSigOpCount(transaction, coins_view_cache);
+                std::vector<std::reference_wrapper<const Coin>> coins{coins_view_cache.AccessCoins(transaction)};
+                (void)GetP2SHSigOpCount(transaction, std::span<std::reference_wrapper<const Coin>>{coins});
             },
             [&] {
                 const CTransaction transaction{random_mutable_transaction};

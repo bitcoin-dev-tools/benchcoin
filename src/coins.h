@@ -424,6 +424,8 @@ public:
      */
     std::vector<std::reference_wrapper<const Coin>> AccessCoins(const CTransaction& tx) const;
 
+    std::vector<CTxOut> GetCoins(const CTransaction& tx) const;
+
     /**
      * Add a coin. Set possible_overwrite to true if an unspent version may
      * already exist in the cache.

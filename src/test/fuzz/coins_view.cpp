@@ -258,7 +258,7 @@ FUZZ_TARGET(coins_view, .init = initialize_coins_view)
                 // are the actual inputs available?
                 if (!coins_view_cache.HaveInputs(transaction)) return;
                 std::vector<std::reference_wrapper<const Coin>> coins{coins_view_cache.AccessCoins(transaction)};
-                if (Consensus::CheckTxInputs(transaction, state, coins_view_cache, std::span<std::reference_wrapper<const Coin>>{coins}, fuzzed_data_provider.ConsumeIntegralInRange<int>(0, std::numeric_limits<int>::max()), tx_fee_out)) {
+                if (Consensus::CheckTxInputs(transaction, state, std::span<std::reference_wrapper<const Coin>>{coins}, fuzzed_data_provider.ConsumeIntegralInRange<int>(0, std::numeric_limits<int>::max()), tx_fee_out)) {
                     assert(MoneyRange(tx_fee_out));
                 }
             },

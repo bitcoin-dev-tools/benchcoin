@@ -5,6 +5,7 @@
 #ifndef BITCOIN_CONSENSUS_TX_VERIFY_H
 #define BITCOIN_CONSENSUS_TX_VERIFY_H
 
+#include <coins.h>
 #include <consensus/amount.h>
 
 #include <stdint.h>
@@ -17,14 +18,29 @@ class TxValidationState;
 
 /** Transaction validation functions */
 
+template <typename T>
+concept ConstCoinIterable = requires(T c) {
+    // T must be iterable
+    { std::begin(c) } -> std::input_iterator;
+    { std::end(c) } -> std::input_iterator;
+
+    // The expression in the requires clause needs to be a valid expression or constraint
+    requires std::convertible_to<
+        std::iter_reference_t<decltype(std::begin(c))>,
+        const Coin&
+    >;
+};
+
 namespace Consensus {
+
 /**
  * Check whether all inputs of this transaction are valid (no double spends and amounts)
  * This does not modify the UTXO set. This does not check scripts and sigs.
  * @param[out] txfee Set to the transaction fee if successful.
  * Preconditions: tx.IsCoinBase() is false.
  */
-[[nodiscard]] bool CheckTxInputs(const CTransaction& tx, TxValidationState& state, const CCoinsViewCache& inputs, int nSpendHeight, CAmount& txfee);
+template <ConstCoinIterable T>
+[[nodiscard]] bool CheckTxInputs(const CTransaction& tx, TxValidationState& state, const T coins , int nSpendHeight, CAmount& txfee);
 } // namespace Consensus
 
 /** Auxiliary functions for transaction validation (ideally should not be exposed) */
@@ -39,20 +55,22 @@ unsigned int GetLegacySigOpCount(const CTransaction& tx);
 /**
  * Count ECDSA signature operations in pay-to-script-hash inputs.
  *
- * @param[in] mapInputs Map of previous transactions that have outputs we're spending
+ * @param[in] coins sorted iterator of previous transaction outputs we're spending
  * @return maximum number of sigops required to validate this transaction's inputs
  * @see CTransaction::FetchInputs
  */
-unsigned int GetP2SHSigOpCount(const CTransaction& tx, const CCoinsViewCache& mapInputs);
+template <ConstCoinIterable T>
+unsigned int GetP2SHSigOpCount(const CTransaction& tx, const T coins);
 
 /**
  * Compute total signature operation cost of a transaction.
  * @param[in] tx     Transaction for which we are computing the cost
- * @param[in] inputs Map of previous transactions that have outputs we're spending
- * @param[in] flags Script verification flags
+ * @param[in] coins  Sorted iterator of previous transaction outputs we're spending
+ * @param[in] flags  Script verification flags
  * @return Total signature operation cost of tx
  */
-int64_t GetTransactionSigOpCost(const CTransaction& tx, const CCoinsViewCache& inputs, uint32_t flags);
+template <ConstCoinIterable T>
+int64_t GetTransactionSigOpCost(const CTransaction& tx, const T coins, uint32_t flags);
 
 /**
  * Check if transaction is final and can be included in a block with the

@@ -56,6 +56,7 @@ FUZZ_TARGET(coins_view, .init = initialize_coins_view)
         CallOneOf(
             fuzzed_data_provider,
             [&] {
+                assert(coins_view_cache.CacheUsageValid());
                 if (random_coin.IsSpent()) {
                     return;
                 }
@@ -72,54 +73,74 @@ FUZZ_TARGET(coins_view, .init = initialize_coins_view)
                     }
                 }
                 assert(expected_code_path);
+                assert(coins_view_cache.CacheUsageValid());
             },
             [&] {
+                assert(coins_view_cache.CacheUsageValid());
                 (void)coins_view_cache.Flush();
+                assert(coins_view_cache.CacheUsageValid());
             },
             [&] {
+                assert(coins_view_cache.CacheUsageValid());
                 (void)coins_view_cache.Sync();
+                assert(coins_view_cache.CacheUsageValid());
             },
             [&] {
+                assert(coins_view_cache.CacheUsageValid());
                 coins_view_cache.SetBestBlock(ConsumeUInt256(fuzzed_data_provider));
+                assert(coins_view_cache.CacheUsageValid());
             },
             [&] {
+                assert(coins_view_cache.CacheUsageValid());
                 Coin move_to;
                 (void)coins_view_cache.SpendCoin(random_out_point, fuzzed_data_provider.ConsumeBool() ? &move_to : nullptr);
+                assert(coins_view_cache.CacheUsageValid());
             },
             [&] {
+                assert(coins_view_cache.CacheUsageValid());
                 coins_view_cache.Uncache(random_out_point);
+                assert(coins_view_cache.CacheUsageValid());
             },
             [&] {
+                assert(coins_view_cache.CacheUsageValid());
                 if (fuzzed_data_provider.ConsumeBool()) {
                     backend_coins_view = CCoinsView{};
                 }
                 coins_view_cache.SetBackend(backend_coins_view);
+                assert(coins_view_cache.CacheUsageValid());
             },
             [&] {
+                assert(coins_view_cache.CacheUsageValid());
                 const std::optional<COutPoint> opt_out_point = ConsumeDeserializable<COutPoint>(fuzzed_data_provider);
                 if (!opt_out_point) {
                     good_data = false;
                     return;
                 }
                 random_out_point = *opt_out_point;
+                assert(coins_view_cache.CacheUsageValid());
             },
             [&] {
+                assert(coins_view_cache.CacheUsageValid());
                 const std::optional<Coin> opt_coin = ConsumeDeserializable<Coin>(fuzzed_data_provider);
                 if (!opt_coin) {
                     good_data = false;
                     return;
                 }
                 random_coin = *opt_coin;
+                assert(coins_view_cache.CacheUsageValid());
             },
             [&] {
+                assert(coins_view_cache.CacheUsageValid());
                 const std::optional<CMutableTransaction> opt_mutable_transaction = ConsumeDeserializable<CMutableTransaction>(fuzzed_data_provider, TX_WITH_WITNESS);
                 if (!opt_mutable_transaction) {
                     good_data = false;
                     return;
                 }
                 random_mutable_transaction = *opt_mutable_transaction;
+                assert(coins_view_cache.CacheUsageValid());
             },
             [&] {
+                assert(coins_view_cache.CacheUsageValid());
                 CoinsCachePair sentinel{};
                 sentinel.second.SelfRef(sentinel);
                 size_t usage{0};
@@ -156,10 +177,13 @@ FUZZ_TARGET(coins_view, .init = initialize_coins_view)
                     }
                 }
                 assert(expected_code_path);
-            });
+                assert(coins_view_cache.CacheUsageValid());
+        });
+        assert(coins_view_cache.CacheUsageValid());
     }
 
     {
+        assert(coins_view_cache.CacheUsageValid());
         const Coin& coin_using_access_coin = coins_view_cache.AccessCoin(random_out_point);
         const bool exists_using_access_coin = !(coin_using_access_coin == EMPTY_COIN);
         const bool exists_using_have_coin = coins_view_cache.HaveCoin(random_out_point);
@@ -182,9 +206,11 @@ FUZZ_TARGET(coins_view, .init = initialize_coins_view)
         } else {
             assert(!exists_using_have_coin_in_backend);
         }
+        assert(coins_view_cache.CacheUsageValid());
     }
 
     {
+        assert(coins_view_cache.CacheUsageValid());
         bool expected_code_path = false;
         try {
             (void)coins_view_cache.Cursor();
@@ -198,20 +224,24 @@ FUZZ_TARGET(coins_view, .init = initialize_coins_view)
         (void)coins_view_cache.GetCacheSize();
         (void)coins_view_cache.GetHeadBlocks();
         (void)coins_view_cache.HaveInputs(CTransaction{random_mutable_transaction});
+        assert(coins_view_cache.CacheUsageValid());
     }
 
     {
+        assert(coins_view_cache.CacheUsageValid());
         std::unique_ptr<CCoinsViewCursor> coins_view_cursor = backend_coins_view.Cursor();
         assert(!coins_view_cursor);
         (void)backend_coins_view.EstimateSize();
         (void)backend_coins_view.GetBestBlock();
         (void)backend_coins_view.GetHeadBlocks();
+        assert(coins_view_cache.CacheUsageValid());
     }
 
     if (fuzzed_data_provider.ConsumeBool()) {
         CallOneOf(
             fuzzed_data_provider,
             [&] {
+                assert(coins_view_cache.CacheUsageValid());
                 const CTransaction transaction{random_mutable_transaction};
                 bool is_spent = false;
                 for (const CTxOut& tx_out : transaction.vout) {
@@ -237,11 +267,15 @@ FUZZ_TARGET(coins_view, .init = initialize_coins_view)
                     }
                 }
                 assert(expected_code_path);
+                assert(coins_view_cache.CacheUsageValid());
             },
             [&] {
+                assert(coins_view_cache.CacheUsageValid());
                 (void)AreInputsStandard(CTransaction{random_mutable_transaction}, coins_view_cache);
+                assert(coins_view_cache.CacheUsageValid());
             },
             [&] {
+                assert(coins_view_cache.CacheUsageValid());
                 TxValidationState state;
                 CAmount tx_fee_out;
                 const CTransaction transaction{random_mutable_transaction};
@@ -258,8 +292,10 @@ FUZZ_TARGET(coins_view, .init = initialize_coins_view)
                 if (Consensus::CheckTxInputs(transaction, state, coins_view_cache, fuzzed_data_provider.ConsumeIntegralInRange<int>(0, std::numeric_limits<int>::max()), tx_fee_out)) {
                     assert(MoneyRange(tx_fee_out));
                 }
+                assert(coins_view_cache.CacheUsageValid());
             },
             [&] {
+                assert(coins_view_cache.CacheUsageValid());
                 const CTransaction transaction{random_mutable_transaction};
                 if (ContainsSpentInput(transaction, coins_view_cache)) {
                     // Avoid:
@@ -267,8 +303,10 @@ FUZZ_TARGET(coins_view, .init = initialize_coins_view)
                     return;
                 }
                 (void)GetP2SHSigOpCount(transaction, coins_view_cache);
+                assert(coins_view_cache.CacheUsageValid());
             },
             [&] {
+                assert(coins_view_cache.CacheUsageValid());
                 const CTransaction transaction{random_mutable_transaction};
                 if (ContainsSpentInput(transaction, coins_view_cache)) {
                     // Avoid:
@@ -282,9 +320,12 @@ FUZZ_TARGET(coins_view, .init = initialize_coins_view)
                     return;
                 }
                 (void)GetTransactionSigOpCost(transaction, coins_view_cache, flags);
+                assert(coins_view_cache.CacheUsageValid());
             },
             [&] {
+                assert(coins_view_cache.CacheUsageValid());
                 (void)IsWitnessStandard(CTransaction{random_mutable_transaction}, coins_view_cache);
+                assert(coins_view_cache.CacheUsageValid());
             });
     }
 }

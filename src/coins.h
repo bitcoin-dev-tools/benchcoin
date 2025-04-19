@@ -288,7 +288,9 @@ struct CoinsViewCacheCursor
         // Otherwise, clear the state of the entry.
         if (!m_will_erase) {
             if (current.second.coin.IsSpent()) {
-                m_usage -= current.second.coin.DynamicMemoryUsage();
+                size_t dynamic_memory_usage = current.second.coin.DynamicMemoryUsage();
+                assert(dynamic_memory_usage == 0);
+                m_usage -= dynamic_memory_usage;
                 m_map.erase(current.first);
             } else {
                 current.second.SetClean();
@@ -385,6 +387,8 @@ public:
      * By deleting the copy constructor, we prevent accidentally using it when one intends to create a cache on top of a base cache.
      */
     CCoinsViewCache(const CCoinsViewCache &) = delete;
+
+    bool CacheUsageValid() const;
 
     // Standard CCoinsView methods
     std::optional<Coin> GetCoin(const COutPoint& outpoint) const override;

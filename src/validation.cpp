@@ -2326,8 +2326,6 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
     // Special case for the genesis block, skipping connection of its transactions
     // (its coinbase is unspendable)
     if (block_hash == params.GetConsensus().hashGenesisBlock) {
-        if (!fJustCheck)
-            view.SetBestBlock(pindex->GetBlockHash());
         return true;
     }
 
@@ -2557,9 +2555,6 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
         pindex->RaiseValidity(BLOCK_VALID_SCRIPTS);
         m_blockman.m_dirty_blockindex.insert(pindex);
     }
-
-    // add this block to the view's block chain
-    view.SetBestBlock(pindex->GetBlockHash());
 
     const auto time_6{SteadyClock::now()};
     m_chainman.time_index += time_6 - time_5;
@@ -3116,6 +3111,8 @@ bool Chainstate::ConnectTip(
             LogError("%s: ConnectBlock %s failed, %s\n", __func__, pindexNew->GetBlockHash().ToString(), state.ToString());
             return false;
         }
+        // add this block to the view's block chain
+        view.SetBestBlock(pindexNew->GetBlockHash());
         time_3 = SteadyClock::now();
         m_chainman.time_connect_total += time_3 - time_2;
         assert(m_chainman.num_blocks_total > 0);
@@ -4815,6 +4812,7 @@ VerifyDBResult CVerifyDB::VerifyDB(
                 LogError("Verification error: found unconnectable block at %d, hash=%s (%s)", pindex->nHeight, pindex->GetBlockHash().ToString(), state.ToString());
                 return VerifyDBResult::CORRUPTED_BLOCK_DB;
             }
+            coins.SetBestBlock(pindex->GetBlockHash());
             if (chainstate.m_chainman.m_interrupt) return VerifyDBResult::INTERRUPTED;
         }
     }

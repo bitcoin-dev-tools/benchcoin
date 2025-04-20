@@ -134,10 +134,8 @@ void CNetAddr::SetIP(const CNetAddr& ipIn)
     m_addr = ipIn.m_addr;
 }
 
-void CNetAddr::SetLegacyIPv6(std::span<const uint8_t> ipv6)
+void CNetAddr::SetLegacyIPv6(std::span<const uint8_t, ADDR_IPV6_SIZE> ipv6)
 {
-    assert(ipv6.size() == ADDR_IPV6_SIZE);
-
     size_t skip{0};
 
     if (HasPrefix(ipv6, IPV4_IN_IPV6_PREFIX)) {
@@ -515,9 +513,8 @@ static std::string IPv4ToString(std::span<const uint8_t> a)
 
 // Return an IPv6 address text representation with zero compression as described in RFC 5952
 // ("A Recommendation for IPv6 Address Text Representation").
-static std::string IPv6ToString(std::span<const uint8_t> a, uint32_t scope_id)
+static std::string IPv6ToString(std::span<const uint8_t, ADDR_IPV6_SIZE> a, uint32_t scope_id)
 {
-    assert(a.size() == ADDR_IPV6_SIZE);
     const std::array groups{
         ReadBE16(&a[0]),
         ReadBE16(&a[2]),

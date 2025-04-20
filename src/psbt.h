@@ -495,7 +495,7 @@ struct PSBTInput
                         throw std::ios_base::failure("Size of key was not the expected size for the type ripemd160 preimage");
                     }
                     // Read in the hash from key
-                    std::vector<unsigned char> hash_vec(key.begin() + 1, key.end());
+                    std::span<unsigned char, CRIPEMD160::OUTPUT_SIZE> hash_vec(key.begin() + 1, key.end());
                     uint160 hash(hash_vec);
                     if (ripemd160_preimages.count(hash) > 0) {
                         throw std::ios_base::failure("Duplicate Key, input ripemd160 preimage already provided");
@@ -516,7 +516,7 @@ struct PSBTInput
                         throw std::ios_base::failure("Size of key was not the expected size for the type sha256 preimage");
                     }
                     // Read in the hash from key
-                    std::vector<unsigned char> hash_vec(key.begin() + 1, key.end());
+                    std::span<unsigned char, CSHA256::OUTPUT_SIZE> hash_vec(key.begin() + 1, key.end());
                     uint256 hash(hash_vec);
                     if (sha256_preimages.count(hash) > 0) {
                         throw std::ios_base::failure("Duplicate Key, input sha256 preimage already provided");
@@ -537,7 +537,7 @@ struct PSBTInput
                         throw std::ios_base::failure("Size of key was not the expected size for the type hash160 preimage");
                     }
                     // Read in the hash from key
-                    std::vector<unsigned char> hash_vec(key.begin() + 1, key.end());
+                    std::span<unsigned char, CHash160::OUTPUT_SIZE> hash_vec(key.begin() + 1, key.end());
                     uint160 hash(hash_vec);
                     if (hash160_preimages.count(hash) > 0) {
                         throw std::ios_base::failure("Duplicate Key, input hash160 preimage already provided");
@@ -558,7 +558,7 @@ struct PSBTInput
                         throw std::ios_base::failure("Size of key was not the expected size for the type hash256 preimage");
                     }
                     // Read in the hash from key
-                    std::vector<unsigned char> hash_vec(key.begin() + 1, key.end());
+                    std::span<unsigned char, CHash256::OUTPUT_SIZE> hash_vec(key.begin() + 1, key.end());
                     uint256 hash(hash_vec);
                     if (hash256_preimages.count(hash) > 0) {
                         throw std::ios_base::failure("Duplicate Key, input hash256 preimage already provided");
@@ -893,7 +893,7 @@ struct PSBTOutput
                     } else if (key.size() != 33) {
                         throw std::ios_base::failure("Output Taproot BIP32 keypath key is not at 33 bytes");
                     }
-                    XOnlyPubKey xonly(uint256(std::span<uint8_t>(key).last(32)));
+                    XOnlyPubKey xonly(std::span(key).last<32>());
                     std::set<uint256> leaf_hashes;
                     uint64_t value_len = ReadCompactSize(s);
                     size_t before_hashes = s.size();

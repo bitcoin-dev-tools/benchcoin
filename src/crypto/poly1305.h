@@ -46,9 +46,8 @@ public:
     static constexpr unsigned KEYLEN{32};
 
     /** Construct a Poly1305 object with a given 32-byte key. */
-    Poly1305(std::span<const std::byte> key) noexcept
+    Poly1305(std::span<const std::byte, KEYLEN> key) noexcept
     {
-        assert(key.size() == KEYLEN);
         poly1305_donna::poly1305_init(&m_ctx, UCharCast(key.data()));
     }
 
@@ -60,9 +59,8 @@ public:
     }
 
     /** Write authentication tag to 16-byte out. */
-    void Finalize(std::span<std::byte> out) noexcept
+    void Finalize(std::span<std::byte, TAGLEN> out) noexcept
     {
-        assert(out.size() == TAGLEN);
         poly1305_donna::poly1305_finish(&m_ctx, UCharCast(out.data()));
     }
 };

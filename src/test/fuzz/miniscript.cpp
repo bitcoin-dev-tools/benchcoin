@@ -290,7 +290,7 @@ const struct CheckerContext: BaseSignatureChecker {
         if (it == TEST_DATA.dummy_sigs.end()) return false;
         return it->second.first == sig;
     }
-    bool CheckSchnorrSignature(std::span<const unsigned char> sig, std::span<const unsigned char> pubkey, SigVersion,
+    bool CheckSchnorrSignature(std::span<const unsigned char> sig, std::span<const unsigned char, 32> pubkey, SigVersion,
                                ScriptExecutionData&, ScriptError*) const override {
         XOnlyPubKey pk{pubkey};
         auto it = TEST_DATA.schnorr_sigs.find(pk);

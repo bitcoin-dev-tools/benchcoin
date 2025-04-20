@@ -121,7 +121,7 @@ void TestBIP324PacketVector(
         for (uint32_t i = 0; i < dec_idx; ++i) {
             unsigned use_idx = i < in_idx ? i : 0;
             bool dec_ignore{false};
-            dec_cipher.DecryptLength(std::span{dummies[use_idx]}.first(cipher.LENGTH_LEN));
+            dec_cipher.DecryptLength(std::span{dummies[use_idx]}.first<cipher.LENGTH_LEN>());
             dec_cipher.Decrypt(std::span{dummies[use_idx]}.subspan(cipher.LENGTH_LEN), {}, dec_ignore, {});
         }
 
@@ -133,7 +133,7 @@ void TestBIP324PacketVector(
         }
 
         // Decrypt length and resize ciphertext to accommodate.
-        uint32_t dec_len = dec_cipher.DecryptLength(MakeByteSpan(to_decrypt).first(cipher.LENGTH_LEN));
+        uint32_t dec_len = dec_cipher.DecryptLength(MakeByteSpan(to_decrypt).first<cipher.LENGTH_LEN>());
         to_decrypt.resize(dec_len + cipher.EXPANSION);
 
         // Construct copied (and possibly damaged) copy of aad.

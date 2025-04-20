@@ -308,10 +308,9 @@ bool CKey::Derive(CKey& keyChild, ChainCode &ccChild, unsigned int nChild, const
     return ret;
 }
 
-EllSwiftPubKey CKey::EllSwiftCreate(std::span<const std::byte> ent32) const
+EllSwiftPubKey CKey::EllSwiftCreate(std::span<const std::byte, 32> ent32) const
 {
     assert(keydata);
-    assert(ent32.size() == 32);
     std::array<std::byte, EllSwiftPubKey::size()> encoded_pubkey;
 
     auto success = secp256k1_ellswift_create(secp256k1_context_sign,
@@ -423,9 +422,8 @@ KeyPair::KeyPair(const CKey& key, const uint256* merkle_root)
     if (!success) ClearKeyPairData();
 }
 
-bool KeyPair::SignSchnorr(const uint256& hash, std::span<unsigned char> sig, const uint256& aux) const
+bool KeyPair::SignSchnorr(const uint256& hash, std::span<unsigned char, 64> sig, const uint256& aux) const
 {
-    assert(sig.size() == 64);
     if (!IsValid()) return false;
     auto keypair = reinterpret_cast<const secp256k1_keypair*>(m_keypair->data());
     bool ret = secp256k1_schnorrsig_sign32(secp256k1_context_sign, sig.data(), hash.data(), keypair, aux.data());

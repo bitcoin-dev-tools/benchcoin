@@ -22,9 +22,8 @@
 
 #define REPEAT10(a) do { {a}; {a}; {a}; {a}; {a}; {a}; {a}; {a}; {a}; {a}; } while(0)
 
-void ChaCha20Aligned::SetKey(std::span<const std::byte> key) noexcept
+void ChaCha20Aligned::SetKey(std::span<const std::byte, KEYLEN> key) noexcept
 {
-    assert(key.size() == KEYLEN);
     input[0] = ReadLE32(key.data() + 0);
     input[1] = ReadLE32(key.data() + 4);
     input[2] = ReadLE32(key.data() + 8);
@@ -44,7 +43,7 @@ ChaCha20Aligned::~ChaCha20Aligned()
     memory_cleanse(input, sizeof(input));
 }
 
-ChaCha20Aligned::ChaCha20Aligned(std::span<const std::byte> key) noexcept
+ChaCha20Aligned::ChaCha20Aligned(std::span<const std::byte, KEYLEN> key) noexcept
 {
     SetKey(key);
 }
@@ -334,17 +333,16 @@ ChaCha20::~ChaCha20()
     memory_cleanse(m_buffer.data(), m_buffer.size());
 }
 
-void ChaCha20::SetKey(std::span<const std::byte> key) noexcept
+void ChaCha20::SetKey(std::span<const std::byte, KEYLEN> key) noexcept
 {
     m_aligned.SetKey(key);
     m_bufleft = 0;
     memory_cleanse(m_buffer.data(), m_buffer.size());
 }
 
-FSChaCha20::FSChaCha20(std::span<const std::byte> key, uint32_t rekey_interval) noexcept :
+FSChaCha20::FSChaCha20(std::span<const std::byte, KEYLEN> key, uint32_t rekey_interval) noexcept :
     m_chacha20(key), m_rekey_interval(rekey_interval)
 {
-    assert(key.size() == KEYLEN);
 }
 
 void FSChaCha20::Crypt(std::span<const std::byte> input, std::span<std::byte> output) noexcept

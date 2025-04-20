@@ -38,13 +38,13 @@ public:
     ChaCha20Aligned() noexcept = delete;
 
     /** Initialize a cipher with specified 32-byte key. */
-    ChaCha20Aligned(std::span<const std::byte> key) noexcept;
+    ChaCha20Aligned(std::span<const std::byte, KEYLEN> key) noexcept;
 
     /** Destructor to clean up private memory. */
     ~ChaCha20Aligned();
 
     /** Set 32-byte key, and seek to nonce 0 and block position 0. */
-    void SetKey(std::span<const std::byte> key) noexcept;
+    void SetKey(std::span<const std::byte, KEYLEN> key) noexcept;
 
     /** Type for 96-bit nonces used by the Set function below.
      *
@@ -89,13 +89,13 @@ public:
     ChaCha20() noexcept = delete;
 
     /** Initialize a cipher with specified 32-byte key. */
-    ChaCha20(std::span<const std::byte> key) noexcept : m_aligned(key) {}
+    ChaCha20(std::span<const std::byte, KEYLEN> key) noexcept : m_aligned(key) {}
 
     /** Destructor to clean up private memory. */
     ~ChaCha20();
 
     /** Set 32-byte key, and seek to nonce 0 and block position 0. */
-    void SetKey(std::span<const std::byte> key) noexcept;
+    void SetKey(std::span<const std::byte, KEYLEN> key) noexcept;
 
     /** 96-bit nonce type. */
     using Nonce96 = ChaCha20Aligned::Nonce96;
@@ -150,7 +150,7 @@ public:
     FSChaCha20& operator=(FSChaCha20&&) = delete;
 
     /** Construct an FSChaCha20 cipher that rekeys every rekey_interval Crypt() calls. */
-    FSChaCha20(std::span<const std::byte> key, uint32_t rekey_interval) noexcept;
+    FSChaCha20(std::span<const std::byte, KEYLEN> key, uint32_t rekey_interval) noexcept;
 
     /** Encrypt or decrypt a chunk. */
     void Crypt(std::span<const std::byte> input, std::span<std::byte> output) noexcept;

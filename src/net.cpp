@@ -825,7 +825,7 @@ CNetMessage V1Transport::GetReceivedMessage(const std::chrono::microseconds time
     if (memcmp(hash.begin(), hdr.pchChecksum, CMessageHeader::CHECKSUM_SIZE) != 0) {
         LogDebug(BCLog::NET, "Header error: Wrong checksum (%s, %u bytes), expected %s was %s, peer=%d\n",
                  SanitizeString(msg.m_type), msg.m_message_size,
-                 HexStr(std::span{hash}.first(CMessageHeader::CHECKSUM_SIZE)),
+                 HexStr(std::span{hash}.first<CMessageHeader::CHECKSUM_SIZE>()),
                  HexStr(hdr.pchChecksum),
                  m_node_id);
         reject_message = true;
@@ -999,7 +999,7 @@ void V2Transport::StartSendingHandshake() noexcept
     // We cannot wipe m_send_garbage as it will still be used as AAD later in the handshake.
 }
 
-V2Transport::V2Transport(NodeId nodeid, bool initiating, const CKey& key, std::span<const std::byte> ent32, std::vector<uint8_t> garbage) noexcept
+V2Transport::V2Transport(NodeId nodeid, bool initiating, const CKey& key, std::span<const std::byte, 32> ent32, std::vector<uint8_t> garbage) noexcept
     : m_cipher{key, ent32}, m_initiating{initiating}, m_nodeid{nodeid},
       m_v1_fallback{nodeid},
       m_recv_state{initiating ? RecvState::KEY : RecvState::KEY_MAYBE_V1},
@@ -1134,7 +1134,7 @@ bool V2Transport::ProcessReceivedKeyBytes() noexcept
     if (!m_initiating && m_recv_buffer.size() >= OFFSET + MATCH.size()) {
         if (std::equal(MATCH.begin(), MATCH.end(), m_recv_buffer.begin() + OFFSET)) {
             LogDebug(BCLog::NET, "V2 transport error: V1 peer with wrong MessageStart %s\n",
-                     HexStr(std::span(m_recv_buffer).first(OFFSET)));
+                     HexStr(std::span(m_recv_buffer).first<OFFSET>()));
             return false;
         }
     }
@@ -1182,7 +1182,7 @@ bool V2Transport::ProcessReceivedGarbageBytes() noexcept
     Assume(m_recv_state == RecvState::GARB_GARBTERM);
     Assume(m_recv_buffer.size() <= MAX_GARBAGE_LEN + BIP324Cipher::GARBAGE_TERMINATOR_LEN);
     if (m_recv_buffer.size() >= BIP324Cipher::GARBAGE_TERMINATOR_LEN) {
-        if (std::ranges::equal(MakeByteSpan(m_recv_buffer).last(BIP324Cipher::GARBAGE_TERMINATOR_LEN), m_cipher.GetReceiveGarbageTerminator())) {
+        if (std::ranges::equal(MakeByteSpan(m_recv_buffer).last<BIP324Cipher::GARBAGE_TERMINATOR_LEN>(), m_cipher.GetReceiveGarbageTerminator())) {
             // Garbage terminator received. Store garbage to authenticate it as AAD later.
             m_recv_aad = std::move(m_recv_buffer);
             m_recv_aad.resize(m_recv_aad.size() - BIP324Cipher::GARBAGE_TERMINATOR_LEN);
@@ -1218,7 +1218,7 @@ bool V2Transport::ProcessReceivedPacketBytes() noexcept
 
     if (m_recv_buffer.size() == BIP324Cipher::LENGTH_LEN) {
         // Length descriptor received.
-        m_recv_len = m_cipher.DecryptLength(MakeByteSpan(m_recv_buffer));
+        m_recv_len = m_cipher.DecryptLength(MakeByteSpan(m_recv_buffer).first<BIP324Cipher::LENGTH_LEN>());
         if (m_recv_len > MAX_CONTENTS_LEN) {
             LogDebug(BCLog::NET, "V2 transport error: packet too large (%u bytes), peer=%d\n", m_recv_len, m_nodeid);
             return false;

@@ -25,10 +25,9 @@ class CHash256 {
 private:
     CSHA256 sha;
 public:
-    static const size_t OUTPUT_SIZE = CSHA256::OUTPUT_SIZE;
+    static constexpr size_t OUTPUT_SIZE = CSHA256::OUTPUT_SIZE;
 
-    void Finalize(std::span<unsigned char> output) {
-        assert(output.size() == OUTPUT_SIZE);
+    void Finalize(std::span<unsigned char, OUTPUT_SIZE> output) {
         unsigned char buf[CSHA256::OUTPUT_SIZE];
         sha.Finalize(buf);
         sha.Reset().Write(buf, CSHA256::OUTPUT_SIZE).Finalize(output.data());
@@ -50,10 +49,9 @@ class CHash160 {
 private:
     CSHA256 sha;
 public:
-    static const size_t OUTPUT_SIZE = CRIPEMD160::OUTPUT_SIZE;
+    static constexpr size_t OUTPUT_SIZE = CRIPEMD160::OUTPUT_SIZE;
 
-    void Finalize(std::span<unsigned char> output) {
-        assert(output.size() == OUTPUT_SIZE);
+    void Finalize(std::span<unsigned char, OUTPUT_SIZE> output) {
         unsigned char buf[CSHA256::OUTPUT_SIZE];
         sha.Finalize(buf);
         CRIPEMD160().Write(buf, CSHA256::OUTPUT_SIZE).Finalize(output.data());

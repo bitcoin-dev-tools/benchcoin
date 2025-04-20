@@ -13,14 +13,12 @@
 #include <assert.h>
 #include <cstddef>
 
-AEADChaCha20Poly1305::AEADChaCha20Poly1305(std::span<const std::byte> key) noexcept : m_chacha20(key)
+AEADChaCha20Poly1305::AEADChaCha20Poly1305(std::span<const std::byte, KEYLEN> key) noexcept : m_chacha20(key)
 {
-    assert(key.size() == KEYLEN);
 }
 
-void AEADChaCha20Poly1305::SetKey(std::span<const std::byte> key) noexcept
+void AEADChaCha20Poly1305::SetKey(std::span<const std::byte, KEYLEN> key) noexcept
 {
-    assert(key.size() == KEYLEN);
     m_chacha20.SetKey(key);
 }
 
@@ -36,7 +34,7 @@ int timingsafe_bcmp_internal(const unsigned char* b1, const unsigned char* b2, s
 }
 
 /** Compute poly1305 tag. chacha20 must be set to the right nonce, block 0. Will be at block 1 after. */
-void ComputeTag(ChaCha20& chacha20, std::span<const std::byte> aad, std::span<const std::byte> cipher, std::span<std::byte> tag) noexcept
+void ComputeTag(ChaCha20& chacha20, std::span<const std::byte> aad, std::span<const std::byte> cipher, std::span<std::byte, Poly1305::TAGLEN> tag) noexcept
 {
     static const std::byte PADDING[16] = {{}};
 
@@ -45,7 +43,7 @@ void ComputeTag(ChaCha20& chacha20, std::span<const std::byte> aad, std::span<co
     chacha20.Keystream(first_block);
 
     // Use the first 32 bytes of the first keystream block as poly1305 key.
-    Poly1305 poly1305{std::span{first_block}.first(Poly1305::KEYLEN)};
+    Poly1305 poly1305{std::span{first_block}.first<Poly1305::KEYLEN>()};
 
     // Compute tag:
     // - Process the padded AAD with Poly1305.
@@ -77,7 +75,7 @@ void AEADChaCha20Poly1305::Encrypt(std::span<const std::byte> plain1, std::span<
 
     // Seek to block 0, and compute tag using key drawn from there.
     m_chacha20.Seek(nonce, 0);
-    ComputeTag(m_chacha20, aad, cipher.first(cipher.size() - EXPANSION), cipher.last(EXPANSION));
+    ComputeTag(m_chacha20, aad, cipher.first(cipher.size() - EXPANSION), cipher.last<EXPANSION>());
 }
 
 bool AEADChaCha20Poly1305::Decrypt(std::span<const std::byte> cipher, std::span<const std::byte> aad, Nonce96 nonce, std::span<std::byte> plain1, std::span<std::byte> plain2) noexcept
@@ -111,7 +109,7 @@ void FSChaCha20Poly1305::NextPacket() noexcept
         std::byte one_block[ChaCha20Aligned::BLOCKLEN];
         m_aead.Keystream({0xFFFFFFFF, m_rekey_counter}, one_block);
         // Switch keys.
-        m_aead.SetKey(std::span{one_block}.first(KEYLEN));
+        m_aead.SetKey(std::span{one_block}.first<KEYLEN>());
         // Wipe the generated keystream (a copy remains inside m_aead, which will be cleaned up
         // once it cycles again, or is destroyed).
         memory_cleanse(one_block, sizeof(one_block));

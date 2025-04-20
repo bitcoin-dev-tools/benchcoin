@@ -272,7 +272,7 @@ public:
         return sig == it->second;
     }
 
-    bool CheckSchnorrSignature(std::span<const unsigned char> sig, std::span<const unsigned char> pubkey, SigVersion,
+    bool CheckSchnorrSignature(std::span<const unsigned char> sig, std::span<const unsigned char, 32> pubkey, SigVersion,
                                ScriptExecutionData&, ScriptError*) const override {
         XOnlyPubKey pk{pubkey};
         auto it = g_testdata->schnorr_signatures.find(pk);

@@ -192,7 +192,7 @@ public:
      *  resulting encoding will be indistinguishable from uniform to any adversary who does not
      *  know the private key (because the private key itself is always used as entropy as well).
      */
-    EllSwiftPubKey EllSwiftCreate(std::span<const std::byte> entropy) const;
+    EllSwiftPubKey EllSwiftCreate(std::span<const std::byte, 32> entropy) const;
 
     /** Compute a BIP324-style ECDH shared secret.
      *
@@ -286,7 +286,7 @@ public:
     KeyPair(const KeyPair& other) { *this = other; }
 
     friend KeyPair CKey::ComputeKeyPair(const uint256* merkle_root) const;
-    [[nodiscard]] bool SignSchnorr(const uint256& hash, std::span<unsigned char> sig, const uint256& aux) const;
+    [[nodiscard]] bool SignSchnorr(const uint256& hash, std::span<unsigned char, 64> sig, const uint256& aux) const;
 
     //! Check whether this keypair is valid.
     bool IsValid() const { return !!m_keypair; }

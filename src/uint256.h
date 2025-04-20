@@ -37,9 +37,8 @@ public:
     /* constructor for constants between 1 and 255 */
     constexpr explicit base_blob(uint8_t v) : m_data{v} {}
 
-    constexpr explicit base_blob(std::span<const unsigned char> vch)
+    constexpr explicit base_blob(std::span<const unsigned char, WIDTH> vch)
     {
-        assert(vch.size() == WIDTH);
         std::copy(vch.begin(), vch.end(), m_data.begin());
     }
 
@@ -185,7 +184,8 @@ class uint160 : public base_blob<160> {
 public:
     static std::optional<uint160> FromHex(std::string_view str) { return detail::FromHex<uint160>(str); }
     constexpr uint160() = default;
-    constexpr explicit uint160(std::span<const unsigned char> vch) : base_blob<160>(vch) {}
+    constexpr explicit uint160(std::span<const unsigned char, 20> vch) : base_blob(vch) {}
+    operator std::span<unsigned char, 20>() { return std::span<unsigned char, 20>(data(), 20); }
 };
 
 /** 256-bit opaque blob.
@@ -198,9 +198,10 @@ public:
     static std::optional<uint256> FromHex(std::string_view str) { return detail::FromHex<uint256>(str); }
     static std::optional<uint256> FromUserHex(std::string_view str) { return detail::FromUserHex<uint256>(str); }
     constexpr uint256() = default;
-    consteval explicit uint256(std::string_view hex_str) : base_blob<256>(hex_str) {}
-    constexpr explicit uint256(uint8_t v) : base_blob<256>(v) {}
-    constexpr explicit uint256(std::span<const unsigned char> vch) : base_blob<256>(vch) {}
+    consteval explicit uint256(std::string_view hex_str) : base_blob(hex_str) {}
+    constexpr explicit uint256(uint8_t v) : base_blob(v) {}
+    constexpr explicit uint256(std::span<const unsigned char, 32> vch) : base_blob(vch) {}
+    operator std::span<unsigned char, 32>() { return std::span<unsigned char, 32>(data(), 32); }
     static const uint256 ZERO;
     static const uint256 ONE;
 };

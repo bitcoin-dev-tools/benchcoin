@@ -227,9 +227,8 @@ bool XOnlyPubKey::IsFullyValid() const
     return secp256k1_xonly_pubkey_parse(secp256k1_context_static, &pubkey, m_keydata.data());
 }
 
-bool XOnlyPubKey::VerifySchnorr(const uint256& msg, std::span<const unsigned char> sigbytes) const
+bool XOnlyPubKey::VerifySchnorr(const uint256& msg, std::span<const unsigned char, 64> sigbytes) const
 {
-    assert(sigbytes.size() == 64);
     secp256k1_xonly_pubkey pubkey;
     if (!secp256k1_xonly_pubkey_parse(secp256k1_context_static, &pubkey, m_keydata.data())) return false;
     return secp256k1_schnorrsig_verify(secp256k1_context_static, sigbytes.data(), msg.begin(), 32, &pubkey);
@@ -353,9 +352,8 @@ bool CPubKey::Derive(CPubKey& pubkeyChild, ChainCode &ccChild, unsigned int nChi
     return true;
 }
 
-EllSwiftPubKey::EllSwiftPubKey(std::span<const std::byte> ellswift) noexcept
+EllSwiftPubKey::EllSwiftPubKey(std::span<const std::byte, SIZE> ellswift) noexcept
 {
-    assert(ellswift.size() == SIZE);
     std::copy(ellswift.begin(), ellswift.end(), m_pubkey.begin());
 }
 

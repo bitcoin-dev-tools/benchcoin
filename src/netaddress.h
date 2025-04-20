@@ -139,7 +139,7 @@ public:
      * (e.g. IPv4) disguised as IPv6. This encoding is used in the legacy
      * `addr` encoding.
      */
-    void SetLegacyIPv6(std::span<const uint8_t> ipv6);
+    void SetLegacyIPv6(std::span<const uint8_t, ADDR_IPV6_SIZE> ipv6);
 
     bool SetInternal(const std::string& name);
 

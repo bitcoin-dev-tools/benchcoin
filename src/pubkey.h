@@ -254,16 +254,16 @@ public:
     bool IsNull() const { return m_keydata.IsNull(); }
 
     /** Construct an x-only pubkey from exactly 32 bytes. */
-    constexpr explicit XOnlyPubKey(std::span<const unsigned char> bytes) : m_keydata{bytes} {}
+    constexpr explicit XOnlyPubKey(std::span<const unsigned char, 32> bytes) : m_keydata{bytes} {}
 
     /** Construct an x-only pubkey from a normal pubkey. */
-    explicit XOnlyPubKey(const CPubKey& pubkey) : XOnlyPubKey(std::span{pubkey}.subspan(1, 32)) {}
+    explicit XOnlyPubKey(const CPubKey& pubkey) : XOnlyPubKey(std::span{pubkey}.subspan<1, 32>()) {}
 
     /** Verify a Schnorr signature against this public key.
      *
      * sigbytes must be exactly 64 bytes.
      */
-    bool VerifySchnorr(const uint256& msg, std::span<const unsigned char> sigbytes) const;
+    bool VerifySchnorr(const uint256& msg, std::span<const unsigned char, 64> sigbytes) const;
 
     /** Compute the Taproot tweak as specified in BIP341, with *this as internal
      * key:
@@ -317,7 +317,7 @@ public:
     EllSwiftPubKey() noexcept = default;
 
     /** Construct a new ellswift public key from a given serialization. */
-    EllSwiftPubKey(std::span<const std::byte> ellswift) noexcept;
+    EllSwiftPubKey(std::span<const std::byte, SIZE> ellswift) noexcept;
 
     /** Decode to normal compressed CPubKey (for debugging purposes). */
     CPubKey Decode() const;

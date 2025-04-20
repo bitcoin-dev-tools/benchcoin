@@ -26,10 +26,10 @@ public:
     static constexpr unsigned EXPANSION = Poly1305::TAGLEN;
 
     /** Initialize an AEAD instance with a specified 32-byte key. */
-    AEADChaCha20Poly1305(std::span<const std::byte> key) noexcept;
+    AEADChaCha20Poly1305(std::span<const std::byte, KEYLEN> key) noexcept;
 
     /** Switch to another 32-byte key. */
-    void SetKey(std::span<const std::byte> key) noexcept;
+    void SetKey(std::span<const std::byte, KEYLEN> key) noexcept;
 
     /** 96-bit nonce type. */
     using Nonce96 = ChaCha20::Nonce96;
@@ -111,7 +111,7 @@ public:
     FSChaCha20Poly1305& operator=(FSChaCha20Poly1305&&) = delete;
 
     /** Construct an FSChaCha20Poly1305 cipher that rekeys every rekey_interval operations. */
-    FSChaCha20Poly1305(std::span<const std::byte> key, uint32_t rekey_interval) noexcept :
+    FSChaCha20Poly1305(std::span<const std::byte, KEYLEN> key, uint32_t rekey_interval) noexcept :
         m_aead(key), m_rekey_interval(rekey_interval) {}
 
     /** Encrypt a message with a specified aad.

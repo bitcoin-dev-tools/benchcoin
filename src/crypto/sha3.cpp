@@ -133,9 +133,8 @@ SHA3_256& SHA3_256::Write(std::span<const unsigned char> data)
     return *this;
 }
 
-SHA3_256& SHA3_256::Finalize(std::span<unsigned char> output)
+SHA3_256& SHA3_256::Finalize(std::span<unsigned char, OUTPUT_SIZE> output)
 {
-    assert(output.size() == OUTPUT_SIZE);
     std::fill(m_buffer + m_bufsize, m_buffer + sizeof(m_buffer), 0);
     m_buffer[m_bufsize] ^= 0x06;
     m_state[m_pos] ^= ReadLE64(m_buffer);

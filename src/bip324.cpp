@@ -22,7 +22,7 @@
 #include <iterator>
 #include <string>
 
-BIP324Cipher::BIP324Cipher(const CKey& key, std::span<const std::byte> ent32) noexcept
+BIP324Cipher::BIP324Cipher(const CKey& key, std::span<const std::byte, 32> ent32) noexcept
     : m_key(key)
 {
     m_our_pubkey = m_key.EllSwiftCreate(ent32);
@@ -79,17 +79,15 @@ void BIP324Cipher::Encrypt(std::span<const std::byte> contents, std::span<const 
     len[0] = std::byte{(uint8_t)(contents.size() & 0xFF)};
     len[1] = std::byte{(uint8_t)((contents.size() >> 8) & 0xFF)};
     len[2] = std::byte{(uint8_t)((contents.size() >> 16) & 0xFF)};
-    m_send_l_cipher->Crypt(len, output.first(LENGTH_LEN));
+    m_send_l_cipher->Crypt(len, output.first<LENGTH_LEN>());
 
     // Encrypt plaintext.
     std::byte header[HEADER_LEN] = {ignore ? IGNORE_BIT : std::byte{0}};
     m_send_p_cipher->Encrypt(header, contents, aad, output.subspan(LENGTH_LEN));
 }
 
-uint32_t BIP324Cipher::DecryptLength(std::span<const std::byte> input) noexcept
+uint32_t BIP324Cipher::DecryptLength(std::span<const std::byte, LENGTH_LEN> input) noexcept
 {
-    assert(input.size() == LENGTH_LEN);
-
     std::byte buf[LENGTH_LEN];
     // Decrypt length
     m_recv_l_cipher->Crypt(input, buf);

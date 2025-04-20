@@ -1209,7 +1209,7 @@ public:
             // When processing a packet, at least enough bytes for its length descriptor must be received.
             BOOST_REQUIRE(m_received.size() >= BIP324Cipher::LENGTH_LEN);
             // Decrypt the content length.
-            size_t size = m_cipher.DecryptLength(MakeByteSpan(std::span{m_received}.first(BIP324Cipher::LENGTH_LEN)));
+            size_t size = m_cipher.DecryptLength(MakeByteSpan(std::span{m_received}.first<BIP324Cipher::LENGTH_LEN>()));
             // Check that the full packet is in the receive buffer.
             BOOST_REQUIRE(m_received.size() >= size + BIP324Cipher::EXPANSION);
             // Decrypt the packet contents.

@@ -179,9 +179,8 @@ std::string PCPResultString(uint8_t result_code)
 }
 
 //! Wrap address in IPv6 according to RFC6887. wrapped_addr needs to be able to store 16 bytes.
-[[nodiscard]] bool PCPWrapAddress(std::span<uint8_t> wrapped_addr, const CNetAddr &addr)
+[[nodiscard]] bool PCPWrapAddress(std::span<uint8_t, ADDR_IPV6_SIZE> wrapped_addr, const CNetAddr &addr)
 {
-    Assume(wrapped_addr.size() == ADDR_IPV6_SIZE);
     if (addr.IsIPv4()) {
         struct in_addr addr4;
         if (!addr.GetInAddr(&addr4)) return false;
@@ -434,25 +433,22 @@ std::variant<MappingResult, MappingError> PCPRequestPortMap(const PCPMappingNonc
     // Make sure there's space for the request header and MAP specific request data.
     std::vector<uint8_t> request(PCP_HDR_SIZE + PCP_MAP_SIZE);
     // Fill in request header, See RFC6887 Figure 2.
-    size_t ofs = 0;
-    request[ofs + PCP_HDR_VERSION_OFS] = PCP_VERSION;
-    request[ofs + PCP_HDR_OP_OFS] = PCP_REQUEST | PCP_OP_MAP;
-    WriteBE32(request.data() + ofs + PCP_HDR_LIFETIME_OFS, lifetime);
-    if (!PCPWrapAddress(std::span(request).subspan(ofs + PCP_REQUEST_HDR_IP_OFS, ADDR_IPV6_SIZE), internal)) return MappingError::NETWORK_ERROR;
-
-    ofs += PCP_HDR_SIZE;
+    request[PCP_HDR_VERSION_OFS] = PCP_VERSION;
+    request[PCP_HDR_OP_OFS] = PCP_REQUEST | PCP_OP_MAP;
+    WriteBE32(request.data() + PCP_HDR_LIFETIME_OFS, lifetime);
+    if (!PCPWrapAddress(std::span(request).subspan<PCP_REQUEST_HDR_IP_OFS, ADDR_IPV6_SIZE>(), internal)) return MappingError::NETWORK_ERROR;
 
     // Fill in MAP request packet, See RFC6887 Figure 9.
     // Randomize mapping nonce (this is repeated in the response, to be able to
     // correlate requests and responses, and used to authenticate changes to the mapping).
+    constexpr size_t ofs = PCP_HDR_SIZE;
     std::memcpy(request.data() + ofs + PCP_MAP_NONCE_OFS, nonce.data(), PCP_MAP_NONCE_SIZE);
     request[ofs + PCP_MAP_PROTOCOL_OFS] = PCP_PROTOCOL_TCP;
     WriteBE16(request.data() + ofs + PCP_MAP_INTERNAL_PORT_OFS, port);
     WriteBE16(request.data() + ofs + PCP_MAP_EXTERNAL_PORT_OFS, port);
-    if (!PCPWrapAddress(std::span(request).subspan(ofs + PCP_MAP_EXTERNAL_IP_OFS, ADDR_IPV6_SIZE), bind)) return MappingError::NETWORK_ERROR;
+    if (!PCPWrapAddress(std::span(request).subspan<PCP_MAP_EXTERNAL_IP_OFS, ADDR_IPV6_SIZE>(), bind)) return MappingError::NETWORK_ERROR;
 
-    ofs += PCP_MAP_SIZE;
-    Assume(ofs == request.size());
+    Assume(ofs + PCP_MAP_SIZE == request.size());
 
     // Receive loop.
     bool is_natpmp = false;
@@ -477,8 +473,8 @@ std::variant<MappingResult, MappingError> PCPRequestPortMap(const PCPMappingNonc
                 LogPrintLevel(BCLog::NET, BCLog::Level::Warning, "pcp: Mapping nonce mismatch\n");
                 return false; // Wasn't response to what we expected, try receiving next packet.
             }
-            uint8_t protocol = response[PCP_HDR_SIZE + 12];
-            uint16_t internal_port = ReadBE16(response.data() + PCP_HDR_SIZE + 16);
+            uint8_t protocol = response[PCP_HDR_SIZE + PCP_MAP_PROTOCOL_OFS];
+            uint16_t internal_port = ReadBE16(response.data() + PCP_HDR_SIZE + PCP_MAP_INTERNAL_PORT_OFS);
             if (protocol != PCP_PROTOCOL_TCP || internal_port != port) {
                 LogPrintLevel(BCLog::NET, BCLog::Level::Warning, "pcp: Response protocol or port doesn't match request\n");
                 return false; // Wasn't response to what we expected, try receiving next packet.

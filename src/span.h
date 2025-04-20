@@ -83,7 +83,16 @@ T& SpanPopBack(std::span<T>& span)
 template <typename V>
 auto MakeByteSpan(const V& v) noexcept
 {
-    return std::as_bytes(std::span{v});
+    if constexpr (std::is_integral_v<V> || std::is_same_v<V, bool>) {
+        return std::as_bytes(std::span<const V, 1>{&v, 1});
+    } else if constexpr (requires {
+        { V::size() } -> std::convertible_to<std::size_t>;
+        { v.data() } -> std::convertible_to<const uint8_t*>;
+    }) {
+        return std::as_bytes(std::span<const uint8_t, V::size()>{v.data(), V::size()});
+    } else {
+        return std::as_bytes(std::span{v});
+    }
 }
 template <typename V>
 auto MakeWritableByteSpan(V&& v) noexcept

@@ -5,6 +5,7 @@
 #ifndef BITCOIN_CONSENSUS_TX_VERIFY_H
 #define BITCOIN_CONSENSUS_TX_VERIFY_H
 
+#include <coins.h>
 #include <consensus/amount.h>
 
 #include <stdint.h>
@@ -24,7 +25,8 @@ namespace Consensus {
  * @param[out] txfee Set to the transaction fee if successful.
  * Preconditions: tx.IsCoinBase() is false.
  */
-[[nodiscard]] bool CheckTxInputs(const CTransaction& tx, TxValidationState& state, const CCoinsViewCache& inputs, int nSpendHeight, CAmount& txfee);
+template <typename T>
+[[nodiscard]] bool CheckTxInputs(const CTransaction& tx, TxValidationState& state, const T coins, int nSpendHeight, CAmount& txfee);
 } // namespace Consensus
 
 /** Auxiliary functions for transaction validation (ideally should not be exposed) */
@@ -39,20 +41,22 @@ unsigned int GetLegacySigOpCount(const CTransaction& tx);
 /**
  * Count ECDSA signature operations in pay-to-script-hash inputs.
  *
- * @param[in] mapInputs Map of previous transactions that have outputs we're spending
+ * @param[in] coins sorted iterator of previous transaction outputs we're spending
  * @return maximum number of sigops required to validate this transaction's inputs
  * @see CTransaction::FetchInputs
  */
-unsigned int GetP2SHSigOpCount(const CTransaction& tx, const CCoinsViewCache& mapInputs);
+template <typename T>
+unsigned int GetP2SHSigOpCount(const CTransaction& tx, const T coins);
 
 /**
  * Compute total signature operation cost of a transaction.
  * @param[in] tx     Transaction for which we are computing the cost
- * @param[in] inputs Map of previous transactions that have outputs we're spending
- * @param[in] flags Script verification flags
+ * @param[in] coins  Sorted iterator of previous transaction outputs we're spending
+ * @param[in] flags  Script verification flags
  * @return Total signature operation cost of tx
  */
-int64_t GetTransactionSigOpCost(const CTransaction& tx, const CCoinsViewCache& inputs, uint32_t flags);
+template <typename T>
+int64_t GetTransactionSigOpCost(const CTransaction& tx, const T coins, uint32_t flags);
 
 /**
  * Check if transaction is final and can be included in a block with the

@@ -20,7 +20,6 @@ using kernel::BlockTreeStoreError;
 using kernel::HEADER_FILE_DATA_START_POS;
 using kernel::HEADER_FILE_MAGIC;
 using kernel::HEADER_FILE_NAME;
-using kernel::HEADER_FILE_SIZE;
 using kernel::HEADER_FILE_VERSION;
 
 BOOST_FIXTURE_TEST_SUITE(headerstorage_tests, TestChain100Setup)
@@ -92,7 +91,7 @@ BOOST_AUTO_TEST_CASE(HeaderFilesFormat)
     BOOST_CHECK_EQUAL(data_end, HEADER_FILE_DATA_START_POS);
     header_file.seek(0, SEEK_END);
     long filesize = header_file.tell();
-    BOOST_CHECK_GE(filesize, HEADER_FILE_SIZE);
+    BOOST_CHECK_GE(filesize, params->AssumedHeaderStoreSize());
 
     auto file = AutoFile{fsbridge::fopen(block_files_file_path, "rb")};
     file >> magic;

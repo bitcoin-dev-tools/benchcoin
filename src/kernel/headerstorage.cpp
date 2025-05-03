@@ -119,7 +119,7 @@ void BlockTreeStore::CreateHeaderFile() const
         if (!file) {
             throw BlockTreeStoreError(strprintf("Unable to open file %s\n", fs::PathToString(m_header_file_path)));
         }
-        AllocateFileRange(file, 0, HEADER_FILE_SIZE);
+        AllocateFileRange(file, 0, m_params.AssumedHeaderStoreSize());
         auto autofile{AutoFile{file}};
         if (!autofile.Commit()) {
             throw BlockTreeStoreError(strprintf("Failed to create header file %s\n", fs::PathToString(m_header_file_path)));

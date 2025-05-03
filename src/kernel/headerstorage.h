@@ -18,8 +18,6 @@ class SignalInterrupt;
 
 namespace kernel {
 
-inline constexpr uint64_t HEADER_FILE_SIZE{1_MiB}; // Will be changed to a chainparams field.
-
 //! The layout of the headers file is as follows:
 // <magic> <version> <reindex flag> <data end position> [<message start> <DiskBlockIndexWrapper>]
 inline constexpr uint32_t HEADER_FILE_MAGIC{0x1d5e2eb2}; // sha256sum(BLOCK_HEADER_FILE_MAGIC)

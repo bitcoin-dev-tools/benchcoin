@@ -255,30 +255,25 @@ void UnserializeTransaction(TxType& tx, Stream& s, const TransactionSerParams& p
 template<typename Stream, typename TxType>
 void SerializeTransaction(const TxType& tx, Stream& s, const TransactionSerParams& params)
 {
-    const bool fAllowWitness = params.allow_witness;
-
     s << tx.version;
-    unsigned char flags = 0;
-    // Consistency check
-    if (fAllowWitness) {
-        /* Check whether witnesses need to be serialized. */
-        if (tx.HasWitness()) {
-            flags |= 1;
-        }
-    }
+
+    /* Check whether witnesses need to be serialized. */
+    const unsigned char flags{static_cast<unsigned char>(params.allow_witness && tx.HasWitness())};
     if (flags) {
         /* Use extended format in case witnesses are to be serialized. */
-        std::vector<CTxIn> vinDummy;
-        s << vinDummy;
+        WriteCompactSize(s, 0); // empty vector
         s << flags;
     }
+
     s << tx.vin;
     s << tx.vout;
+
     if (flags & 1) {
-        for (size_t i = 0; i < tx.vin.size(); i++) {
-            s << tx.vin[i].scriptWitness.stack;
+        for (const auto& in : tx.vin) {
+            s << in.scriptWitness.stack;
         }
     }
+
     s << tx.nLockTime;
 }
 

@@ -14,7 +14,6 @@
 using kernel::BLOCK_FILES_FILE_MAGIC;
 using kernel::BLOCK_FILES_FILE_NAME;
 using kernel::BLOCK_FILES_FILE_VERSION;
-using kernel::BLOCK_FILES_PRUNE_FLAG_POS;
 using kernel::BlockTreeStore;
 using kernel::BlockTreeStoreError;
 using kernel::HEADER_FILE_DATA_START_POS;
@@ -22,7 +21,7 @@ using kernel::HEADER_FILE_MAGIC;
 using kernel::HEADER_FILE_NAME;
 using kernel::HEADER_FILE_VERSION;
 
-BOOST_FIXTURE_TEST_SUITE(headerstorage_tests, TestChain100Setup)
+BOOST_FIXTURE_TEST_SUITE(headerstorage_tests, BasicTestingSetup)
 
 CBlockIndex* InsertBlockIndex(std::unordered_map<uint256, CBlockIndex, BlockHasher>& block_map, const uint256& hash)
 {
@@ -51,11 +50,11 @@ void check_block_file_info(uint32_t file, CBlockFileInfo& file_info, BlockTreeSt
     BOOST_CHECK_EQUAL(file_info.nTimeLast, retrieved_info.nTimeLast);
 }
 
-void check_block_map(const std::unordered_map<uint256, CBlockIndex, BlockHasher>& block_map, const std::vector<CBlockIndex*>& blockinfo)
+void check_block_map(const std::unordered_map<uint256, CBlockIndex, BlockHasher>& block_map, const std::vector<CBlockIndex*>& blocks)
 {
     LOCK(::cs_main);
-    BOOST_CHECK_EQUAL(block_map.size(), blockinfo.size());
-    for (const auto& block : blockinfo) {
+    BOOST_CHECK_EQUAL(block_map.size(), blocks.size());
+    for (const auto& block : blocks) {
         auto hash{block->GetBlockHeader().GetHash()};
         auto it = block_map.find(hash);
         BOOST_CHECK(it != block_map.end());
@@ -83,9 +82,6 @@ BOOST_AUTO_TEST_CASE(HeaderFilesFormat)
     uint32_t version;
     header_file >> version;
     BOOST_CHECK_EQUAL(version, HEADER_FILE_VERSION);
-    bool reindexing;
-    header_file >> reindexing;
-    BOOST_CHECK_EQUAL(reindexing, false);
     int64_t data_end;
     header_file >> data_end;
     BOOST_CHECK_EQUAL(data_end, HEADER_FILE_DATA_START_POS);
@@ -100,13 +96,12 @@ BOOST_AUTO_TEST_CASE(HeaderFilesFormat)
     BOOST_CHECK_EQUAL(version, BLOCK_FILES_FILE_VERSION);
     int32_t last_block;
     file >> last_block;
+    int32_t checksum;
+    file >> checksum;
     BOOST_CHECK_EQUAL(last_block, 0);
-    bool pruned;
-    file >> pruned;
-    BOOST_CHECK_EQUAL(pruned, false);
     file.seek(0, SEEK_END);
     filesize = file.tell();
-    BOOST_CHECK_GE(filesize, BLOCK_FILES_PRUNE_FLAG_POS + 1);
+    BOOST_CHECK_GE(filesize, kernel::BLOCK_FILES_DATA_START_POS);
 }
 
 BOOST_AUTO_TEST_CASE(HeaderStoreInvalidFiles)
@@ -132,7 +127,6 @@ BOOST_AUTO_TEST_CASE(HeaderStoreInvalidFiles)
 BOOST_AUTO_TEST_CASE(HeaderStore)
 {
     LOCK(::cs_main);
-    std::unordered_map<uint256, CBlockIndex, BlockHasher> block_map;
     fs::path block_tree_store_dir{m_args.GetDataDirBase()};
     auto header_file{block_tree_store_dir / HEADER_FILE_NAME};
     auto block_files_file{block_tree_store_dir / BLOCK_FILES_FILE_NAME};
@@ -163,7 +157,15 @@ BOOST_AUTO_TEST_CASE(HeaderStore)
     store.ReadPruned(pruned);
     BOOST_CHECK(!pruned);
 
+    std::unordered_map<uint256, CBlockIndex, BlockHasher> block_map;
     std::vector<std::pair<int, CBlockFileInfo*>> fileinfo;
+    BOOST_CHECK(store.LoadBlockIndexGuts(
+        params->GetConsensus(),
+        [&](const uint256& hash) { return InsertBlockIndex(block_map, hash); },
+        m_interrupt));
+    BOOST_CHECK(block_map.empty());
+
+    // Write and read a CBlockFileInfo and a CBlockIndex
     CBlockFileInfo info{};
     info.nBlocks = 1;
     info.nSize = 2;
@@ -172,8 +174,6 @@ BOOST_AUTO_TEST_CASE(HeaderStore)
     info.nHeightLast = 5;
     info.nTimeFirst = 6;
     info.nTimeLast = 7;
-
-    // Write and read a CBlockFileInfo and a CBlockIndex
     fileinfo.emplace_back(0, &info);
     int32_t last_file{1};
     std::vector<CBlockIndex*> blockinfo;
@@ -188,6 +188,7 @@ BOOST_AUTO_TEST_CASE(HeaderStore)
         [&](const uint256& hash) { return InsertBlockIndex(block_map, hash); },
         m_interrupt));
     check_block_map(block_map, blockinfo);
+    check_block_file_info(0, info, store);
 
     // Write another CBlockFileInfo and update the CBlockIndex
     info.nBlocks = 2;
@@ -215,6 +216,7 @@ BOOST_AUTO_TEST_CASE(HeaderStore)
         [&](const uint256& hash) { return InsertBlockIndex(block_map, hash); },
         m_interrupt));
     check_block_map(block_map, blockinfo);
+    check_block_file_info(0, info, store);
 
     // Update the new CBlockFileInfo and the CBlockIndex
     block_index->nStatus = 99;

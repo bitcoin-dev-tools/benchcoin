@@ -116,7 +116,7 @@ class InitTest(BitcoinTestFramework):
         }
 
         files_to_perturb = {
-            'blocks/index/headers.dat': 'Error loading block database.',
+            'blocks/index/headers.dat': 'Error loading databases.',
             'chainstate/*.ldb': 'Error opening coins database.',
             'blocks/blk*.dat': 'Corrupted block database detected.',
             'indexes/blockfilter/basic/db/*.*': 'LevelDB error: Corruption',

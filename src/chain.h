@@ -184,7 +184,7 @@ public:
     unsigned int nUndoPos GUARDED_BY(::cs_main){0};
 
     //! Byte offset within headers.dat where this block's header data is stored
-    unsigned int header_pos GUARDED_BY(::cs_main){0};
+    int64_t header_pos GUARDED_BY(::cs_main){0};
 
     //! (memory only) Total amount of work (expected number of hashes) in the chain up to and including this block
     arith_uint256 nChainWork{};

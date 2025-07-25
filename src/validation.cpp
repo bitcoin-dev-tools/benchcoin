@@ -3023,6 +3023,7 @@ bool Chainstate::DisconnectTip(BlockValidationState& state, DisconnectedBlockTra
     }
 
     m_chain.SetTip(*pindexDelete->pprev);
+    m_chainman.UpdateCachedChaintipRecent();
 
     UpdateTip(pindexDelete->pprev);
     // Let wallets know transactions went from 1-confirmed to
@@ -3152,6 +3153,7 @@ bool Chainstate::ConnectTip(
     }
     // Update m_chain & related variables.
     m_chain.SetTip(*pindexNew);
+    m_chainman.UpdateCachedChaintipRecent();
     UpdateTip(pindexNew);
 
     const auto time_6{SteadyClock::now()};
@@ -4638,6 +4640,7 @@ bool Chainstate::LoadChainTip()
         return false;
     }
     m_chain.SetTip(*pindex);
+    m_chainman.UpdateCachedChaintipRecent();
     tip = m_chain.Tip();
 
     // Make sure our chain tip before shutting down scores better than any other candidate

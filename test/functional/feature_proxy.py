@@ -136,6 +136,9 @@ class ProxyTest(BitcoinTestFramework):
         if self.have_unix_sockets:
             args[5] = ['-listen', f'-proxy=unix:{socket_path}']
             args[6] = ['-listen', f'-onion=unix:{socket_path}']
+        # Keep validation threads low to avoid CI thread/pid limits.
+        # Ensure even empty arg lists get '-par=1'.
+        args = [a + ['-par=1'] if a else ['-par=1'] for a in args]
         self.add_nodes(self.num_nodes, extra_args=args)
         self.start_nodes()
 
@@ -379,42 +382,42 @@ class ProxyTest(BitcoinTestFramework):
         self.stop_node(1)
 
         self.log.info("Test passing invalid -proxy hostname raises expected init error")
-        self.nodes[1].extra_args = ["-proxy=abc..abc:23456"]
+        self.nodes[1].extra_args = ["-proxy=abc..abc:23456", "-par=1"]
         msg = "Error: Invalid -proxy address or hostname: 'abc..abc:23456'"
         self.nodes[1].assert_start_raises_init_error(expected_msg=msg)
 
         self.log.info("Test passing invalid -proxy port raises expected init error")
-        self.nodes[1].extra_args = ["-proxy=192.0.0.1:def"]
+        self.nodes[1].extra_args = ["-proxy=192.0.0.1:def", "-par=1"]
         msg = "Error: Invalid port specified in -proxy: '192.0.0.1:def'"
         self.nodes[1].assert_start_raises_init_error(expected_msg=msg)
 
         self.log.info("Test passing invalid -onion hostname raises expected init error")
-        self.nodes[1].extra_args = ["-onion=xyz..xyz:23456"]
+        self.nodes[1].extra_args = ["-onion=xyz..xyz:23456", "-par=1"]
         msg = "Error: Invalid -onion address or hostname: 'xyz..xyz:23456'"
         self.nodes[1].assert_start_raises_init_error(expected_msg=msg)
 
         self.log.info("Test passing invalid -onion port raises expected init error")
-        self.nodes[1].extra_args = ["-onion=192.0.0.1:def"]
+        self.nodes[1].extra_args = ["-onion=192.0.0.1:def", "-par=1"]
         msg = "Error: Invalid port specified in -onion: '192.0.0.1:def'"
         self.nodes[1].assert_start_raises_init_error(expected_msg=msg)
 
         self.log.info("Test passing invalid -i2psam hostname raises expected init error")
-        self.nodes[1].extra_args = ["-i2psam=def..def:23456"]
+        self.nodes[1].extra_args = ["-i2psam=def..def:23456", "-par=1"]
         msg = "Error: Invalid -i2psam address or hostname: 'def..def:23456'"
         self.nodes[1].assert_start_raises_init_error(expected_msg=msg)
 
         self.log.info("Test passing invalid -i2psam port raises expected init error")
-        self.nodes[1].extra_args = ["-i2psam=192.0.0.1:def"]
+        self.nodes[1].extra_args = ["-i2psam=192.0.0.1:def", "-par=1"]
         msg = "Error: Invalid port specified in -i2psam: '192.0.0.1:def'"
         self.nodes[1].assert_start_raises_init_error(expected_msg=msg)
 
         self.log.info("Test passing invalid -onlynet=i2p without -i2psam raises expected init error")
-        self.nodes[1].extra_args = ["-onlynet=i2p"]
+        self.nodes[1].extra_args = ["-onlynet=i2p", "-par=1"]
         msg = "Error: Outbound connections restricted to i2p (-onlynet=i2p) but -i2psam is not provided"
         self.nodes[1].assert_start_raises_init_error(expected_msg=msg)
 
         self.log.info("Test passing invalid -onlynet=cjdns without -cjdnsreachable raises expected init error")
-        self.nodes[1].extra_args = ["-onlynet=cjdns"]
+        self.nodes[1].extra_args = ["-onlynet=cjdns", "-par=1"]
         msg = "Error: Outbound connections restricted to CJDNS (-onlynet=cjdns) but -cjdnsreachable is not provided"
         self.nodes[1].assert_start_raises_init_error(expected_msg=msg)
 
@@ -424,11 +427,11 @@ class ProxyTest(BitcoinTestFramework):
             "the proxy for reaching the Tor network is explicitly forbidden: -onion=0"
         )
         for arg in ["-onion=0", "-noonion"]:
-            self.nodes[1].extra_args = ["-onlynet=onion", arg]
+            self.nodes[1].extra_args = ["-onlynet=onion", "-par=1", arg]
             self.nodes[1].assert_start_raises_init_error(expected_msg=msg)
 
         self.log.info("Test passing -onlynet=onion without -proxy, -onion or -listenonion raises expected init error")
-        self.nodes[1].extra_args = ["-onlynet=onion", "-listenonion=0"]
+        self.nodes[1].extra_args = ["-onlynet=onion", "-listenonion=0", "-par=1"]
         msg = (
             "Error: Outbound connections restricted to Tor (-onlynet=onion) but the proxy for "
             "reaching the Tor network is not provided: none of -proxy, -onion or -listenonion is given"
@@ -436,11 +439,11 @@ class ProxyTest(BitcoinTestFramework):
         self.nodes[1].assert_start_raises_init_error(expected_msg=msg)
 
         self.log.info("Test passing -onlynet=onion without -proxy or -onion but with -listenonion=1 is ok")
-        self.start_node(1, extra_args=["-onlynet=onion", "-listenonion=1"])
+        self.start_node(1, extra_args=["-onlynet=onion", "-listenonion=1", "-par=1"])
         self.stop_node(1)
 
         self.log.info("Test passing unknown network to -onlynet raises expected init error")
-        self.nodes[1].extra_args = ["-onlynet=abc"]
+        self.nodes[1].extra_args = ["-onlynet=abc", "-par=1"]
         msg = "Error: Unknown network specified in -onlynet: 'abc'"
         self.nodes[1].assert_start_raises_init_error(expected_msg=msg)
 
@@ -486,7 +489,7 @@ class ProxyTest(BitcoinTestFramework):
         self.stop_node(1)
 
         self.log.info("Test passing too-long unix path to -proxy raises init error")
-        self.nodes[1].extra_args = [f"-proxy=unix:{'x' * 1000}"]
+        self.nodes[1].extra_args = [f"-proxy=unix:{'x' * 1000}", "-par=1"]
         if self.have_unix_sockets:
             msg = f"Error: Invalid -proxy address or hostname: 'unix:{'x' * 1000}'"
         else:

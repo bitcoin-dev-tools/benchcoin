@@ -6,7 +6,7 @@
 #define BITCOIN_INPUTFETCHER_H
 
 #include <coins.h>
-#include <primitives/transaction_identifier.h>
+#include <util/transaction_identifier.h>
 #include <sync.h>
 #include <tinyformat.h>
 #include <txdb.h>

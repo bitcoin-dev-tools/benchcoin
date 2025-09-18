@@ -7,7 +7,7 @@
 #include <inputfetcher.h>
 #include <primitives/block.h>
 #include <primitives/transaction.h>
-#include <primitives/transaction_identifier.h>
+#include <util/transaction_identifier.h>
 #include <test/util/random.h>
 #include <test/util/setup_common.h>
 #include <uint256.h>

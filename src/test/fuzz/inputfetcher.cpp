@@ -4,7 +4,7 @@
 
 #include <consensus/amount.h>
 #include <inputfetcher.h>
-#include <primitives/transaction_identifier.h>
+#include <util/transaction_identifier.h>
 #include <test/fuzz/FuzzedDataProvider.h>
 #include <test/fuzz/fuzz.h>
 #include <test/fuzz/util.h>

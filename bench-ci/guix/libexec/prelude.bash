@@ -8,6 +8,13 @@ source contrib/shell/realpath.bash
 # shellcheck source=contrib/shell/git-utils.bash
 source contrib/shell/git-utils.bash
 
+# Source guix profile from the runner home directory
+GUIX_PROFILE=/home/github-runner/.config/guix/current
+. "$GUIX_PROFILE/etc/profile"
+echo "Using the following guix command:"
+command -v guix
+guix describe
+
 ################
 # Required non-builtin commands should be invocable
 ################

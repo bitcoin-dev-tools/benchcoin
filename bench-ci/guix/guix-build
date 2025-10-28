@@ -439,7 +439,7 @@ EOF
         #    more information.
         #
         # shellcheck disable=SC2086,SC2031
-        time-machine shell --manifest="${PWD}/contrib/guix/manifest.scm" \
+        time-machine shell --manifest="${PWD}/bench-ci/guix/manifest.scm" \
                                  --container \
                                  --pure \
                                  --no-cwd \
@@ -468,7 +468,7 @@ EOF
                                         DISTSRC="$(DISTSRC_BASE=/distsrc-base && distsrc_for_host "$HOST")" \
                                         OUTDIR="$(OUTDIR_BASE=/outdir-base && outdir_for_host "$HOST")" \
                                         DIST_ARCHIVE_BASE=/outdir-base/dist-archive \
-                                      bash -c "cd /bitcoin && bash contrib/guix/libexec/build.sh"
+                                      bash -c "cd /bitcoin && bash bench-ci/guix/libexec/build.sh"
     )
 
 done

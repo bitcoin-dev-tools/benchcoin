@@ -13,6 +13,11 @@ GUIX_PROFILE=/home/github-runner/.config/guix/current
 . "$GUIX_PROFILE/etc/profile"
 echo "Using the following guix command:"
 command -v guix
+echo "Guix command symlink points to:"
+readlink -f "$(command -v guix)"
+echo "Current Guix profile:"
+echo "$GUIX_PROFILE"
+echo "Profile generation info:"
 guix describe
 
 ################

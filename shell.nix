@@ -1,6 +1,6 @@
 # Copyright 0xB10C, willcl-ark
 { pkgs ? import
-  (fetchTarball "https://github.com/nixos/nixpkgs/archive/nixos-24.11.tar.gz")
+  (fetchTarball "https://github.com/nixos/nixpkgs/archive/nixos-25.11.tar.gz")
   { }, }:
 let
   inherit (pkgs.lib) optionals strings;

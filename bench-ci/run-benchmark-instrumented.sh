@@ -59,6 +59,8 @@ prepare_run() {
   clean_datadir "${TMP_DATADIR}"
   # Don't copy hidden files so use *
   taskset -c 0-15 cp -r "$ORIGINAL_DATADIR"/* "$TMP_DATADIR"
+  # Clear page caches
+  sync && echo 3 | sudo tee /proc/sys/vm/drop_caches > /dev/null
   clean_logs "${TMP_DATADIR}"
 }
 

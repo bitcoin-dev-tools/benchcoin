@@ -78,7 +78,7 @@ run_benchmark() {
     --show-output \
     --command-name "base (${base_commit})" \
     --command-name "head (${head_commit})" \
-    "taskset -c 1 flamegraph --palette bitcoin --title 'bitcoind IBD@{commit}' -c 'record -F 101 --call-graph fp' -- taskset -c 2-15 chrt -r 1 ${BINARIES_DIR}/{commit}/bitcoind -datadir=${TMP_DATADIR} -connect=${connect_address} -daemon=0 -prune=10000 -chain=${chain} -stopatheight=${stop_at_height} -dbcache=${dbcache} -printtoconsole=0 -debug=coindb -debug=leveldb -debug=bench -debug=validation" \
+    "taskset -c 1 flamegraph --palette bitcoin --title 'bitcoind IBD@{commit}' -c 'record -F 101 --call-graph fp' -- taskset -c 2-15 chrt -o 0 ${BINARIES_DIR}/{commit}/bitcoind -datadir=${TMP_DATADIR} -connect=${connect_address} -daemon=0 -prune=10000 -chain=${chain} -stopatheight=${stop_at_height} -dbcache=${dbcache} -printtoconsole=0 -debug=coindb -debug=leveldb -debug=bench -debug=validation" \
     -L commit "base,head"
 }
 

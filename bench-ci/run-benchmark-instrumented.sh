@@ -2,69 +2,10 @@
 
 set -euxo pipefail
 
-# Helper function to check and clean datadir
-clean_datadir() {
-  set -euxo pipefail
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/prelude.sh"
 
-  local TMP_DATADIR="$1"
-
-  # Create the directory if it doesn't exist
-  mkdir -p "${TMP_DATADIR}"
-
-  # If we're in CI, clean without confirmation
-  if [ -n "${CI:-}" ]; then
-    rm -Rf "${TMP_DATADIR:?}"/*
-  else
-    read -rp "Are you sure you want to delete everything in ${TMP_DATADIR}? [y/N] " response
-    if [[ "$response" =~ ^[Yy]$ ]]; then
-      rm -Rf "${TMP_DATADIR:?}"/*
-    else
-      echo "Aborting..."
-      exit 1
-    fi
-  fi
-}
-
-# Helper function to clear logs
-clean_logs() {
-  set -euxo pipefail
-
-  local TMP_DATADIR="$1"
-  local logfile="${TMP_DATADIR}/debug.log"
-
-  echo "Checking for ${logfile}"
-  if [ -e "${logfile}" ]; then
-    echo "Removing ${logfile}"
-    rm "${logfile}"
-  fi
-}
-
-# Execute CMD before each set of timing runs.
-setup_run() {
-  set -euxo pipefail
-
-  local TMP_DATADIR="$1"
-  local commit="$2"
-  clean_datadir "${TMP_DATADIR}"
-}
-
-# Execute CMD before each timing run.
-prepare_run() {
-  set -euxo pipefail
-
-  local TMP_DATADIR="$1"
-  local ORIGINAL_DATADIR="$2"
-
-  # Run the actual preparation steps
-  clean_datadir "${TMP_DATADIR}"
-  # Don't copy hidden files so use *
-  taskset -c 0-15 cp -r "$ORIGINAL_DATADIR"/* "$TMP_DATADIR"
-  # Clear page caches
-  sync && echo 3 | sudo tee /proc/sys/vm/drop_caches > /dev/null
-  clean_logs "${TMP_DATADIR}"
-}
-
-# Executed after each timing run
+# Executed after each timing run - generates plots and handles flamegraph
 conclude_run() {
   set -euxo pipefail
 
@@ -93,17 +34,6 @@ conclude_run() {
   fi
 }
 
-# Execute CMD after the completion of all benchmarking runs for each individual
-# command to be benchmarked.
-cleanup_run() {
-  set -euxo pipefail
-
-  local TMP_DATADIR="$1"
-
-  # Clean up the datadir
-  clean_datadir "${TMP_DATADIR}"
-}
-
 run_benchmark() {
   local base_commit="$1"
   local head_commit="$2"
@@ -118,12 +48,8 @@ run_benchmark() {
   local BINARIES_DIR="${11}"
 
   # Export functions so they can be used by hyperfine
-  export -f setup_run
-  export -f prepare_run
+  export_shared_functions
   export -f conclude_run
-  export -f cleanup_run
-  export -f clean_datadir
-  export -f clean_logs
 
   # Debug: Print all variables being used
   echo "=== Debug Information ==="
@@ -138,12 +64,12 @@ run_benchmark() {
   echo "stop_at_height: ${stop_at_height}"
   echo "connect_address: ${connect_address}"
   echo "dbcache: ${dbcache}"
-  echo "\n"
+  printf '\n'
 
   # Run hyperfine
   hyperfine \
     --shell=bash \
-    --setup "setup_run ${TMP_DATADIR} {commit}" \
+    --setup "setup_run ${TMP_DATADIR}" \
     --prepare "prepare_run ${TMP_DATADIR} ${ORIGINAL_DATADIR}" \
     --conclude "conclude_run {commit} ${TMP_DATADIR} ${png_dir}" \
     --cleanup "cleanup_run ${TMP_DATADIR}" \

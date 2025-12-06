@@ -141,6 +141,14 @@ jobs:
             fs.writeFileSync(`${resultDir}/results.json`, JSON.stringify(combinedResults, null, 2));
 
             // Create index.html for this run
+            // Sort results by network then by command type (base first)
+            const sortedResults = combinedResults.results.sort((a, b) => {
+              if (a.network !== b.network) return a.network.localeCompare(b.network);
+              const aIsBase = a.command.includes('base');
+              const bIsBase = b.command.includes('base');
+              return bIsBase - aIsBase; // base first
+            });
+
             const indexHtml = `<!DOCTYPE html>
             <html>
               <head>
@@ -152,70 +160,103 @@ jobs:
                   <h1 class="text-3xl font-bold mb-8">Benchmark Results</h1>
                   <div class="bg-white rounded-lg shadow p-6 mb-8">
                     <h2 class="text-xl font-semibold mb-4">PR #${prNumber} - Run ${runId}</h2>
-                    ${networks.map(network => `
-                      <div class="mb-8">
-                        <h3 class="text-lg font-semibold mb-4 capitalize">
-                          ${network} Results
-                          ${combinedResults.speedups[network] ?
-                            `<span class="text-sm font-normal ml-2">(${combinedResults.speedups[network]}% speedup)</span>`
-                            : ''}
-                        </h3>
-                        <div class="overflow-x-auto">
-                          ${combinedResults.results
-                            .filter(result => result.network === network)
-                            .map(result => {
-                              const commitShortId = result.parameters.commit.slice(0, 8);
-                              const flameGraphFile = `${network}-${result.parameters.commit}-flamegraph.svg`;
-                              const flameGraphPath = `${resultDir}/${network}-${result.parameters.commit}-flamegraph.svg`;
 
-                              // Query PNG files dynamically
-                              const plotDir = `${resultDir}/${network}-plots`;
-                              const plots = fs.existsSync(plotDir)
-                                ? fs.readdirSync(plotDir)
-                                    .filter(plot => plot.startsWith(`${result.parameters.commit}-`))
-                                    .map(plot => `
-                                      <a href="${network}-plots/${plot}" target="_blank">
-                                        <img src="${network}-plots/${plot}" alt="${plot}" class="mb-4 max-w-full h-auto">
-                                      </a>
-                                    `)
-                                    .join('')
-                                : '';
+                    <!-- Unified Run Data Table -->
+                    <h3 class="text-lg font-semibold mb-4">Run Data</h3>
+                    <div class="overflow-x-auto mb-8">
+                      <table class="min-w-full table-auto">
+                        <thead>
+                          <tr class="bg-gray-50">
+                            <th class="px-4 py-2 text-left">Network</th>
+                            <th class="px-4 py-2">Command</th>
+                            <th class="px-4 py-2">Mean (s)</th>
+                            <th class="px-4 py-2">Std Dev</th>
+                            <th class="px-4 py-2">User (s)</th>
+                            <th class="px-4 py-2">System (s)</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          ${sortedResults.map(result => `
+                            <tr class="border-t">
+                              <td class="px-4 py-2 font-mono text-sm">${result.network}</td>
+                              <td class="px-4 py-2 font-mono text-sm text-center">
+                                ${result.command.replace(
+                                  /\((\w+)\)/,
+                                  (_, commit) => `(<a href="https://github.com/bitcoin-dev-tools/benchcoin/commit/${commit}" target="_blank" class="text-blue-600 hover:underline">${commit.slice(0, 8)}</a>)`
+                                )}
+                              </td>
+                              <td class="px-4 py-2 text-center">${result.mean.toFixed(3)}</td>
+                              <td class="px-4 py-2 text-center">${result.stddev?.toFixed(3) || 'N/A'}</td>
+                              <td class="px-4 py-2 text-center">${result.user.toFixed(3)}</td>
+                              <td class="px-4 py-2 text-center">${result.system.toFixed(3)}</td>
+                            </tr>
+                          `).join('')}
+                        </tbody>
+                      </table>
+                    </div>
 
-                              return `
-                                <table class="min-w-full table-auto">
-                                  <thead>
-                                    <tr class="bg-gray-50">
-                                      <th class="px-4 py-2">Command</th>
-                                      <th class="px-4 py-2">Mean (s)</th>
-                                      <th class="px-4 py-2">Std Dev</th>
-                                      <th class="px-4 py-2">User (s)</th>
-                                      <th class="px-4 py-2">System (s)</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    <tr class="border-t">
-                                      <td class="px-4 py-2 font-mono text-sm text-center">
-                                        ${result.command.replace(
-                                          /\((\w+)\)/,
-                                          (_, commit) => `(<a href="https://github.com/bitcoin-dev-tools/benchcoin/commit/${commit}" target="_blank">${commit.slice(0, 8)}</a>)`
-                                        )}
-                                      </td>
-                                      <td class="px-4 py-2 text-center">${result.mean.toFixed(3)}</td>
-                                      <td class="px-4 py-2 text-center">${result.stddev?.toFixed(3) || 'N/A'}</td>
-                                      <td class="px-4 py-2 text-center">${result.user.toFixed(3)}</td>
-                                      <td class="px-4 py-2 text-center">${result.system.toFixed(3)}</td>
-                                    </tr>
-                                  </tbody>
-                                </table>
-                                ${fs.existsSync(flameGraphPath) ? `
-                                  <object data="${flameGraphFile}" type="image/svg+xml" width="100%" style="height: 100%;" class="mb-4"></object>
-                                ` : ''}
-                                ${plots}
-                              `;
-                            }).join('')}
+                    <!-- Speedup Summary Table -->
+                    <h3 class="text-lg font-semibold mb-4">Speedup Summary</h3>
+                    <div class="overflow-x-auto mb-8">
+                      <table class="min-w-full table-auto">
+                        <thead>
+                          <tr class="bg-gray-50">
+                            <th class="px-4 py-2 text-left">Network</th>
+                            <th class="px-4 py-2">Speedup (%)</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          ${Object.entries(combinedResults.speedups).map(([network, speedup]) => `
+                            <tr class="border-t">
+                              <td class="px-4 py-2 font-mono text-sm">${network}</td>
+                              <td class="px-4 py-2 text-center ${parseFloat(speedup) > 0 ? 'text-green-600' : parseFloat(speedup) < 0 ? 'text-red-600' : ''}">${speedup}%</td>
+                            </tr>
+                          `).join('')}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <!-- Graphs and Flamegraphs -->
+                    ${networks.filter(network => network.includes('instrumented')).map(network => {
+                      const networkResults = combinedResults.results.filter(r => r.network === network);
+                      const graphsHtml = networkResults.map(result => {
+                        const flameGraphFile = `${network}-${result.parameters.commit}-flamegraph.svg`;
+                        const flameGraphPath = `${resultDir}/${network}-${result.parameters.commit}-flamegraph.svg`;
+
+                        const plotDir = `${resultDir}/${network}-plots`;
+                        const plots = fs.existsSync(plotDir)
+                          ? fs.readdirSync(plotDir)
+                              .filter(plot => plot.startsWith(`${result.parameters.commit}-`))
+                              .map(plot => `
+                                <a href="${network}-plots/${plot}" target="_blank">
+                                  <img src="${network}-plots/${plot}" alt="${plot}" class="mb-4 max-w-full h-auto">
+                                </a>
+                              `)
+                              .join('')
+                          : '';
+
+                        if (!fs.existsSync(flameGraphPath) && !plots) return '';
+
+                        return `
+                          <div class="mb-4">
+                            <h4 class="text-md font-medium mb-2">${result.command.replace(/\((\w+)\)/, (_, commit) => `(${commit.slice(0, 8)})`)}</h4>
+                            ${fs.existsSync(flameGraphPath) ? `
+                              <object data="${flameGraphFile}" type="image/svg+xml" width="100%" style="height: 100%;" class="mb-4"></object>
+                            ` : ''}
+                            ${plots}
+                          </div>
+                        `;
+                      }).join('');
+
+                      if (!graphsHtml.trim()) return '';
+
+                      return `
+                        <div class="mb-8">
+                          <h3 class="text-lg font-semibold mb-4 capitalize">${network} Graphs</h3>
+                          ${graphsHtml}
                         </div>
-                      </div>
-                    `).join('')}
+                      `;
+                    }).join('')}
                   </div>
                 </div>
               </body>

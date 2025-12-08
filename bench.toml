@@ -1,0 +1,30 @@
+# Benchcoin configuration
+# Values here override built-in defaults but are overridden by environment
+# variables (BENCH_*) and CLI arguments.
+
+[defaults]
+chain = "main"
+dbcache = 450
+stop_height = 855000
+runs = 3
+# connect = ""  # Empty or omit to use public P2P network
+
+[paths]
+binaries_dir = "./binaries"
+output_dir = "./bench-output"
+
+# Profiles override specific defaults
+# Usage: bench.py --profile quick full HEAD~1 HEAD
+
+[profiles.quick]
+stop_height = 1100
+runs = 3
+
+[profiles.full]
+stop_height = 855000
+runs = 3
+
+[profiles.ci]
+stop_height = 855000
+runs = 3
+connect = "148.251.128.115:33333"

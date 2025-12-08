@@ -30,16 +30,16 @@
           ];
           CXXFlags = "${CFlags} -fno-omit-frame-pointer";
 
-          nativeBuildInputs = with pkgs; [
-            cmake
-            ninja
-            pkg-config
-            python3
+          nativeBuildInputs = [
+            pkgs.cmake
+            pkgs.ninja
+            pkgs.pkg-config
+            pkgs.python3
           ];
 
-          buildInputs = with pkgs; [
-            boost188.dev
-            libevent.dev
+          buildInputs = [
+            pkgs.boost188.dev
+            pkgs.libevent.dev
           ];
 
           cmakeFlags = [
@@ -156,6 +156,8 @@
               pkgs.just
               pkgs.perf
               pkgs.perf-tools
+              pkgs.python312
+              pkgs.python312Packages.matplotlib
               pkgs.util-linux
 
               # Binary patching

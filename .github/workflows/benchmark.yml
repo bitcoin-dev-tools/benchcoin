@@ -3,6 +3,7 @@ on:
   pull_request:
     branches:
       - master
+
 jobs:
   build-binaries:
     runs-on: [self-hosted, linux, x64]
@@ -13,159 +14,175 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
+
       - name: Fetch base commit
         run: |
-          echo "CHECKOUT_COMMIT=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+          echo "HEAD_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
           git fetch --depth=1 origin ${{ github.event.pull_request.base.sha }}
+
       - name: Build both binaries
-        env:
-          CCACHE_DIR: /nix/var/cache/ccache
         run: |
-          mkdir -p ${{ runner.temp }}/binaries/base
-          mkdir -p ${{ runner.temp }}/binaries/head
-          nix develop --command bash -c '
-            just build-binaries $BASE_SHA $CHECKOUT_COMMIT
-            cp binaries/base/bitcoind ${{ runner.temp }}/binaries/base/bitcoind
-            cp binaries/head/bitcoind ${{ runner.temp }}/binaries/head/bitcoind
-          '
+          nix develop --command python3 bench.py build \
+            --binaries-dir ${{ runner.temp }}/binaries \
+            $BASE_SHA $HEAD_SHA
+
       - name: Upload binaries
         uses: actions/upload-artifact@v4
         with:
           name: bitcoind-binaries
           path: ${{ runner.temp }}/binaries/
+
   uninstrumented:
     needs: build-binaries
     strategy:
       matrix:
         include:
-          - network: mainnet
-            name: mainnet-default-uninstrumented
+          - name: mainnet-default-uninstrumented
             timeout: 600
-            datadir_path: /data/pruned-840k
             dbcache: 450
-          - network: mainnet
-            name: mainnet-large-uninstrumented
+          - name: mainnet-large-uninstrumented
             timeout: 600
-            datadir_path: /data/pruned-840k
             dbcache: 32000
     runs-on: [self-hosted, linux, x64]
     timeout-minutes: ${{ matrix.timeout }}
     env:
-      ORIGINAL_DATADIR: ${{ matrix.datadir_path }}
+      ORIGINAL_DATADIR: /data/pruned-840k
       BASE_SHA: ${{ github.event.pull_request.base.sha }}
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
+
       - name: Download binaries
         uses: actions/download-artifact@v4
         with:
           name: bitcoind-binaries
           path: ${{ runner.temp }}/binaries
+
       - name: Set binary permissions
         run: |
           chmod +x ${{ runner.temp }}/binaries/base/bitcoind
           chmod +x ${{ runner.temp }}/binaries/head/bitcoind
+
       - name: Fetch base commit
         run: |
-          echo "CHECKOUT_COMMIT=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+          echo "HEAD_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
           git fetch --depth=1 origin ${{ github.event.pull_request.base.sha }}
-      - name: Run AssumeUTXO ${{ matrix.network }}
-        env:
-          TMP_DATADIR: "${{ runner.temp }}/base_datadir"
-          BINARIES_DIR: "${{ runner.temp }}/binaries"
+
+      - name: Run benchmark
         run: |
-          mkdir -p "$TMP_DATADIR"
-          nix develop --command just run-${{ matrix.network }}-ci $BASE_SHA $CHECKOUT_COMMIT $TMP_DATADIR $ORIGINAL_DATADIR ${{ runner.temp }}/results.json ${{ matrix.dbcache }} $BINARIES_DIR
-      - uses: actions/upload-artifact@v4
+          nix develop --command python3 bench.py run \
+            --profile ci \
+            --binaries-dir ${{ runner.temp }}/binaries \
+            --datadir $ORIGINAL_DATADIR \
+            --tmp-datadir ${{ runner.temp }}/datadir \
+            --output-dir ${{ runner.temp }}/output \
+            --dbcache ${{ matrix.dbcache }} \
+            $BASE_SHA $HEAD_SHA
+
+      - name: Upload results
+        uses: actions/upload-artifact@v4
         with:
           name: result-${{ matrix.name }}
-          path: "${{ runner.temp }}/results.json"
-      - name: Write GitHub and runner context files
+          path: ${{ runner.temp }}/output/results.json
+
+      - name: Write context metadata
         env:
           GITHUB_CONTEXT: ${{ toJSON(github) }}
           RUNNER_CONTEXT: ${{ toJSON(runner) }}
         run: |
-          mkdir -p contexts
-          nix develop --command bash -c '
-            echo "$GITHUB_CONTEXT" | jq "del(.token)" > contexts/github.json
-            echo "$RUNNER_CONTEXT" > contexts/runner.json
-          '
-      - name: Upload context metadata as artifact
+          mkdir -p ${{ runner.temp }}/contexts
+          echo "$GITHUB_CONTEXT" | jq "del(.token)" > ${{ runner.temp }}/contexts/github.json
+          echo "$RUNNER_CONTEXT" > ${{ runner.temp }}/contexts/runner.json
+
+      - name: Upload context metadata
         uses: actions/upload-artifact@v4
         with:
           name: run-metadata-${{ matrix.name }}
-          path: ./contexts/
+          path: ${{ runner.temp }}/contexts/
+
   instrumented:
     needs: build-binaries
     strategy:
       matrix:
         include:
-          - network: mainnet
-            name: mainnet-default-instrumented
+          - name: mainnet-default-instrumented
             timeout: 600
-            datadir_path: /data/pruned-840k
             dbcache: 450
-          - network: mainnet
-            name: mainnet-large-instrumented
+          - name: mainnet-large-instrumented
             timeout: 600
-            datadir_path: /data/pruned-840k
             dbcache: 32000
     runs-on: [self-hosted, linux, x64]
     timeout-minutes: ${{ matrix.timeout }}
     env:
-      ORIGINAL_DATADIR: ${{ matrix.datadir_path }}
+      ORIGINAL_DATADIR: /data/pruned-840k
       BASE_SHA: ${{ github.event.pull_request.base.sha }}
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
+
       - name: Download binaries
         uses: actions/download-artifact@v4
         with:
           name: bitcoind-binaries
           path: ${{ runner.temp }}/binaries
+
       - name: Set binary permissions
         run: |
           chmod +x ${{ runner.temp }}/binaries/base/bitcoind
           chmod +x ${{ runner.temp }}/binaries/head/bitcoind
+
       - name: Fetch base commit
         run: |
-          echo "CHECKOUT_COMMIT=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+          echo "HEAD_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
           git fetch --depth=1 origin ${{ github.event.pull_request.base.sha }}
-      - name: Run AssumeUTXO ${{ matrix.network }}
-        env:
-          TMP_DATADIR: "${{ runner.temp }}/base_datadir"
-          BINARIES_DIR: "${{ runner.temp }}/binaries"
+
+      - name: Run instrumented benchmark
         run: |
-          mkdir -p "$TMP_DATADIR"
-          nix develop --command just run-${{ matrix.network }}-ci-instrumented $BASE_SHA $CHECKOUT_COMMIT $TMP_DATADIR $ORIGINAL_DATADIR ${{ runner.temp }}/results.json ${{ matrix.dbcache }} ${{ runner.temp }}/pngs $BINARIES_DIR
-      - uses: actions/upload-artifact@v4
+          nix develop --command python3 bench.py run \
+            --profile ci \
+            --instrumented \
+            --binaries-dir ${{ runner.temp }}/binaries \
+            --datadir $ORIGINAL_DATADIR \
+            --tmp-datadir ${{ runner.temp }}/datadir \
+            --output-dir ${{ runner.temp }}/output \
+            --dbcache ${{ matrix.dbcache }} \
+            $BASE_SHA $HEAD_SHA
+
+      - name: Upload results
+        uses: actions/upload-artifact@v4
         with:
           name: result-${{ matrix.name }}
-          path: "${{ runner.temp }}/results.json"
-      - uses: actions/upload-artifact@v4
+          path: ${{ runner.temp }}/output/results.json
+
+      - name: Upload plots
+        uses: actions/upload-artifact@v4
         with:
           name: pngs-${{ matrix.name }}
-          path: "${{ runner.temp }}/pngs/*.png"
-      - uses: actions/upload-artifact@v4
+          path: ${{ runner.temp }}/output/plots/*.png
+          if-no-files-found: ignore
+
+      - name: Upload flamegraphs
+        uses: actions/upload-artifact@v4
         with:
           name: flamegraph-${{ matrix.name }}
-          path: "**/*-flamegraph.svg"
-      - name: Write GitHub and runner context files
+          path: ${{ runner.temp }}/output/*-flamegraph.svg
+          if-no-files-found: ignore
+
+      - name: Write context metadata
         env:
           GITHUB_CONTEXT: ${{ toJSON(github) }}
           RUNNER_CONTEXT: ${{ toJSON(runner) }}
         run: |
-          mkdir -p contexts
-          nix develop --command bash -c '
-            echo "$GITHUB_CONTEXT" | jq "del(.token)" > contexts/github.json
-            echo "$RUNNER_CONTEXT" > contexts/runner.json
-          '
-      - name: Upload context metadata as artifact
+          mkdir -p ${{ runner.temp }}/contexts
+          echo "$GITHUB_CONTEXT" | jq "del(.token)" > ${{ runner.temp }}/contexts/github.json
+          echo "$RUNNER_CONTEXT" > ${{ runner.temp }}/contexts/runner.json
+
+      - name: Upload context metadata
         uses: actions/upload-artifact@v4
         with:
           name: run-metadata-${{ matrix.name }}
-          path: ./contexts/
+          path: ${{ runner.temp }}/contexts/

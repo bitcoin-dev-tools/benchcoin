@@ -72,8 +72,7 @@ jobs:
 
       - name: Run benchmark
         run: |
-          nix develop --command python3 bench.py run \
-            --profile ci \
+          nix develop --command python3 bench.py --profile ci run \
             --binaries-dir ${{ runner.temp }}/binaries \
             --datadir $ORIGINAL_DATADIR \
             --tmp-datadir ${{ runner.temp }}/datadir \
@@ -142,8 +141,7 @@ jobs:
 
       - name: Run instrumented benchmark
         run: |
-          nix develop --command python3 bench.py run \
-            --profile ci \
+          nix develop --command python3 bench.py --profile ci run \
             --instrumented \
             --binaries-dir ${{ runner.temp }}/binaries \
             --datadir $ORIGINAL_DATADIR \

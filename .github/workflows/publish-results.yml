@@ -101,6 +101,11 @@ jobs:
                 // Add network name to each result and collect means
                 networkResults.results.forEach(result => {
                   result.network = network;
+                  // Extract commit from command string like "base (364a7bb8701e)"
+                  const commitMatch = result.command.match(/\(([a-f0-9]+)\)/);
+                  if (commitMatch) {
+                    result.parameters = { commit: commitMatch[1] };
+                  }
                   combinedResults.results.push(result);
                   if (result.command.includes('base')) {
                     baseMean = result.mean;

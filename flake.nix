@@ -62,7 +62,7 @@
             "-DWITH_ZMQ=OFF"
           ];
         in
-        pkgs.ccacheStdenv.mkDerivation {
+        pkgs.stdenv.mkDerivation {
           inherit
             pname
             version

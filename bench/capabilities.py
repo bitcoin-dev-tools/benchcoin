@@ -28,10 +28,6 @@ class Capabilities:
     can_drop_caches: bool
     drop_caches_path: str | None
 
-    # CPU affinity and scheduling
-    can_pin_cpu: bool
-    can_set_scheduler: bool
-
     # Required tools
     has_hyperfine: bool
     has_flamegraph: bool
@@ -84,12 +80,6 @@ class Capabilities:
                 "drop-caches not available - cache won't be cleared between runs"
             )
 
-        if not self.can_pin_cpu:
-            warnings.append("taskset not available - CPU affinity won't be set")
-
-        if not self.can_set_scheduler:
-            warnings.append("chrt not available - scheduler priority won't be set")
-
         return warnings
 
 
@@ -106,38 +96,6 @@ def _find_drop_caches() -> str | None:
     return None
 
 
-def _check_taskset() -> bool:
-    """Check if taskset is available and works."""
-    if not _check_executable("taskset"):
-        return False
-
-    # Try to run it to verify it works
-    try:
-        result = subprocess.run(
-            ["taskset", "-c", "0", "true"],
-            timeout=5,
-        )
-        return result.returncode == 0
-    except (subprocess.TimeoutExpired, OSError):
-        return False
-
-
-def _check_chrt() -> bool:
-    """Check if chrt is available and works."""
-    if not _check_executable("chrt"):
-        return False
-
-    # Try to run it to verify it works
-    try:
-        result = subprocess.run(
-            ["chrt", "-o", "0", "true"],
-            timeout=5,
-        )
-        return result.returncode == 0
-    except (subprocess.TimeoutExpired, OSError):
-        return False
-
-
 def _is_nixos() -> bool:
     """Check if we're running on NixOS."""
     return Path("/etc/NIXOS").exists()
@@ -150,8 +108,6 @@ def detect_capabilities() -> Capabilities:
     return Capabilities(
         can_drop_caches=drop_caches_path is not None,
         drop_caches_path=drop_caches_path,
-        can_pin_cpu=_check_taskset(),
-        can_set_scheduler=_check_chrt(),
         has_hyperfine=_check_executable("hyperfine"),
         has_flamegraph=_check_executable("flamegraph"),
         has_perf=_check_executable("perf"),

@@ -134,11 +134,8 @@ class BuildPhase:
         # Checkout the commit
         git_checkout(commit, self.repo_path)
 
-        # Build with nix (use all available cores for faster builds)
-        cmd = []
-        if self.capabilities.can_pin_cpu:
-            cmd += ["taskset", "-c", f"2-{self.capabilities.cpu_count - 1}"]
-        cmd += ["nix", "build", "-L"]
+        # Build with nix
+        cmd = ["nix", "build", "-L"]
 
         logger.debug(f"Running: {' '.join(cmd)}")
         result = subprocess.run(

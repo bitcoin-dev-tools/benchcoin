@@ -202,13 +202,8 @@ class BenchmarkPhase:
             f'rm -rf "{tmp_datadir}"/*',
         ]
 
-        # Copy datadir with optional CPU affinity
-        if self.capabilities.can_pin_cpu and not self.config.no_cpu_pinning:
-            commands.append(
-                f'taskset -c 0-15 cp -r "{original_datadir}"/* "{tmp_datadir}"'
-            )
-        else:
-            commands.append(f'cp -r "{original_datadir}"/* "{tmp_datadir}"')
+        # Copy datadir
+        commands.append(f'cp -r "{original_datadir}"/* "{tmp_datadir}"')
 
         # Drop caches if available
         if self.capabilities.can_drop_caches and not self.config.no_cache_drop:
@@ -238,22 +233,11 @@ class BenchmarkPhase:
 
         # Add flamegraph wrapper for instrumented mode
         if self.config.instrumented:
-            # Flamegraph runs on core 1
-            if self.capabilities.can_pin_cpu and not self.config.no_cpu_pinning:
-                parts.append("taskset -c 1")
             parts.append("flamegraph")
             parts.append("--palette bitcoin")
             parts.append("--title 'bitcoind IBD'")
             parts.append("-c 'record -F 101 --call-graph fp'")
             parts.append("--")
-
-        # Add CPU affinity for bitcoind (cores 2-15)
-        if self.capabilities.can_pin_cpu and not self.config.no_cpu_pinning:
-            parts.append("taskset -c 2-15")
-
-        # Add scheduler priority
-        if self.capabilities.can_set_scheduler and not self.config.no_cpu_pinning:
-            parts.append("chrt -o 0")
 
         # Bitcoind command
         parts.append(str(binary))

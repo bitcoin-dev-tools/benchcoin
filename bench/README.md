@@ -21,7 +21,6 @@ just quick HEAD~1 HEAD /path/to/signet/datadir
 
 Optional (auto-detected, gracefully degrades without):
 - `/run/wrappers/bin/drop-caches` (NixOS) - clears page cache between runs
-- `taskset` / `chrt` - CPU affinity and scheduler priority
 
 ## Commands
 
@@ -70,7 +69,6 @@ Options:
 - `--instrumented` - Enable flamegraph profiling and debug logging
 - `--connect ADDR` - P2P node to sync from (empty = public network)
 - `--chain {main,signet,testnet,regtest}` - Which chain
-- `--no-cpu-pinning` - Disable taskset/chrt
 - `--no-cache-drop` - Don't clear page cache between runs
 
 ### analyze
@@ -193,14 +191,13 @@ The tool auto-detects system capabilities and gracefully degrades:
 ```python
 from bench.capabilities import detect_capabilities
 caps = detect_capabilities()
-# caps.has_hyperfine, caps.can_drop_caches, caps.can_pin_cpu, etc.
+# caps.has_hyperfine, caps.can_drop_caches, etc.
 ```
 
 Missing optional features emit warnings but don't fail:
 
 ```
 WARNING: drop-caches not available - cache won't be cleared between runs
-WARNING: taskset not available - CPU affinity won't be set
 ```
 
 Missing required features (hyperfine, flamegraph for instrumented) cause errors.

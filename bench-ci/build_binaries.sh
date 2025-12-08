@@ -25,23 +25,9 @@ for build in "base:${base_commit}" "head:${head_commit}"; do
   name="${build%%:*}"
   commit="${build#*:}"
   git checkout "$commit"
-  # Use environment variables if set, otherwise use defaults
-  HOSTS="${HOSTS:-x86_64-linux-gnu}" \
-  SOURCES_PATH="${SOURCES_PATH:-/data/SOURCES_PATH}" \
-  BASE_CACHE="${BASE_CACHE:-/data/BASE_CACHE}" \
-  taskset -c 2-15 chrt -f 1 bench-ci/guix/guix-build
-
-  # Truncate commit hash to 12 characters
-  short_commit=$(echo "$commit" | cut -c 1-12)
-
-  # Extract the Guix output
-  tar -xzf "guix-build-${short_commit}/output/x86_64-linux-gnu/bitcoin-${short_commit}-x86_64-linux-gnu.tar.gz"
-
-  # Copy the binary to our binaries directory
-  cp "bitcoin-${short_commit}/bin/bitcoind" "binaries/${name}/bitcoind"
-
-  # Cleanup extracted files
-  rm -rf "bitcoin-${short_commit}"
+  taskset -c 2-15 chrt -f 1 nix build -L
+  cp "./result/bin/bitcoind" "./binaries/${name}/bitcoind"
+  rm -rf "./result"
 done
 
 # Restore initial git state

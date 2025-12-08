@@ -7,10 +7,9 @@ default:
 
 # Build base and head binaries for CI
 [group('ci')]
-build-assumeutxo-binaries-guix base_commit head_commit:
+build-binaries base_commit head_commit:
     #!/usr/bin/env bash
     set -euxo pipefail
-    unset SOURCE_DATE_EPOCH # needed to run on NixOS
     ./bench-ci/build_binaries.sh {{ base_commit }} {{ head_commit }}
 
 # Run uninstrumented benchmarks on mainnet

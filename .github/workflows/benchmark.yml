@@ -7,7 +7,6 @@ jobs:
   build-binaries:
     runs-on: [self-hosted, linux, x64]
     env:
-      NIX_PATH: nixpkgs=channel:nixos-unstable
       BASE_SHA: ${{ github.event.pull_request.base.sha }}
     steps:
       - name: Checkout repo
@@ -18,22 +17,17 @@ jobs:
         run: |
           echo "CHECKOUT_COMMIT=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
           git fetch --depth=1 origin ${{ github.event.pull_request.base.sha }}
-      - name: Setup ccache
-        run: |
-          mkdir -p /data/ccache
-          export CCACHE_DIR=/data/ccache
-          export CCACHE_MAXSIZE=50G
-          ccache -M 50G
-          ccache -s
       - name: Build both binaries
         env:
-          CCACHE_DIR: /data/ccache
+          CCACHE_DIR: /nix/var/cache/ccache
         run: |
           mkdir -p ${{ runner.temp }}/binaries/base
           mkdir -p ${{ runner.temp }}/binaries/head
-          nix-shell --command "just build-assumeutxo-binaries-guix $BASE_SHA $CHECKOUT_COMMIT"
-          cp binaries/base/bitcoind ${{ runner.temp }}/binaries/base/bitcoind
-          cp binaries/head/bitcoind ${{ runner.temp }}/binaries/head/bitcoind
+          nix develop --command bash -c '
+            just build-binaries $BASE_SHA $CHECKOUT_COMMIT
+            cp binaries/base/bitcoind ${{ runner.temp }}/binaries/base/bitcoind
+            cp binaries/head/bitcoind ${{ runner.temp }}/binaries/head/bitcoind
+          '
       - name: Upload binaries
         uses: actions/upload-artifact@v4
         with:
@@ -57,7 +51,6 @@ jobs:
     runs-on: [self-hosted, linux, x64]
     timeout-minutes: ${{ matrix.timeout }}
     env:
-      NIX_PATH: nixpkgs=channel:nixos-unstable
       ORIGINAL_DATADIR: ${{ matrix.datadir_path }}
       BASE_SHA: ${{ github.event.pull_request.base.sha }}
     steps:
@@ -83,9 +76,8 @@ jobs:
           TMP_DATADIR: "${{ runner.temp }}/base_datadir"
           BINARIES_DIR: "${{ runner.temp }}/binaries"
         run: |
-          env
           mkdir -p "$TMP_DATADIR"
-          nix-shell --command "just run-${{ matrix.network }}-ci $BASE_SHA $CHECKOUT_COMMIT $TMP_DATADIR $ORIGINAL_DATADIR ${{ runner.temp }}/results.json ${{ matrix.dbcache }} $BINARIES_DIR"
+          nix develop --command just run-${{ matrix.network }}-ci $BASE_SHA $CHECKOUT_COMMIT $TMP_DATADIR $ORIGINAL_DATADIR ${{ runner.temp }}/results.json ${{ matrix.dbcache }} $BINARIES_DIR
       - uses: actions/upload-artifact@v4
         with:
           name: result-${{ matrix.name }}
@@ -95,9 +87,11 @@ jobs:
           GITHUB_CONTEXT: ${{ toJSON(github) }}
           RUNNER_CONTEXT: ${{ toJSON(runner) }}
         run: |
-          mkdir contexts
-          echo "$GITHUB_CONTEXT" | nix-shell -p jq --command "jq 'del(.token)' > contexts/github.json"
-          echo "$RUNNER_CONTEXT" > contexts/runner.json
+          mkdir -p contexts
+          nix develop --command bash -c '
+            echo "$GITHUB_CONTEXT" | jq "del(.token)" > contexts/github.json
+            echo "$RUNNER_CONTEXT" > contexts/runner.json
+          '
       - name: Upload context metadata as artifact
         uses: actions/upload-artifact@v4
         with:
@@ -121,7 +115,6 @@ jobs:
     runs-on: [self-hosted, linux, x64]
     timeout-minutes: ${{ matrix.timeout }}
     env:
-      NIX_PATH: nixpkgs=channel:nixos-unstable
       ORIGINAL_DATADIR: ${{ matrix.datadir_path }}
       BASE_SHA: ${{ github.event.pull_request.base.sha }}
     steps:
@@ -147,9 +140,8 @@ jobs:
           TMP_DATADIR: "${{ runner.temp }}/base_datadir"
           BINARIES_DIR: "${{ runner.temp }}/binaries"
         run: |
-          env
           mkdir -p "$TMP_DATADIR"
-          nix-shell --command "just run-${{ matrix.network }}-ci-instrumented $BASE_SHA $CHECKOUT_COMMIT $TMP_DATADIR $ORIGINAL_DATADIR ${{ runner.temp }}/results.json ${{ matrix.dbcache }} ${{ runner.temp }}/pngs $BINARIES_DIR"
+          nix develop --command just run-${{ matrix.network }}-ci-instrumented $BASE_SHA $CHECKOUT_COMMIT $TMP_DATADIR $ORIGINAL_DATADIR ${{ runner.temp }}/results.json ${{ matrix.dbcache }} ${{ runner.temp }}/pngs $BINARIES_DIR
       - uses: actions/upload-artifact@v4
         with:
           name: result-${{ matrix.name }}
@@ -167,9 +159,11 @@ jobs:
           GITHUB_CONTEXT: ${{ toJSON(github) }}
           RUNNER_CONTEXT: ${{ toJSON(runner) }}
         run: |
-          mkdir contexts
-          echo "$GITHUB_CONTEXT" | nix-shell -p jq --command "jq 'del(.token)' > contexts/github.json"
-          echo "$RUNNER_CONTEXT" > contexts/runner.json
+          mkdir -p contexts
+          nix develop --command bash -c '
+            echo "$GITHUB_CONTEXT" | jq "del(.token)" > contexts/github.json
+            echo "$RUNNER_CONTEXT" > contexts/runner.json
+          '
       - name: Upload context metadata as artifact
         uses: actions/upload-artifact@v4
         with:

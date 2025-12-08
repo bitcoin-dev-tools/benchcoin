@@ -62,7 +62,7 @@
             "-DWITH_ZMQ=OFF"
           ];
         in
-        pkgs.stdenv.mkDerivation {
+        pkgs.ccacheStdenv.mkDerivation {
           inherit
             pname
             version
@@ -149,10 +149,11 @@
           default = pkgs.mkShell {
             buildInputs = [
               # Benchmarking
-              pkgs.cargo-flamegraph
+              cargo-flamegraph
               pkgs.flamegraph
               pkgs.hyperfine
               pkgs.jq
+              pkgs.just
               pkgs.perf
               pkgs.perf-tools
               pkgs.util-linux

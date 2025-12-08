@@ -92,7 +92,7 @@ jobs:
           RUNNER_CONTEXT: ${{ toJSON(runner) }}
         run: |
           mkdir -p ${{ runner.temp }}/contexts
-          echo "$GITHUB_CONTEXT" | jq "del(.token)" > ${{ runner.temp }}/contexts/github.json
+          echo "$GITHUB_CONTEXT" | nix develop --command jq "del(.token)" > ${{ runner.temp }}/contexts/github.json
           echo "$RUNNER_CONTEXT" > ${{ runner.temp }}/contexts/runner.json
 
       - name: Upload context metadata
@@ -176,7 +176,7 @@ jobs:
           RUNNER_CONTEXT: ${{ toJSON(runner) }}
         run: |
           mkdir -p ${{ runner.temp }}/contexts
-          echo "$GITHUB_CONTEXT" | jq "del(.token)" > ${{ runner.temp }}/contexts/github.json
+          echo "$GITHUB_CONTEXT" | nix develop --command jq "del(.token)" > ${{ runner.temp }}/contexts/github.json
           echo "$RUNNER_CONTEXT" > ${{ runner.temp }}/contexts/runner.json
 
       - name: Upload context metadata

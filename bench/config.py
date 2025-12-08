@@ -40,6 +40,7 @@ PROFILES = {
     "ci": {
         "stop_height": 855000,
         "runs": 3,
+        "connect": "148.251.128.115:33333",
     },
 }
 

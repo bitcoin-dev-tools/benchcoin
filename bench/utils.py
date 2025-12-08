@@ -127,21 +127,14 @@ def clean_datadir(datadir: Path) -> None:
 
 
 def copy_datadir(src: Path, dst: Path, capabilities: Capabilities) -> None:
-    """Copy blockchain data from source to destination.
-
-    Uses taskset for CPU affinity if available.
-    """
+    """Copy blockchain data from source to destination."""
     logger.info(f"Copying datadir: {src} -> {dst}")
 
     # Ensure destination exists
     dst.mkdir(parents=True, exist_ok=True)
 
     # Build copy command
-    cmd = []
-    if capabilities.can_pin_cpu:
-        cmd += ["taskset", "-c", "0-15"]
-
-    cmd += ["cp", "-r"]
+    cmd = ["cp", "-r"]
     # Copy contents, not directory itself
     cmd += [str(src) + "/.", str(dst)]
 
@@ -225,18 +218,7 @@ def build_bitcoind_cmd(
         capabilities: System capabilities
         debug_flags: Optional debug flags for instrumented mode
     """
-    cmd = []
-
-    # Add CPU affinity if available and not disabled
-    if capabilities.can_pin_cpu and not config.no_cpu_pinning:
-        cmd += ["taskset", "-c", "2-15"]
-
-    # Add scheduler priority if available
-    if capabilities.can_set_scheduler and not config.no_cpu_pinning:
-        cmd += ["chrt", "-o", "0"]
-
-    # Add bitcoind with options
-    cmd += [
+    cmd = [
         str(binary),
         f"-datadir={datadir}",
         f"-dbcache={config.dbcache}",

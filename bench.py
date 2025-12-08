@@ -39,7 +39,6 @@ def cmd_build(args: argparse.Namespace) -> int:
         cli_args={
             "binaries_dir": args.binaries_dir,
             "skip_existing": args.skip_existing,
-            "no_cpu_pinning": args.no_cpu_pinning,
             "dry_run": args.dry_run,
             "verbose": args.verbose,
         },
@@ -83,7 +82,6 @@ def cmd_run(args: argparse.Namespace) -> int:
             "connect": args.connect,
             "chain": args.chain,
             "instrumented": args.instrumented,
-            "no_cpu_pinning": args.no_cpu_pinning,
             "no_cache_drop": args.no_cache_drop,
             "dry_run": args.dry_run,
             "verbose": args.verbose,
@@ -263,7 +261,6 @@ def cmd_full(args: argparse.Namespace) -> int:
             "chain": args.chain,
             "instrumented": args.instrumented,
             "skip_existing": args.skip_existing,
-            "no_cpu_pinning": args.no_cpu_pinning,
             "no_cache_drop": args.no_cache_drop,
             "dry_run": args.dry_run,
             "verbose": args.verbose,
@@ -396,11 +393,6 @@ def main() -> int:
         action="store_true",
         help="Skip build if binary already exists",
     )
-    build_parser.add_argument(
-        "--no-cpu-pinning",
-        action="store_true",
-        help="Disable CPU affinity",
-    )
     build_parser.set_defaults(func=cmd_build)
 
     # Run command
@@ -460,11 +452,6 @@ def main() -> int:
         "--instrumented",
         action="store_true",
         help="Enable profiling (flamegraph + debug logging)",
-    )
-    run_parser.add_argument(
-        "--no-cpu-pinning",
-        action="store_true",
-        help="Disable CPU affinity and scheduler priority",
     )
     run_parser.add_argument(
         "--no-cache-drop",
@@ -561,11 +548,6 @@ def main() -> int:
         "--skip-existing",
         action="store_true",
         help="Skip build if binary already exists",
-    )
-    full_parser.add_argument(
-        "--no-cpu-pinning",
-        action="store_true",
-        help="Disable CPU affinity and scheduler priority",
     )
     full_parser.add_argument(
         "--no-cache-drop",

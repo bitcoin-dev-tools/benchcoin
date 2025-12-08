@@ -78,7 +78,6 @@ class Config:
     # Behavior flags
     instrumented: bool = False
     skip_existing: bool = False
-    no_cpu_pinning: bool = False
     no_cache_drop: bool = False
     verbose: bool = False
     dry_run: bool = False

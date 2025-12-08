@@ -120,6 +120,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         return 1
 
     phase = BenchmarkPhase(config, capabilities)
+    output_dir = Path(config.output_dir)
 
     try:
         result = phase.run(
@@ -128,9 +129,36 @@ def cmd_run(args: argparse.Namespace) -> int:
             base_binary=base_binary,
             head_binary=head_binary,
             datadir=Path(config.datadir),
-            output_dir=Path(config.output_dir),
+            output_dir=output_dir,
         )
         logger.info(f"Results saved to: {result.results_file}")
+
+        # For instrumented runs, also generate plots
+        if config.instrumented:
+            from bench.analyze import AnalyzePhase
+
+            analyze_phase = AnalyzePhase(config)
+
+            if result.debug_log_base:
+                try:
+                    analyze_phase.run(
+                        commit=args.base_commit,
+                        log_file=result.debug_log_base,
+                        output_dir=output_dir / "plots",
+                    )
+                except Exception as e:
+                    logger.warning(f"Analysis for base failed: {e}")
+
+            if result.debug_log_head:
+                try:
+                    analyze_phase.run(
+                        commit=args.head_commit,
+                        log_file=result.debug_log_head,
+                        output_dir=output_dir / "plots",
+                    )
+                except Exception as e:
+                    logger.warning(f"Analysis for head failed: {e}")
+
         return 0
     except Exception as e:
         logger.error(f"Benchmark failed: {e}")

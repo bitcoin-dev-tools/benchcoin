@@ -25,7 +25,7 @@ for build in "base:${base_commit}" "head:${head_commit}"; do
   name="${build%%:*}"
   commit="${build#*:}"
   git checkout "$commit"
-  taskset -c 2-15 chrt -f 1 nix build -L
+  taskset -c 0-15 nix build -L
   cp "./result/bin/bitcoind" "./binaries/${name}/bitcoind"
   rm -rf "./result"
 done

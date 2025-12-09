@@ -118,10 +118,14 @@ class Config:
         return errors
 
 
-def load_toml(path: Path) -> dict[str, Any]:
-    """Load configuration from TOML file."""
+def load_toml(path: Path) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
+    """Load configuration from TOML file.
+
+    Returns:
+        Tuple of (base_config, profiles_dict)
+    """
     if not path.exists():
-        return {}
+        return {}, {}
 
     with open(path, "rb") as f:
         data = tomllib.load(f)
@@ -133,7 +137,10 @@ def load_toml(path: Path) -> dict[str, Any]:
     if "paths" in data:
         result.update(data["paths"])
 
-    return result
+    # Extract profiles
+    profiles = data.get("profiles", {})
+
+    return result, profiles
 
 
 def load_env() -> dict[str, Any]:
@@ -154,14 +161,29 @@ def load_env() -> dict[str, Any]:
     return result
 
 
-def apply_profile(config: dict[str, Any], profile_name: str) -> dict[str, Any]:
-    """Apply a named profile to configuration."""
-    if profile_name not in PROFILES:
-        return config
+def apply_profile(
+    config: dict[str, Any],
+    profile_name: str,
+    toml_profiles: dict[str, dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Apply a named profile to configuration.
 
+    Args:
+        config: Base configuration dict
+        profile_name: Name of profile to apply
+        toml_profiles: Profiles loaded from TOML file (override built-in)
+    """
     result = config.copy()
-    result.update(PROFILES[profile_name])
     result["profile"] = profile_name
+
+    # Apply built-in profile first
+    if profile_name in PROFILES:
+        result.update(PROFILES[profile_name])
+
+    # Then apply TOML profile (overrides built-in)
+    if toml_profiles and profile_name in toml_profiles:
+        result.update(toml_profiles[profile_name])
+
     return result
 
 
@@ -174,10 +196,11 @@ def build_config(
 
     Priority (lowest to highest):
     1. Built-in defaults
-    2. Config file (bench.toml)
-    3. Profile overrides
-    4. Environment variables
-    5. CLI arguments
+    2. Config file (bench.toml) base settings
+    3. Built-in profile overrides
+    4. Config file profile overrides
+    5. Environment variables
+    6. CLI arguments
     """
     # Start with defaults
     config = DEFAULTS.copy()
@@ -185,11 +208,11 @@ def build_config(
     # Load config file
     if config_file is None:
         config_file = Path("bench.toml")
-    file_config = load_toml(config_file)
+    file_config, toml_profiles = load_toml(config_file)
     config.update(file_config)
 
-    # Apply profile
-    config = apply_profile(config, profile)
+    # Apply profile (built-in first, then TOML overrides)
+    config = apply_profile(config, profile, toml_profiles)
 
     # Load environment variables
     env_config = load_env()

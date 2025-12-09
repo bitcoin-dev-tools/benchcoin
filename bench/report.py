@@ -353,20 +353,12 @@ class ReportGenerator:
         graphs_html = ""
 
         for run in runs:
-            commit = run.parameters.get("commit", "")
-            if not commit:
-                # Try to extract from command
-                match = re.search(r"\(([a-f0-9]+)\)", run.command)
-                if match:
-                    commit = match.group(1)
-
-            if not commit:
-                continue
-
-            short_commit = commit[:12] if len(commit) > 12 else commit
+            # Use the command/name directly (e.g., "base", "head")
+            # This is the name given to the binary in the benchmark
+            name = run.command
 
             # Check for flamegraph
-            flamegraph_name = f"{short_commit}-flamegraph.svg"
+            flamegraph_name = f"{name}-flamegraph.svg"
             flamegraph_path = input_dir / flamegraph_name
 
             # Check for plots
@@ -376,7 +368,7 @@ class ReportGenerator:
                 plot_files = [
                     p.name
                     for p in plots_dir.iterdir()
-                    if p.name.startswith(f"{short_commit}-") and p.suffix == ".png"
+                    if p.name.startswith(f"{name}-") and p.suffix == ".png"
                 ]
 
             if not flamegraph_path.exists() and not plot_files:
@@ -384,7 +376,7 @@ class ReportGenerator:
 
             graphs_html += f"""
             <div class="mb-8">
-              <h4 class="text-md font-medium mb-2">{run.command}</h4>
+              <h4 class="text-md font-medium mb-2">{name}</h4>
             """
 
             if flamegraph_path.exists():

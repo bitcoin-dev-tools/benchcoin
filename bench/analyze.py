@@ -432,7 +432,8 @@ class PlotGenerator:
         plt.grid(True)
 
         min_x, max_x = min(x), max(x)
-        plt.xlim(min_x, max_x)
+        if min_x < max_x:
+            plt.xlim(min_x, max_x)
 
         # Add fork markers for height-based plots
         if is_height_based:

@@ -10,12 +10,14 @@
 #include <primitives/transaction.h>
 #include <serialize.h>
 #include <streams.h>
+#include <sync.h>
 #include <test/util/setup_common.h>
 #include <txdb.h>
 #include <validation.h>
 
 #include <cassert>
 #include <ranges>
+#include <utility>
 
 static void CoinsViewCacheAsyncBenchmark(benchmark::Bench& bench)
 {

@@ -7,8 +7,6 @@
 #include <primitives/block.h>
 #include <primitives/transaction.h>
 #include <primitives/transaction_identifier.h>
-#include <test/util/random.h>
-#include <test/util/setup_common.h>
 #include <txdb.h>
 #include <uint256.h>
 #include <util/byte_units.h>
@@ -17,7 +15,7 @@
 #include <boost/test/unit_test.hpp>
 
 #include <cstdint>
-#include <memory>
+#include <cstring>
 #include <ranges>
 #include <unordered_set>
 
@@ -104,7 +102,7 @@ void CheckCache(const CBlock& block, const CCoinsViewCache& cache)
             txids.emplace(tx->GetHash());
         }
     }
-    BOOST_CHECK(cache.GetCacheSize() == counter);
+    BOOST_CHECK_EQUAL(cache.GetCacheSize(), counter);
 }
 
 
@@ -196,6 +194,26 @@ BOOST_AUTO_TEST_CASE(fetch_main_thread)
     for (auto i{0}; i < 3; ++i) {
         view.StartFetching(block);
         CheckCache(block, view);
+        view.Reset();
+    }
+}
+
+// Access coin that is not a block's input
+BOOST_AUTO_TEST_CASE(access_non_input_coin)
+{
+    const auto block{CreateBlock()};
+    const CCoinsViewDB db{{.path = "", .cache_bytes = 1_MiB, .memory_only = true}, {}};
+    NoAccessCoinsView no_access;
+    CCoinsViewCache main_cache{&no_access};
+    Coin coin{};
+    coin.out.nValue = 1;
+    const COutPoint outpoint{Txid::FromUint256(uint256::ZERO), 0};
+    main_cache.EmplaceCoinInternalDANGER(COutPoint{Txid::FromUint256(uint256::ZERO), 0}, std::move(coin));
+    CoinsViewCacheAsync view{main_cache, db, /*num_workers=*/0};
+    for (auto i{0}; i < 3; ++i) {
+        view.StartFetching(block);
+        const auto& accessed_coin{view.AccessCoin(outpoint)};
+        BOOST_CHECK(!accessed_coin.IsSpent());
         view.Reset();
     }
 }

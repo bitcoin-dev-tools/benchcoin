@@ -2,8 +2,11 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <coins.h>
 #include <coinsviewcacheasync.h>
 #include <consensus/amount.h>
+#include <dbwrapper.h>
+#include <logging.h>
 #include <primitives/block.h>
 #include <primitives/transaction.h>
 #include <primitives/transaction_identifier.h>
@@ -17,6 +20,8 @@
 #include <util/hasher.h>
 
 #include <cstdint>
+#include <cstring>
+#include <limits>
 #include <map>
 #include <optional>
 #include <unordered_set>

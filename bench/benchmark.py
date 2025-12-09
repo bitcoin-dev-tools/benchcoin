@@ -87,6 +87,9 @@ class BenchmarkPhase:
         results_file = output_dir / "results.json"
 
         logger.info("Starting benchmark")
+        logger.info(f"  Output dir: {output_dir}")
+        logger.info(f"  Temp datadir: {tmp_datadir}")
+        logger.info(f"  Source datadir: {datadir}")
         logger.info(f"  Base: {base_commit[:12]}")
         logger.info(f"  Head: {head_commit[:12]}")
         logger.info(f"  Instrumented: {self.config.instrumented}")
@@ -114,6 +117,14 @@ class BenchmarkPhase:
                 output_dir=output_dir,
             )
 
+            # Log the commands being benchmarked
+            base_cmd = self._build_bitcoind_cmd(base_binary, tmp_datadir)
+            head_cmd = self._build_bitcoind_cmd(head_binary, tmp_datadir)
+            logger.info("Base command:")
+            logger.info(f"  {base_cmd}")
+            logger.info("Head command:")
+            logger.info(f"  {head_cmd}")
+
             if self.config.dry_run:
                 logger.info(f"[DRY RUN] Would run: {' '.join(cmd)}")
                 return BenchmarkResult(
@@ -123,8 +134,10 @@ class BenchmarkPhase:
                     instrumented=self.config.instrumented,
                 )
 
-            # Run hyperfine
+            # Log the full hyperfine command
             logger.info("Running hyperfine...")
+            logger.info(f"  Command: {' '.join(cmd[:7])} ...")  # First few args
+            logger.debug(f"  Full command: {' '.join(cmd)}")
             _result = subprocess.run(cmd, check=True)
 
             # Collect results
@@ -137,6 +150,7 @@ class BenchmarkPhase:
 
             # For instrumented runs, collect flamegraphs and debug logs
             if self.config.instrumented:
+                logger.info("Collecting instrumented artifacts...")
                 base_fg = output_dir / f"{base_commit[:12]}-flamegraph.svg"
                 head_fg = output_dir / f"{head_commit[:12]}-flamegraph.svg"
                 base_log = output_dir / f"{base_commit[:12]}-debug.log"
@@ -149,16 +163,21 @@ class BenchmarkPhase:
                 ]:
                     src = Path(src_name)
                     if src.exists():
+                        logger.info(f"  Moving {src_name} -> {dest}")
                         shutil.move(str(src), str(dest))
 
                 if base_fg.exists():
                     benchmark_result.flamegraph_base = base_fg
+                    logger.info(f"  Flamegraph (base): {base_fg}")
                 if head_fg.exists():
                     benchmark_result.flamegraph_head = head_fg
+                    logger.info(f"  Flamegraph (head): {head_fg}")
                 if base_log.exists():
                     benchmark_result.debug_log_base = base_log
+                    logger.info(f"  Debug log (base): {base_log}")
                 if head_log.exists():
                     benchmark_result.debug_log_head = head_log
+                    logger.info(f"  Debug log (head): {head_log}")
 
             # Clean up tmp_datadir
             if tmp_datadir.exists():
@@ -186,6 +205,9 @@ class BenchmarkPhase:
 
         script_path = Path(path)
         self._temp_scripts.append(script_path)
+        logger.debug(f"Created {name} script: {script_path}")
+        for cmd in commands:
+            logger.debug(f"  {cmd}")
         return script_path
 
     def _create_setup_script(self, tmp_datadir: Path) -> Path:

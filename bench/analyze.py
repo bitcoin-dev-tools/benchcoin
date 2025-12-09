@@ -515,7 +515,16 @@ class AnalyzePhase:
         parser = LogParser()
         data = parser.parse_file(log_file)
 
+        # Log parsed data summary
+        logger.info(f"  UpdateTip entries: {len(data.update_tip)}")
+        logger.info(f"  LevelDB compact entries: {len(data.leveldb_compact)}")
+        logger.info(f"  LevelDB gen table entries: {len(data.leveldb_gen_table)}")
+        logger.info(f"  Validation txadd entries: {len(data.validation_txadd)}")
+        logger.info(f"  CoinDB write batch entries: {len(data.coindb_write_batch)}")
+        logger.info(f"  CoinDB commit entries: {len(data.coindb_commit)}")
+
         logger.info(f"Generating plots for {commit[:12]}")
+        logger.info(f"  Output directory: {output_dir}")
         generator = PlotGenerator(commit[:12], output_dir)
         plots = generator.generate_all(data)
 

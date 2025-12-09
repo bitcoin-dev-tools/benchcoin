@@ -71,6 +71,8 @@ class BuildPhase:
         logger.info("Building binaries for comparison:")
         logger.info(f"  Base: {base_hash[:12]} ({base_commit})")
         logger.info(f"  Head: {head_hash[:12]} ({head_commit})")
+        logger.info(f"  Repo: {self.repo_path}")
+        logger.info(f"  Output: {binaries_dir}")
 
         # Setup output directories
         base_dir = binaries_dir / "base"
@@ -132,12 +134,14 @@ class BuildPhase:
             return
 
         # Checkout the commit
+        logger.info(f"  Checking out {commit[:12]}...")
         git_checkout(commit, self.repo_path)
 
         # Build with nix
         cmd = ["nix", "build", "-L"]
 
-        logger.debug(f"Running: {' '.join(cmd)}")
+        logger.info(f"  Running: {' '.join(cmd)}")
+        logger.info(f"  Working directory: {self.repo_path}")
         result = subprocess.run(
             cmd,
             cwd=self.repo_path,
@@ -151,6 +155,8 @@ class BuildPhase:
         if not nix_binary.exists():
             raise RuntimeError(f"Built binary not found at {nix_binary}")
 
+        logger.info(f"  Copying {nix_binary} -> {output_path}")
+
         # Remove existing binary if present (may be read-only from nix)
         if output_path.exists():
             output_path.chmod(0o755)
@@ -158,9 +164,10 @@ class BuildPhase:
 
         shutil.copy2(nix_binary, output_path)
         output_path.chmod(0o755)  # Ensure it's executable and writable
-        logger.info(f"Built {name} binary: {output_path}")
+        logger.info(f"  Built {name} binary: {output_path}")
 
         # Clean up nix result symlink
         result_link = self.repo_path / "result"
         if result_link.is_symlink():
+            logger.debug(f"  Removing nix result symlink: {result_link}")
             result_link.unlink()

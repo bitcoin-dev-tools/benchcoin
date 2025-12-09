@@ -459,6 +459,10 @@ class ReportGenerator:
               </tr>
             """
         for name, speedup in speedups.items():
+            # Skip instrumented runs in speedup summary
+            if name.lower().endswith("-instrumented"):
+                continue
+
             color_class = ""
             if speedup > 0:
                 color_class = "text-green-600"

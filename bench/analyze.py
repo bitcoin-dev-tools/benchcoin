@@ -11,7 +11,6 @@ import re
 from collections import OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 # matplotlib is optional - gracefully handle if not installed
 try:
@@ -20,9 +19,6 @@ try:
     HAS_MATPLOTLIB = True
 except ImportError:
     HAS_MATPLOTLIB = False
-
-if TYPE_CHECKING:
-    from .config import Config
 
 logger = logging.getLogger(__name__)
 
@@ -487,9 +483,6 @@ class PlotGenerator:
 
 class AnalyzePhase:
     """Analyze benchmark results and generate plots."""
-
-    def __init__(self, config: Config | None = None):
-        self.config = config
 
     def run(
         self,

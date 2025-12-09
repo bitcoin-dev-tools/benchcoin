@@ -10,33 +10,54 @@ default:
 # Test instrumented run using signet (includes report generation)
 [group('local')]
 test-instrumented base head datadir:
-    nix develop --command python3 bench.py --profile quick full --chain signet --instrumented --skip-existing --datadir {{ datadir }} {{ base }} {{ head }}
+    nix develop --command python3 bench.py build --skip-existing {{ base }}:base {{ head }}:head
+    nix develop --command python3 bench.py --profile quick run \
+        --chain signet \
+        --instrumented \
+        --datadir {{ datadir }} \
+        base:./binaries/base/bitcoind \
+        head:./binaries/head/bitcoind
     nix develop --command python3 bench.py report bench-output/ bench-output/
 
 # Test uninstrumented run using signet
 [group('local')]
 test-uninstrumented base head datadir:
-    nix develop --command python3 bench.py --profile quick full --chain signet --skip-existing --datadir {{ datadir }} {{ base }} {{ head }}
+    nix develop --command python3 bench.py build --skip-existing {{ base }}:base {{ head }}:head
+    nix develop --command python3 bench.py --profile quick run \
+        --chain signet \
+        --datadir {{ datadir }} \
+        base:./binaries/base/bitcoind \
+        head:./binaries/head/bitcoind
 
 # Full benchmark with instrumentation (flamegraphs + plots)
 [group('local')]
 instrumented base head datadir:
-    python3 bench.py --profile quick full --instrumented --datadir {{ datadir }} {{ base }} {{ head }}
+    python3 bench.py build {{ base }}:base {{ head }}:head
+    python3 bench.py --profile quick run \
+        --instrumented \
+        --datadir {{ datadir }} \
+        base:./binaries/base/bitcoind \
+        head:./binaries/head/bitcoind
 
 # Just build binaries (useful for incremental testing)
 [group('local')]
-build base head:
-    python3 bench.py build {{ base }} {{ head }}
+build *commits:
+    python3 bench.py build {{ commits }}
 
 # Run benchmark with pre-built binaries
 [group('local')]
-run base head datadir:
-    python3 bench.py run --datadir {{ datadir }} {{ base }} {{ head }}
+run datadir *binaries:
+    python3 bench.py run --datadir {{ datadir }} {{ binaries }}
 
 # Generate plots from a debug.log file
 [group('local')]
 analyze commit logfile output_dir="./plots":
     python3 bench.py analyze {{ commit }} {{ logfile }} --output-dir {{ output_dir }}
+
+# Compare benchmark results
+[group('local')]
+compare *results_files:
+    python3 bench.py compare {{ results_files }}
 
 # Generate HTML report from benchmark results
 [group('local')]
@@ -50,30 +71,30 @@ report input_dir output_dir:
 # Build binaries for CI
 [group('ci')]
 ci-build base_commit head_commit binaries_dir:
-    python3 bench.py build --binaries-dir {{ binaries_dir }} {{ base_commit }} {{ head_commit }}
+    python3 bench.py build -o {{ binaries_dir }} {{ base_commit }}:base {{ head_commit }}:head
 
 # Run uninstrumented benchmarks for CI
 [group('ci')]
-ci-run base_commit head_commit datadir tmp_datadir output_dir dbcache binaries_dir:
+ci-run datadir tmp_datadir output_dir dbcache binaries_dir:
     python3 bench.py --profile ci run \
-        --binaries-dir {{ binaries_dir }} \
         --datadir {{ datadir }} \
         --tmp-datadir {{ tmp_datadir }} \
         --output-dir {{ output_dir }} \
         --dbcache {{ dbcache }} \
-        {{ base_commit }} {{ head_commit }}
+        base:{{ binaries_dir }}/base/bitcoind \
+        head:{{ binaries_dir }}/head/bitcoind
 
 # Run instrumented benchmarks for CI
 [group('ci')]
-ci-run-instrumented base_commit head_commit datadir tmp_datadir output_dir dbcache binaries_dir:
+ci-run-instrumented datadir tmp_datadir output_dir dbcache binaries_dir:
     python3 bench.py --profile ci run \
         --instrumented \
-        --binaries-dir {{ binaries_dir }} \
         --datadir {{ datadir }} \
         --tmp-datadir {{ tmp_datadir }} \
         --output-dir {{ output_dir }} \
         --dbcache {{ dbcache }} \
-        {{ base_commit }} {{ head_commit }}
+        base:{{ binaries_dir }}/base/bitcoind \
+        head:{{ binaries_dir }}/head/bitcoind
 
 # ============================================================================
 # Git helpers

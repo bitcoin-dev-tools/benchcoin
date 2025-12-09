@@ -1,4 +1,4 @@
-"""Benchmark phase - run hyperfine benchmarks comparing two bitcoind binaries."""
+"""Benchmark phase - run hyperfine benchmarks on bitcoind binaries."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import os
 import shutil
 import subprocess
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -23,21 +23,38 @@ INSTRUMENTED_DEBUG_FLAGS = ["coindb", "leveldb", "bench", "validation"]
 
 
 @dataclass
+class BinaryResult:
+    """Result for a single binary."""
+
+    name: str
+    flamegraph: Path | None = None
+    debug_log: Path | None = None
+
+
+@dataclass
 class BenchmarkResult:
     """Result of the benchmark phase."""
 
     results_file: Path
-    base_commit: str
-    head_commit: str
     instrumented: bool
-    flamegraph_base: Path | None = None
-    flamegraph_head: Path | None = None
-    debug_log_base: Path | None = None
-    debug_log_head: Path | None = None
+    binaries: list[BinaryResult] = field(default_factory=list)
+
+
+def parse_binary_spec(spec: str) -> tuple[str, Path]:
+    """Parse a binary spec like 'name:/path/to/binary'.
+
+    Returns (name, path).
+    """
+    if ":" not in spec:
+        raise ValueError(f"Invalid binary spec '{spec}': must be NAME:PATH")
+    name, path_str = spec.split(":", 1)
+    if not name:
+        raise ValueError(f"Invalid binary spec '{spec}': name cannot be empty")
+    return name, Path(path_str)
 
 
 class BenchmarkPhase:
-    """Run hyperfine benchmarks comparing two bitcoind binaries."""
+    """Run hyperfine benchmarks on bitcoind binaries."""
 
     def __init__(
         self,
@@ -50,26 +67,28 @@ class BenchmarkPhase:
 
     def run(
         self,
-        base_commit: str,
-        head_commit: str,
-        base_binary: Path,
-        head_binary: Path,
+        binaries: list[tuple[str, Path]],
         datadir: Path,
         output_dir: Path,
     ) -> BenchmarkResult:
-        """Run benchmarks comparing base and head binaries.
+        """Run benchmarks on given binaries.
 
         Args:
-            base_commit: Git hash of base commit
-            head_commit: Git hash of head commit
-            base_binary: Path to base bitcoind binary
-            head_binary: Path to head bitcoind binary
+            binaries: List of (name, binary_path) tuples
             datadir: Source datadir with blockchain snapshot
             output_dir: Where to store results
 
         Returns:
             BenchmarkResult with paths to outputs
         """
+        if not binaries:
+            raise ValueError("At least one binary is required")
+
+        # Validate all binaries exist
+        for name, path in binaries:
+            if not path.exists():
+                raise FileNotFoundError(f"Binary not found: {path} ({name})")
+
         # Check prerequisites
         errors = self.capabilities.check_for_run(self.config.instrumented)
         if errors:
@@ -90,8 +109,9 @@ class BenchmarkPhase:
         logger.info(f"  Output dir: {output_dir}")
         logger.info(f"  Temp datadir: {tmp_datadir}")
         logger.info(f"  Source datadir: {datadir}")
-        logger.info(f"  Base: {base_commit[:12]}")
-        logger.info(f"  Head: {head_commit[:12]}")
+        logger.info(f"  Binaries: {len(binaries)}")
+        for name, path in binaries:
+            logger.info(f"    {name}: {path}")
         logger.info(f"  Instrumented: {self.config.instrumented}")
         logger.info(f"  Runs: {self.config.runs}")
         logger.info(f"  Stop height: {self.config.stop_height}")
@@ -105,10 +125,7 @@ class BenchmarkPhase:
 
             # Build hyperfine command
             cmd = self._build_hyperfine_cmd(
-                base_commit=base_commit,
-                head_commit=head_commit,
-                base_binary=base_binary,
-                head_binary=head_binary,
+                binaries=binaries,
                 tmp_datadir=tmp_datadir,
                 results_file=results_file,
                 setup_script=setup_script,
@@ -118,19 +135,15 @@ class BenchmarkPhase:
             )
 
             # Log the commands being benchmarked
-            base_cmd = self._build_bitcoind_cmd(base_binary, tmp_datadir)
-            head_cmd = self._build_bitcoind_cmd(head_binary, tmp_datadir)
-            logger.info("Base command:")
-            logger.info(f"  {base_cmd}")
-            logger.info("Head command:")
-            logger.info(f"  {head_cmd}")
+            logger.info("Commands to benchmark:")
+            for name, path in binaries:
+                bitcoind_cmd = self._build_bitcoind_cmd(path, tmp_datadir)
+                logger.info(f"  {name}: {bitcoind_cmd}")
 
             if self.config.dry_run:
                 logger.info(f"[DRY RUN] Would run: {' '.join(cmd)}")
                 return BenchmarkResult(
                     results_file=results_file,
-                    base_commit=base_commit,
-                    head_commit=head_commit,
                     instrumented=self.config.instrumented,
                 )
 
@@ -138,46 +151,31 @@ class BenchmarkPhase:
             logger.info("Running hyperfine...")
             logger.info(f"  Command: {' '.join(cmd[:7])} ...")  # First few args
             logger.debug(f"  Full command: {' '.join(cmd)}")
-            _result = subprocess.run(cmd, check=True)
+            subprocess.run(cmd, check=True)
 
             # Collect results
             benchmark_result = BenchmarkResult(
                 results_file=results_file,
-                base_commit=base_commit,
-                head_commit=head_commit,
                 instrumented=self.config.instrumented,
             )
 
             # For instrumented runs, collect flamegraphs and debug logs
             if self.config.instrumented:
                 logger.info("Collecting instrumented artifacts...")
-                base_fg = output_dir / f"{base_commit[:12]}-flamegraph.svg"
-                head_fg = output_dir / f"{head_commit[:12]}-flamegraph.svg"
-                base_log = output_dir / f"{base_commit[:12]}-debug.log"
-                head_log = output_dir / f"{head_commit[:12]}-debug.log"
+                for name, _path in binaries:
+                    binary_result = BinaryResult(name=name)
 
-                # Move flamegraphs from current directory if they exist
-                for src_name, dest in [
-                    ("base-flamegraph.svg", base_fg),
-                    ("head-flamegraph.svg", head_fg),
-                ]:
-                    src = Path(src_name)
-                    if src.exists():
-                        logger.info(f"  Moving {src_name} -> {dest}")
-                        shutil.move(str(src), str(dest))
+                    flamegraph_file = output_dir / f"{name}-flamegraph.svg"
+                    debug_log_file = output_dir / f"{name}-debug.log"
 
-                if base_fg.exists():
-                    benchmark_result.flamegraph_base = base_fg
-                    logger.info(f"  Flamegraph (base): {base_fg}")
-                if head_fg.exists():
-                    benchmark_result.flamegraph_head = head_fg
-                    logger.info(f"  Flamegraph (head): {head_fg}")
-                if base_log.exists():
-                    benchmark_result.debug_log_base = base_log
-                    logger.info(f"  Debug log (base): {base_log}")
-                if head_log.exists():
-                    benchmark_result.debug_log_head = head_log
-                    logger.info(f"  Debug log (head): {head_log}")
+                    if flamegraph_file.exists():
+                        binary_result.flamegraph = flamegraph_file
+                        logger.info(f"  Flamegraph ({name}): {flamegraph_file}")
+                    if debug_log_file.exists():
+                        binary_result.debug_log = debug_log_file
+                        logger.info(f"  Debug log ({name}): {debug_log_file}")
+
+                    benchmark_result.binaries.append(binary_result)
 
             # Clean up tmp_datadir
             if tmp_datadir.exists():
@@ -283,10 +281,7 @@ class BenchmarkPhase:
 
     def _build_hyperfine_cmd(
         self,
-        base_commit: str,
-        head_commit: str,
-        base_binary: Path,
-        head_binary: Path,
+        binaries: list[tuple[str, Path]],
         tmp_datadir: Path,
         results_file: Path,
         setup_script: Path,
@@ -306,52 +301,42 @@ class BenchmarkPhase:
             "--show-output",
         ]
 
-        # For instrumented runs, we need separate conclude scripts per commit
-        # since hyperfine's parameter substitution doesn't work with --conclude
-        if self.config.instrumented:
-            base_conclude = self._create_conclude_script_for_commit(
-                base_commit[:12], tmp_datadir, output_dir
-            )
-            head_conclude = self._create_conclude_script_for_commit(
-                head_commit[:12], tmp_datadir, output_dir
-            )
-            # We'll handle conclude differently - see below
-
-        # Command names
-        cmd.append(f"--command-name=base ({base_commit[:12]})")
-        cmd.append(f"--command-name=head ({head_commit[:12]})")
+        # Add command names and build commands
+        for name, binary_path in binaries:
+            cmd.append(f"--command-name={name}")
 
         # Build the actual commands to benchmark
-        base_cmd = self._build_bitcoind_cmd(base_binary, tmp_datadir)
-        head_cmd = self._build_bitcoind_cmd(head_binary, tmp_datadir)
+        for name, binary_path in binaries:
+            bitcoind_cmd = self._build_bitcoind_cmd(binary_path, tmp_datadir)
 
-        # For instrumented runs, append the conclude logic to each command
-        if self.config.instrumented:
-            base_cmd += f" && {base_conclude}"
-            head_cmd += f" && {head_conclude}"
+            # For instrumented runs, append the conclude logic to each command
+            if self.config.instrumented:
+                conclude = self._create_conclude_commands(name, tmp_datadir, output_dir)
+                bitcoind_cmd += f" && {conclude}"
 
-        cmd.append(base_cmd)
-        cmd.append(head_cmd)
+            cmd.append(bitcoind_cmd)
 
         return cmd
 
-    def _create_conclude_script_for_commit(
+    def _create_conclude_commands(
         self,
-        commit: str,
+        name: str,
         tmp_datadir: Path,
         output_dir: Path,
     ) -> str:
-        """Create inline conclude commands for a specific commit."""
+        """Create inline conclude commands for a specific binary."""
         # Return shell commands to run after each benchmark
         commands = []
 
         # Move flamegraph if exists
-        commands.append(f'if [ -e flamegraph.svg ]; then mv flamegraph.svg "{output_dir}/{commit}-flamegraph.svg"; fi')
+        commands.append(
+            f'if [ -e flamegraph.svg ]; then mv flamegraph.svg "{output_dir}/{name}-flamegraph.svg"; fi'
+        )
 
         # Copy debug log if exists
         commands.append(
             f'debug_log=$(find "{tmp_datadir}" -name debug.log -print -quit); '
-            f'if [ -n "$debug_log" ]; then cp "$debug_log" "{output_dir}/{commit}-debug.log"; fi'
+            f'if [ -n "$debug_log" ]; then cp "$debug_log" "{output_dir}/{name}-debug.log"; fi'
         )
 
         return " && ".join(commands)

@@ -19,17 +19,34 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
+class BuiltBinary:
+    """A single built binary."""
+
+    name: str
+    path: Path
+    commit: str
+
+
+@dataclass
 class BuildResult:
     """Result of the build phase."""
 
-    base_binary: Path
-    head_binary: Path
-    base_commit: str
-    head_commit: str
+    binaries: list[BuiltBinary]
+
+
+def parse_commit_spec(spec: str) -> tuple[str, str | None]:
+    """Parse a commit spec like 'abc123:name' or 'abc123'.
+
+    Returns (commit, name) where name may be None.
+    """
+    if ":" in spec:
+        commit, name = spec.split(":", 1)
+        return commit, name
+    return spec, None
 
 
 class BuildPhase:
-    """Build bitcoind binaries at two commits for comparison."""
+    """Build bitcoind binaries at specified commits."""
 
     def __init__(
         self,
@@ -43,94 +60,101 @@ class BuildPhase:
 
     def run(
         self,
-        base_commit: str,
-        head_commit: str,
-        binaries_dir: Path | None = None,
+        commit_specs: list[str],
+        output_dir: Path | None = None,
     ) -> BuildResult:
-        """Build bitcoind at both commits.
+        """Build bitcoind at given commits.
 
         Args:
-            base_commit: Git ref for base (comparison) commit
-            head_commit: Git ref for head (new) commit
-            binaries_dir: Where to store binaries (default: ./binaries)
+            commit_specs: List of commit specs like 'abc123:name' or 'abc123'
+            output_dir: Where to store binaries (default: ./binaries)
 
         Returns:
-            BuildResult with paths to built binaries
+            BuildResult with list of built binaries
         """
         # Check prerequisites
         errors = self.capabilities.check_for_build()
         if errors:
             raise RuntimeError("Build prerequisites not met:\n" + "\n".join(errors))
 
-        binaries_dir = binaries_dir or Path(self.config.binaries_dir)
+        output_dir = output_dir or Path(self.config.binaries_dir)
 
-        # Resolve commits to full hashes
-        base_hash = git_rev_parse(base_commit, self.repo_path)
-        head_hash = git_rev_parse(head_commit, self.repo_path)
+        # Parse commit specs and resolve to full hashes
+        commits: list[tuple[str, str, str]] = []  # (commit_hash, name, original_spec)
+        for spec in commit_specs:
+            commit, name = parse_commit_spec(spec)
+            commit_hash = git_rev_parse(commit, self.repo_path)
+            # Default name to short hash if not provided
+            if name is None:
+                name = commit_hash[:12]
+            commits.append((commit_hash, name, spec))
 
-        logger.info("Building binaries for comparison:")
-        logger.info(f"  Base: {base_hash[:12]} ({base_commit})")
-        logger.info(f"  Head: {head_hash[:12]} ({head_commit})")
+        logger.info(f"Building {len(commits)} binary(ies):")
+        for commit_hash, name, spec in commits:
+            logger.info(f"  {name}: {commit_hash[:12]} ({spec})")
         logger.info(f"  Repo: {self.repo_path}")
-        logger.info(f"  Output: {binaries_dir}")
-
-        # Setup output directories
-        base_dir = binaries_dir / "base"
-        head_dir = binaries_dir / "head"
-        base_dir.mkdir(parents=True, exist_ok=True)
-        head_dir.mkdir(parents=True, exist_ok=True)
-
-        base_binary = base_dir / "bitcoind"
-        head_binary = head_dir / "bitcoind"
+        logger.info(f"  Output: {output_dir}")
 
         # Check if we can skip existing builds
-        if self.config.skip_existing:
-            if base_binary.exists() and head_binary.exists():
-                logger.info(
-                    "Both binaries exist and --skip-existing set, skipping build"
-                )
-                return BuildResult(
-                    base_binary=base_binary,
-                    head_binary=head_binary,
-                    base_commit=base_hash,
-                    head_commit=head_hash,
-                )
+        binaries_to_build: list[
+            tuple[str, str, Path]
+        ] = []  # (commit_hash, name, output_path)
+        for commit_hash, name, _spec in commits:
+            binary_dir = output_dir / name
+            binary_dir.mkdir(parents=True, exist_ok=True)
+            binary_path = binary_dir / "bitcoind"
+
+            if self.config.skip_existing and binary_path.exists():
+                logger.info(f"  Skipping {name} - binary exists")
+            else:
+                binaries_to_build.append((commit_hash, name, binary_path))
+
+        if not binaries_to_build:
+            logger.info("All binaries exist and --skip-existing set, skipping build")
+            return BuildResult(
+                binaries=[
+                    BuiltBinary(
+                        name=name,
+                        path=output_dir / name / "bitcoind",
+                        commit=commit_hash,
+                    )
+                    for commit_hash, name, _spec in commits
+                ]
+            )
 
         # Save git state for restoration
         git_state = GitState(self.repo_path)
         git_state.save()
 
+        built_binaries: list[BuiltBinary] = []
+
         try:
-            # Build both commits
-            builds = [
-                ("base", base_hash, base_binary),
-                ("head", head_hash, head_binary),
-            ]
-
-            for name, commit, output_path in builds:
-                if self.config.skip_existing and output_path.exists():
-                    logger.info(f"Skipping {name} build - binary exists")
-                    continue
-
-                self._build_commit(name, commit, output_path)
+            for commit_hash, name, output_path in binaries_to_build:
+                self._build_commit(name, commit_hash, output_path)
+                built_binaries.append(
+                    BuiltBinary(name=name, path=output_path, commit=commit_hash)
+                )
 
         finally:
             # Always restore git state
             git_state.restore()
 
-        return BuildResult(
-            base_binary=base_binary,
-            head_binary=head_binary,
-            base_commit=base_hash,
-            head_commit=head_hash,
-        )
+        # Include skipped binaries in result
+        all_binaries = []
+        for commit_hash, name, _spec in commits:
+            binary_path = output_dir / name / "bitcoind"
+            all_binaries.append(
+                BuiltBinary(name=name, path=binary_path, commit=commit_hash)
+            )
+
+        return BuildResult(binaries=all_binaries)
 
     def _build_commit(self, name: str, commit: str, output_path: Path) -> None:
         """Build bitcoind for a single commit."""
         logger.info(f"Building {name} ({commit[:12]})")
 
         if self.config.dry_run:
-            logger.info(f"[DRY RUN] Would build {commit[:12]} -> {output_path}")
+            logger.info(f"  [DRY RUN] Would build {commit[:12]} -> {output_path}")
             return
 
         # Checkout the commit

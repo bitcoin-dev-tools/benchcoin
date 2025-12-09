@@ -14,12 +14,20 @@ jobs:
     env:
       NETWORKS: "mainnet-default-instrumented,mainnet-large-instrumented,mainnet-default-uninstrumented,mainnet-large-uninstrumented"
     outputs:
-      speedups: ${{ steps.organize.outputs.speedups }}
-      pr-number: ${{ steps.organize.outputs.pr-number }}
+      speedups: ${{ steps.generate.outputs.speedups }}
+      pr-number: ${{ steps.metadata.outputs.pr-number }}
+      result-url: ${{ steps.generate.outputs.result-url }}
     steps:
       - uses: actions/checkout@v4
         with:
           ref: gh-pages
+
+      - name: Checkout benchcoin tools
+        uses: actions/checkout@v4
+        with:
+          ref: master
+          path: benchcoin-tools
+
       - name: Download artifacts
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -29,298 +37,86 @@ jobs:
       - name: Extract artifacts
         run: |
           for network in ${NETWORKS//,/ }; do
+            # Create network-specific directories with results
             if [ -d "result-${network}" ]; then
               mkdir -p "${network}-results"
               mv "result-${network}/results.json" "${network}-results/"
             fi
 
+            # Copy flamegraphs into network results directory
             if [ -d "flamegraph-${network}" ]; then
-              mkdir -p "${network}-flamegraph"
-              mv "flamegraph-${network}"/* "${network}-flamegraph/"
+              cp -r "flamegraph-${network}"/* "${network}-results/" 2>/dev/null || true
             fi
 
+            # Copy plots into network results directory
+            if [ -d "pngs-${network}" ]; then
+              mkdir -p "${network}-results/plots"
+              cp -r "pngs-${network}"/* "${network}-results/plots/" 2>/dev/null || true
+            fi
+
+            # Keep metadata separate for extraction
             if [ -d "run-metadata-${network}" ]; then
               mkdir -p "${network}-metadata"
               mv "run-metadata-${network}"/* "${network}-metadata/"
             fi
+          done
 
-            if [ -d "pngs-${network}" ]; then
-              mkdir -p "${network}-plots"
-              mv "pngs-${network}"/* "${network}-plots/"
+      - name: Extract metadata
+        id: metadata
+        run: |
+          # Find PR number and run ID from any available metadata
+          for network in ${NETWORKS//,/ }; do
+            if [ -f "${network}-metadata/github.json" ]; then
+              PR_NUMBER=$(jq -r '.event.pull_request.number // "main"' "${network}-metadata/github.json")
+              RUN_ID=$(jq -r '.run_id' "${network}-metadata/github.json")
+              echo "pr-number=${PR_NUMBER}" >> $GITHUB_OUTPUT
+              echo "run-id=${RUN_ID}" >> $GITHUB_OUTPUT
+              echo "Found metadata: PR=${PR_NUMBER}, Run=${RUN_ID}"
+              break
             fi
           done
-      - name: Organize results
-        id: organize
-        uses: actions/github-script@v7
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
-          script: |
-            const fs = require('fs');
-            const path = require('path');
-            const networks = process.env.NETWORKS.split(',');
-            let prNumber = 'main';
-            let runId;
+          python-version: '3.12'
 
-            // First, extract metadata and get PR number
-            for (const network of networks) {
-              if (fs.existsSync(`${network}-metadata/github.json`)) {
-                const metadata = JSON.parse(fs.readFileSync(`${network}-metadata/github.json`, 'utf8'));
-                prNumber = metadata.event.pull_request?.number || prNumber;
-                runId = metadata.run_id;
-              }
-            }
+      - name: Generate report
+        id: generate
+        env:
+          PR_NUMBER: ${{ steps.metadata.outputs.pr-number }}
+          RUN_ID: ${{ steps.metadata.outputs.run-id }}
+        run: |
+          cd benchcoin-tools
 
-            if (!runId) {
-              console.error('No valid metadata found for any network');
-              process.exit(1);
-            }
+          # Build network arguments
+          NETWORK_ARGS=""
+          for network in ${NETWORKS//,/ }; do
+            if [ -d "../${network}-results" ]; then
+              NETWORK_ARGS="${NETWORK_ARGS} --network ${network}:../${network}-results"
+            fi
+          done
 
-            // Create directory structure
-            const resultDir = `results/pr-${prNumber}/${runId}`;
-            fs.mkdirSync(resultDir, { recursive: true });
+          # Generate report
+          python3 bench.py report \
+            ${NETWORK_ARGS} \
+            --pr-number "${PR_NUMBER}" \
+            --run-id "${RUN_ID}" \
+            --update-index \
+            "../results/pr-${PR_NUMBER}/${RUN_ID}"
 
-            // Now copy metadata files
-            for (const network of networks) {
-              if (fs.existsSync(`${network}-metadata/github.json`)) {
-                const metadataDir = `${resultDir}/${network}-metadata`;
-                fs.mkdirSync(metadataDir, { recursive: true });
-                fs.copyFileSync(`${network}-metadata/github.json`, `${metadataDir}/github.json`);
-              }
-            }
+          # Read speedups from generated results.json
+          SPEEDUPS=$(jq -r '.speedups | to_entries | map(select(.key | contains("uninstrumented"))) | map("\(.key): \(.value)%") | join(", ")' "../results/pr-${PR_NUMBER}/${RUN_ID}/results.json")
+          echo "speedups=${SPEEDUPS}" >> $GITHUB_OUTPUT
 
-            // Process each network's results
-            const combinedResults = {
-              results: [],
-              speedups: {}
-            };
+          RESULT_URL="https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/results/pr-${PR_NUMBER}/${RUN_ID}/index.html"
+          echo "result-url=${RESULT_URL}" >> $GITHUB_OUTPUT
 
-            for (const network of networks) {
-              if (fs.existsSync(`${network}-results`)) {
-                const networkResults = JSON.parse(fs.readFileSync(`${network}-results/results.json`, 'utf8'));
-                let baseMean, headMean;
-
-                // Add network name to each result and collect means
-                networkResults.results.forEach(result => {
-                  result.network = network;
-                  // Extract commit from command string like "base (364a7bb8701e)"
-                  const commitMatch = result.command.match(/\(([a-f0-9]+)\)/);
-                  if (commitMatch) {
-                    result.parameters = { commit: commitMatch[1] };
-                  }
-                  combinedResults.results.push(result);
-                  if (result.command.includes('base')) {
-                    baseMean = result.mean;
-                  } else if (result.command.includes('head')) {
-                    headMean = result.mean;
-                  }
-                });
-
-                // Calculate speedup if we have both measurements
-                if (baseMean && headMean) {
-                  const speedup = baseMean > 0 ? ((baseMean - headMean) / baseMean * 100).toFixed(1) : 'N/A';
-                  combinedResults.speedups[network] = speedup;
-                }
-
-                // Move flamegraphs
-                if (fs.existsSync(`${network}-flamegraph`)) {
-                  fs.readdirSync(`${network}-flamegraph`).forEach(file => {
-                    const sourceFile = `${network}-flamegraph/${file}`;
-                    const targetFile = `${resultDir}/${network}-${file}`;
-                    fs.copyFileSync(sourceFile, targetFile);
-                  });
-                }
-
-                // Move plots
-                if (fs.existsSync(`${network}-plots`)) {
-                  const targetPlotsDir = `${resultDir}/${network}-plots`;
-                  fs.mkdirSync(targetPlotsDir, { recursive: true });
-                  fs.readdirSync(`${network}-plots`).forEach(plot => {
-                    const sourcePlot = `${network}-plots/${plot}`;
-                    const targetPlot = `${targetPlotsDir}/${plot}`;
-                    fs.copyFileSync(sourcePlot, targetPlot);
-                  });
-                }
-              }
-            }
-
-            // Write combined results
-            fs.writeFileSync(`${resultDir}/results.json`, JSON.stringify(combinedResults, null, 2));
-
-            // Create index.html for this run
-            // Sort results by network then by command type (base first)
-            const sortedResults = combinedResults.results.sort((a, b) => {
-              if (a.network !== b.network) return a.network.localeCompare(b.network);
-              const aIsBase = a.command.includes('base');
-              const bIsBase = b.command.includes('base');
-              return bIsBase - aIsBase; // base first
-            });
-
-            const indexHtml = `<!DOCTYPE html>
-            <html>
-              <head>
-                <title>Benchmark Results</title>
-                <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
-              </head>
-              <body class="bg-gray-100 p-8">
-                <div class="w-9/10 mx-auto">
-                  <h1 class="text-3xl font-bold mb-8">Benchmark Results</h1>
-                  <div class="bg-white rounded-lg shadow p-6 mb-8">
-                    <h2 class="text-xl font-semibold mb-4">PR #${prNumber} - Run ${runId}</h2>
-
-                    <!-- Unified Run Data Table -->
-                    <h3 class="text-lg font-semibold mb-4">Run Data</h3>
-                    <div class="overflow-x-auto mb-8">
-                      <table class="min-w-full table-auto">
-                        <thead>
-                          <tr class="bg-gray-50">
-                            <th class="px-4 py-2 text-left">Network</th>
-                            <th class="px-4 py-2">Command</th>
-                            <th class="px-4 py-2">Mean (s)</th>
-                            <th class="px-4 py-2">Std Dev</th>
-                            <th class="px-4 py-2">User (s)</th>
-                            <th class="px-4 py-2">System (s)</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          ${sortedResults.map(result => `
-                            <tr class="border-t">
-                              <td class="px-4 py-2 font-mono text-sm">${result.network}</td>
-                              <td class="px-4 py-2 font-mono text-sm text-center">
-                                ${result.command.replace(
-                                  /\((\w+)\)/,
-                                  (_, commit) => `(<a href="https://github.com/bitcoin-dev-tools/benchcoin/commit/${commit}" target="_blank" class="text-blue-600 hover:underline">${commit.slice(0, 8)}</a>)`
-                                )}
-                              </td>
-                              <td class="px-4 py-2 text-center">${result.mean.toFixed(3)}</td>
-                              <td class="px-4 py-2 text-center">${result.stddev?.toFixed(3) || 'N/A'}</td>
-                              <td class="px-4 py-2 text-center">${result.user.toFixed(3)}</td>
-                              <td class="px-4 py-2 text-center">${result.system.toFixed(3)}</td>
-                            </tr>
-                          `).join('')}
-                        </tbody>
-                      </table>
-                    </div>
-
-                    <!-- Speedup Summary Table -->
-                    <h3 class="text-lg font-semibold mb-4">Speedup Summary</h3>
-                    <div class="overflow-x-auto mb-8">
-                      <table class="min-w-full table-auto">
-                        <thead>
-                          <tr class="bg-gray-50">
-                            <th class="px-4 py-2 text-left">Network</th>
-                            <th class="px-4 py-2">Speedup (%)</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          ${Object.entries(combinedResults.speedups).map(([network, speedup]) => `
-                            <tr class="border-t">
-                              <td class="px-4 py-2 font-mono text-sm">${network}</td>
-                              <td class="px-4 py-2 text-center ${parseFloat(speedup) > 0 ? 'text-green-600' : parseFloat(speedup) < 0 ? 'text-red-600' : ''}">${speedup}%</td>
-                            </tr>
-                          `).join('')}
-                        </tbody>
-                      </table>
-                    </div>
-
-                    <!-- Graphs and Flamegraphs -->
-                    ${networks.filter(network => network.includes('instrumented')).map(network => {
-                      const networkResults = combinedResults.results.filter(r => r.network === network);
-                      const graphsHtml = networkResults.map(result => {
-                        const flameGraphFile = `${network}-${result.parameters.commit}-flamegraph.svg`;
-                        const flameGraphPath = `${resultDir}/${network}-${result.parameters.commit}-flamegraph.svg`;
-
-                        const plotDir = `${resultDir}/${network}-plots`;
-                        const plots = fs.existsSync(plotDir)
-                          ? fs.readdirSync(plotDir)
-                              .filter(plot => plot.startsWith(`${result.parameters.commit}-`))
-                              .map(plot => `
-                                <a href="${network}-plots/${plot}" target="_blank">
-                                  <img src="${network}-plots/${plot}" alt="${plot}" class="mb-4 max-w-full h-auto">
-                                </a>
-                              `)
-                              .join('')
-                          : '';
-
-                        if (!fs.existsSync(flameGraphPath) && !plots) return '';
-
-                        return `
-                          <div class="mb-4">
-                            <h4 class="text-md font-medium mb-2">${result.command.replace(/\((\w+)\)/, (_, commit) => `(${commit.slice(0, 8)})`)}</h4>
-                            ${fs.existsSync(flameGraphPath) ? `
-                              <object data="${flameGraphFile}" type="image/svg+xml" width="100%" style="height: 100%;" class="mb-4"></object>
-                            ` : ''}
-                            ${plots}
-                          </div>
-                        `;
-                      }).join('');
-
-                      if (!graphsHtml.trim()) return '';
-
-                      return `
-                        <div class="mb-8">
-                          <h3 class="text-lg font-semibold mb-4 capitalize">${network} Graphs</h3>
-                          ${graphsHtml}
-                        </div>
-                      `;
-                    }).join('')}
-                  </div>
-                </div>
-              </body>
-            </html>`;
-
-            fs.writeFileSync(`${resultDir}/index.html`, indexHtml);
-
-            // Update main index.html
-            const prs = fs.readdirSync('results')
-              .filter(dir => dir.startsWith('pr-'))
-              .map(dir => ({
-                pr: dir.replace('pr-', ''),
-                runs: fs.readdirSync(`results/${dir}`)
-              }));
-
-            const mainIndexHtml = `<!DOCTYPE html>
-            <html>
-              <head>
-                <title>Bitcoin Benchmark Results</title>
-                <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
-              </head>
-              <body class="bg-gray-100 p-8">
-                <div class="w-9/10 mx-auto">
-                  <h1 class="text-3xl font-bold mb-8">Bitcoin Benchmark Results</h1>
-                  <div class="bg-white rounded-lg shadow p-6">
-                    <h2 class="text-xl font-semibold mb-4">Available Results</h2>
-                    <ul class="space-y-2">
-                      ${prs.map(({pr, runs}) => `
-                        <li class="font-semibold">PR #${pr}
-                          <ul class="ml-8 space-y-1">
-                            ${runs.map(run => `
-                              <li><a href="results/pr-${pr}/${run}/index.html" class="text-blue-600 hover:underline">Run ${run}</a></li>
-                            `).join('')}
-                          </ul>
-                        </li>
-                      `).join('')}
-                    </ul>
-                  </div>
-                </div>
-              </body>
-            </html>`;
-
-            fs.writeFileSync('index.html', mainIndexHtml);
-
-            // Set outputs for use in PR comment
-            const resultUrl = `https://${context.repo.owner}.github.io/${context.repo.name}/results/pr-${prNumber}/${runId}/index.html`;
-            const speedupString = Object.entries(combinedResults.speedups)
-              .filter(([network]) => network.includes('uninstrumented'))
-              .map(([network, speedup]) => `${network}: ${speedup}%`)
-              .join(', ');
-
-            core.setOutput('result-url', resultUrl);
-            core.setOutput('speedups', speedupString);
-            core.setOutput('pr-number', prNumber);
-            return { url: resultUrl, speedups: speedupString };
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: results
+
       - name: Commit and push to gh-pages
         run: |
           git config --global user.name "github-actions[bot]"
@@ -328,6 +124,7 @@ jobs:
           git add results/ index.html
           git commit -m "Update benchmark results from run ${{ github.event.workflow_run.id }}"
           git push origin gh-pages
+
   comment-pr:
     needs: build
     runs-on: ubuntu-latest
@@ -342,5 +139,5 @@ jobs:
         run: |
           gh pr comment ${{ needs.build.outputs.pr-number }} \
             --repo ${{ github.repository }} \
-            --body "📊 Benchmark results for this run (${{ github.event.workflow_run.id }}) will be available at: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/results/pr-${{ needs.build.outputs.pr-number }}/${{ github.event.workflow_run.id }}/index.html after the github pages \"build and deployment\" action has completed.
+            --body "📊 Benchmark results for this run (${{ github.event.workflow_run.id }}) will be available at: ${{ needs.build.outputs.result-url }} after the github pages \"build and deployment\" action has completed.
           🚀 Speedups: ${{ needs.build.outputs.speedups }}"

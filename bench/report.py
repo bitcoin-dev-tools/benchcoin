@@ -122,6 +122,103 @@ class ReportGenerator:
     ):
         self.repo_url = repo_url
 
+    def generate_multi_network(
+        self,
+        network_dirs: dict[str, Path],
+        output_dir: Path,
+        title: str = "Benchmark Results",
+        pr_number: str | None = None,
+        run_id: str | None = None,
+    ) -> ReportResult:
+        """Generate HTML report from multiple network benchmark results.
+
+        Args:
+            network_dirs: Dict mapping network name to directory containing results.json
+            output_dir: Where to write the HTML report
+            title: Title for the report
+            pr_number: PR number (for CI reports)
+            run_id: Run ID (for CI reports)
+
+        Returns:
+            ReportResult with paths and speedup data
+        """
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        # Combine results from all networks
+        all_runs: list[BenchmarkRun] = []
+        for network, input_dir in network_dirs.items():
+            results_file = input_dir / "results.json"
+            if not results_file.exists():
+                logger.warning(
+                    f"results.json not found in {input_dir} for network {network}"
+                )
+                continue
+
+            with open(results_file) as f:
+                data = json.load(f)
+
+            # Parse and add network to each run
+            for result in data.get("results", []):
+                all_runs.append(
+                    BenchmarkRun(
+                        network=network,
+                        command=result.get("command", ""),
+                        mean=result.get("mean", 0),
+                        stddev=result.get("stddev"),
+                        user=result.get("user", 0),
+                        system=result.get("system", 0),
+                        parameters=result.get("parameters", {}),
+                    )
+                )
+
+            # Copy artifacts from this network
+            self._copy_network_artifacts(network, input_dir, output_dir)
+
+        if not all_runs:
+            raise ValueError("No benchmark results found in any network directory")
+
+        # Calculate speedups per network
+        speedups = self._calculate_speedups_per_network(all_runs)
+
+        # Build title with PR/run info if provided
+        full_title = title
+        if pr_number and run_id:
+            full_title = f"PR #{pr_number} - Run {run_id}"
+
+        # Generate HTML
+        html = self._generate_html(
+            all_runs, speedups, full_title, output_dir, output_dir
+        )
+
+        # Write report
+        index_file = output_dir / "index.html"
+        index_file.write_text(html)
+        logger.info(f"Generated report: {index_file}")
+
+        # Write combined results.json
+        combined_results = {
+            "results": [
+                {
+                    "network": run.network,
+                    "command": run.command,
+                    "mean": run.mean,
+                    "stddev": run.stddev,
+                    "user": run.user,
+                    "system": run.system,
+                }
+                for run in all_runs
+            ],
+            "speedups": speedups,
+        }
+        results_file = output_dir / "results.json"
+        results_file.write_text(json.dumps(combined_results, indent=2))
+
+        return ReportResult(
+            output_dir=output_dir,
+            index_file=index_file,
+            speedups=speedups,
+        )
+
     def generate(
         self,
         input_dir: Path,
@@ -263,6 +360,59 @@ class ReportGenerator:
 
         return speedups
 
+    def _calculate_speedups_per_network(
+        self, runs: list[BenchmarkRun]
+    ) -> dict[str, float]:
+        """Calculate speedup percentages per network.
+
+        For each network, uses 'base' as baseline and calculates speedup for 'head'.
+        Returns a dict mapping network name to speedup percentage.
+        """
+        speedups = {}
+
+        # Group runs by network
+        networks: dict[str, list[BenchmarkRun]] = {}
+        for run in runs:
+            if run.network not in networks:
+                networks[run.network] = []
+            networks[run.network].append(run)
+
+        # Calculate speedup for each network
+        for network, network_runs in networks.items():
+            base_mean = None
+            head_mean = None
+
+            for run in network_runs:
+                if run.command == "base":
+                    base_mean = run.mean
+                elif run.command == "head":
+                    head_mean = run.mean
+
+            if base_mean and head_mean and base_mean > 0:
+                speedup = ((base_mean - head_mean) / base_mean) * 100
+                speedups[network] = round(speedup, 1)
+
+        return speedups
+
+    def _copy_network_artifacts(
+        self, network: str, input_dir: Path, output_dir: Path
+    ) -> None:
+        """Copy artifacts from a network directory with network prefix."""
+        # Copy flamegraphs with network prefix
+        for svg in input_dir.glob("*-flamegraph.svg"):
+            dest = output_dir / f"{network}-{svg.name}"
+            shutil.copy2(svg, dest)
+            logger.debug(f"Copied {svg.name} as {dest.name}")
+
+        # Copy plots directory with network prefix
+        plots_dir = input_dir / "plots"
+        if plots_dir.exists():
+            dest_plots = output_dir / f"{network}-plots"
+            if dest_plots.exists():
+                shutil.rmtree(dest_plots)
+            shutil.copytree(plots_dir, dest_plots)
+            logger.debug(f"Copied plots to {dest_plots}")
+
     def _generate_html(
         self,
         runs: list[BenchmarkRun],
@@ -354,40 +504,70 @@ class ReportGenerator:
 
         for run in runs:
             # Use the command/name directly (e.g., "base", "head")
-            # This is the name given to the binary in the benchmark
             name = run.command
+            network = run.network
 
-            # Check for flamegraph
-            flamegraph_name = f"{name}-flamegraph.svg"
-            flamegraph_path = input_dir / flamegraph_name
+            # Check for flamegraph - try both with and without network prefix
+            # Network-prefixed: {network}-{name}-flamegraph.svg (for multi-network reports)
+            # Non-prefixed: {name}-flamegraph.svg (for single-network reports)
+            flamegraph_name = None
+            flamegraph_path = None
 
-            # Check for plots
-            plots_dir = input_dir / "plots"
+            network_prefixed = f"{network}-{name}-flamegraph.svg"
+            non_prefixed = f"{name}-flamegraph.svg"
+
+            if (output_dir / network_prefixed).exists():
+                flamegraph_name = network_prefixed
+                flamegraph_path = output_dir / network_prefixed
+            elif (input_dir / non_prefixed).exists():
+                flamegraph_name = non_prefixed
+                flamegraph_path = input_dir / non_prefixed
+
+            # Check for plots - try both network-prefixed and non-prefixed directories
             plot_files = []
-            if plots_dir.exists():
+            plots_dir = None
+
+            network_plots_dir = output_dir / f"{network}-plots"
+            regular_plots_dir = input_dir / "plots"
+
+            if network_plots_dir.exists():
+                plots_dir = network_plots_dir
+                plot_files = [
+                    p.name
+                    for p in plots_dir.iterdir()
+                    if p.name.startswith(f"{name}-") and p.suffix == ".png"
+                ]
+            elif regular_plots_dir.exists():
+                plots_dir = regular_plots_dir
                 plot_files = [
                     p.name
                     for p in plots_dir.iterdir()
                     if p.name.startswith(f"{name}-") and p.suffix == ".png"
                 ]
 
-            if not flamegraph_path.exists() and not plot_files:
+            if not flamegraph_path and not plot_files:
                 continue
+
+            # Build display label
+            display_label = f"{network} - {name}" if network != "default" else name
 
             graphs_html += f"""
             <div class="mb-8">
-              <h4 class="text-md font-medium mb-2">{name}</h4>
+              <h4 class="text-md font-medium mb-2">{display_label}</h4>
             """
 
-            if flamegraph_path.exists():
+            if flamegraph_path:
                 graphs_html += f"""
                 <object data="{flamegraph_name}" type="image/svg+xml" width="100%" style="height: 400px;" class="mb-4"></object>
                 """
 
-            for plot in sorted(plot_files):
-                graphs_html += f"""
-                <a href="plots/{plot}" target="_blank">
-                  <img src="plots/{plot}" alt="{plot}" class="mb-4 max-w-full h-auto">
+            if plot_files and plots_dir:
+                # Determine the relative path for plots
+                plots_rel_path = plots_dir.name
+                for plot in sorted(plot_files):
+                    graphs_html += f"""
+                <a href="{plots_rel_path}/{plot}" target="_blank">
+                  <img src="{plots_rel_path}/{plot}" alt="{plot}" class="mb-4 max-w-full h-auto">
                 </a>
                 """
 
@@ -449,3 +629,36 @@ class ReportPhase:
             ReportResult with paths and speedup data
         """
         return self.generator.generate(input_dir, output_dir, title)
+
+    def run_multi_network(
+        self,
+        network_dirs: dict[str, Path],
+        output_dir: Path,
+        title: str = "Benchmark Results",
+        pr_number: str | None = None,
+        run_id: str | None = None,
+    ) -> ReportResult:
+        """Generate report from multiple network benchmark results.
+
+        Args:
+            network_dirs: Dict mapping network name to directory containing results.json
+            output_dir: Where to write the HTML report
+            title: Title for the report
+            pr_number: PR number (for CI reports)
+            run_id: Run ID (for CI reports)
+
+        Returns:
+            ReportResult with paths and speedup data
+        """
+        return self.generator.generate_multi_network(
+            network_dirs, output_dir, title, pr_number, run_id
+        )
+
+    def update_index(self, results_dir: Path, output_file: Path) -> None:
+        """Update the main index.html listing all results.
+
+        Args:
+            results_dir: Directory containing pr-* subdirectories
+            output_file: Where to write index.html
+        """
+        self.generator.generate_index(results_dir, output_file)

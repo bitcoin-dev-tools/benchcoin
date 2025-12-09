@@ -241,21 +241,52 @@ def cmd_report(args: argparse.Namespace) -> int:
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
 
-    input_dir = Path(args.input_dir)
     output_dir = Path(args.output_dir)
-
-    if not input_dir.exists():
-        logger.error(f"Input directory not found: {input_dir}")
-        return 1
-
     phase = ReportPhase()
 
     try:
-        result = phase.run(
-            input_dir=input_dir,
-            output_dir=output_dir,
-            title=args.title or "Benchmark Results",
-        )
+        # CI multi-network mode
+        if args.networks:
+            network_dirs = {}
+            for spec in args.networks:
+                if ":" not in spec:
+                    logger.error(f"Invalid network spec '{spec}': must be NETWORK:PATH")
+                    return 1
+                network, path = spec.split(":", 1)
+                network_dirs[network] = Path(path)
+
+            # Validate directories exist
+            for network, path in network_dirs.items():
+                if not path.exists():
+                    logger.error(f"Network directory not found: {path} ({network})")
+                    return 1
+
+            result = phase.run_multi_network(
+                network_dirs=network_dirs,
+                output_dir=output_dir,
+                title=args.title or "Benchmark Results",
+                pr_number=args.pr_number,
+                run_id=args.run_id,
+            )
+
+            # Update main index if we have a results directory
+            if args.update_index:
+                results_base = output_dir.parent.parent  # Go up from pr-N/run-id
+                if results_base.exists():
+                    phase.update_index(results_base, results_base.parent / "index.html")
+        else:
+            # Standard single-directory mode
+            input_dir = Path(args.input_dir)
+
+            if not input_dir.exists():
+                logger.error(f"Input directory not found: {input_dir}")
+                return 1
+
+            result = phase.run(
+                input_dir=input_dir,
+                output_dir=output_dir,
+                title=args.title or "Benchmark Results",
+            )
 
         # Print speedups
         if result.speedups:
@@ -444,12 +475,44 @@ def main() -> int:
     compare_parser.set_defaults(func=cmd_compare)
 
     # Report command
-    report_parser = subparsers.add_parser("report", help="Generate HTML report")
-    report_parser.add_argument("input_dir", help="Directory with results.json")
+    report_parser = subparsers.add_parser(
+        "report",
+        help="Generate HTML report",
+        description="Generate HTML report from benchmark results. "
+        "Use --network for multi-network CI reports.",
+    )
+    report_parser.add_argument(
+        "input_dir",
+        nargs="?",
+        help="Directory with results.json (for single-network mode)",
+    )
     report_parser.add_argument("output_dir", help="Output directory for report")
     report_parser.add_argument(
         "--title",
         help="Report title",
+    )
+    # CI multi-network options
+    report_parser.add_argument(
+        "--network",
+        dest="networks",
+        action="append",
+        metavar="NAME:PATH",
+        help="Network results directory (repeatable, e.g., --network mainnet:./mainnet-results)",
+    )
+    report_parser.add_argument(
+        "--pr-number",
+        metavar="N",
+        help="PR number (for CI reports)",
+    )
+    report_parser.add_argument(
+        "--run-id",
+        metavar="ID",
+        help="Run ID (for CI reports)",
+    )
+    report_parser.add_argument(
+        "--update-index",
+        action="store_true",
+        help="Update main index.html (for CI reports)",
     )
     report_parser.set_defaults(func=cmd_report)
 

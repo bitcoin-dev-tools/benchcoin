@@ -11,6 +11,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from .patchelf import ensure_binary_runnable
+
 if TYPE_CHECKING:
     from .capabilities import Capabilities
     from .config import Config
@@ -88,6 +90,11 @@ class BenchmarkPhase:
         for name, path in binaries:
             if not path.exists():
                 raise FileNotFoundError(f"Binary not found: {path} ({name})")
+
+        # Ensure binaries can run on this system (patches guix binaries on NixOS)
+        for name, path in binaries:
+            if not ensure_binary_runnable(path):
+                raise RuntimeError(f"Binary {name} at {path} cannot be made runnable")
 
         # Check prerequisites
         errors = self.capabilities.check_for_run(self.config.instrumented)

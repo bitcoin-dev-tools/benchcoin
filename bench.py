@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Benchcoin - Bitcoin Core benchmarking toolkit.
 
-A unified CLI for building, benchmarking, analyzing, and reporting
-on Bitcoin Core performance.
+A CLI for building, benchmarking, analyzing, and reporting on Bitcoin Core
+performance.
 
 Usage:
     bench.py build BASE HEAD          Build bitcoind at two commits
@@ -22,7 +22,6 @@ from pathlib import Path
 from bench.capabilities import detect_capabilities
 from bench.config import build_config
 
-# Setup logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(levelname)s: %(message)s",
@@ -93,14 +92,12 @@ def cmd_run(args: argparse.Namespace) -> int:
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
 
-    # Validate config
     errors = config.validate()
     if errors:
         for error in errors:
             logger.error(error)
         return 1
 
-    # Check binaries exist
     binaries_dir = (
         Path(args.binaries_dir) if args.binaries_dir else Path(config.binaries_dir)
     )
@@ -135,7 +132,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         if config.instrumented:
             from bench.analyze import AnalyzePhase
 
-            analyze_phase = AnalyzePhase(config)
+            analyze_phase = AnalyzePhase()
 
             if result.debug_log_base:
                 try:
@@ -245,7 +242,6 @@ def cmd_full(args: argparse.Namespace) -> int:
     from bench.analyze import AnalyzePhase
     from bench.benchmark import BenchmarkPhase
     from bench.build import BuildPhase
-    from bench.utils import find_debug_log
 
     capabilities = detect_capabilities()
     config = build_config(
@@ -316,7 +312,7 @@ def cmd_full(args: argparse.Namespace) -> int:
     # Phase 3: Analyze (for instrumented runs)
     if config.instrumented:
         logger.info("=== Phase 3: Analyze ===")
-        analyze_phase = AnalyzePhase(config)
+        analyze_phase = AnalyzePhase()
 
         # Analyze base debug log
         if benchmark_result.debug_log_base:
@@ -353,7 +349,6 @@ def main() -> int:
         epilog=__doc__,
     )
 
-    # Global options
     parser.add_argument(
         "--config",
         metavar="PATH",

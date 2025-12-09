@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import json
 import logging
+import re
+import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -324,8 +326,6 @@ class ReportGenerator:
 
     def _linkify_commit(self, command: str) -> str:
         """Convert commit hashes in command to links."""
-        import re
-
         def replace_commit(match):
             commit = match.group(1)
             short_commit = commit[:8] if len(commit) > 8 else commit
@@ -346,8 +346,6 @@ class ReportGenerator:
             commit = run.parameters.get("commit", "")
             if not commit:
                 # Try to extract from command
-                import re
-
                 match = re.search(r"\(([a-f0-9]+)\)", run.command)
                 if match:
                     commit = match.group(1)
@@ -403,8 +401,6 @@ class ReportGenerator:
 
     def _copy_artifacts(self, input_dir: Path, output_dir: Path) -> None:
         """Copy flamegraphs and plots to output directory."""
-        import shutil
-
         # Skip if input and output are the same directory
         if input_dir.resolve() == output_dir.resolve():
             logger.debug("Input and output are the same directory, skipping copy")

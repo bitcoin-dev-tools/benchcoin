@@ -23,8 +23,8 @@ jobs:
       - name: Build both binaries
         run: |
           nix develop --command python3 bench.py build \
-            --binaries-dir ${{ runner.temp }}/binaries \
-            $BASE_SHA $HEAD_SHA
+            -o ${{ runner.temp }}/binaries \
+            $BASE_SHA:base $HEAD_SHA:head
 
       - name: Upload binaries
         uses: actions/upload-artifact@v4
@@ -73,12 +73,12 @@ jobs:
       - name: Run benchmark
         run: |
           nix develop --command python3 bench.py --profile ci run \
-            --binaries-dir ${{ runner.temp }}/binaries \
             --datadir $ORIGINAL_DATADIR \
             --tmp-datadir ${{ runner.temp }}/datadir \
             --output-dir ${{ runner.temp }}/output \
             --dbcache ${{ matrix.dbcache }} \
-            $BASE_SHA $HEAD_SHA
+            base:${{ runner.temp }}/binaries/base/bitcoind \
+            head:${{ runner.temp }}/binaries/head/bitcoind
 
       - name: Upload results
         uses: actions/upload-artifact@v4
@@ -143,12 +143,12 @@ jobs:
         run: |
           nix develop --command python3 bench.py --profile ci run \
             --instrumented \
-            --binaries-dir ${{ runner.temp }}/binaries \
             --datadir $ORIGINAL_DATADIR \
             --tmp-datadir ${{ runner.temp }}/datadir \
             --output-dir ${{ runner.temp }}/output \
             --dbcache ${{ matrix.dbcache }} \
-            $BASE_SHA $HEAD_SHA
+            base:${{ runner.temp }}/binaries/base/bitcoind \
+            head:${{ runner.temp }}/binaries/head/bitcoind
 
       - name: Upload results
         uses: actions/upload-artifact@v4

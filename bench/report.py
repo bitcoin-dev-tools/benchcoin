@@ -237,30 +237,29 @@ class ReportGenerator:
         return runs
 
     def _calculate_speedups(self, runs: list[BenchmarkRun]) -> dict[str, float]:
-        """Calculate speedup percentages for each network."""
+        """Calculate speedup percentages.
+
+        Uses the first entry as baseline and compares all others against it.
+        Returns a dict mapping command name to speedup percentage.
+        """
         speedups = {}
 
-        # Group by network
-        by_network: dict[str, list[BenchmarkRun]] = {}
-        for run in runs:
-            if run.network not in by_network:
-                by_network[run.network] = []
-            by_network[run.network].append(run)
+        if len(runs) < 2:
+            return speedups
 
-        # Calculate speedup for each network
-        for network, network_runs in by_network.items():
-            base_mean = None
-            head_mean = None
+        # Use first run as baseline
+        baseline = runs[0]
+        baseline_mean = baseline.mean
 
-            for run in network_runs:
-                if "base" in run.command.lower():
-                    base_mean = run.mean
-                elif "head" in run.command.lower():
-                    head_mean = run.mean
+        if baseline_mean <= 0:
+            return speedups
 
-            if base_mean and head_mean and base_mean > 0:
-                speedup = ((base_mean - head_mean) / base_mean) * 100
-                speedups[network] = round(speedup, 1)
+        # Calculate speedup for each other run
+        for run in runs[1:]:
+            speedup = ((baseline_mean - run.mean) / baseline_mean) * 100
+            # Use command name as key, extracting just the name part
+            name = run.command
+            speedups[name] = round(speedup, 1)
 
         return speedups
 
@@ -300,17 +299,27 @@ class ReportGenerator:
 
         # Generate speedup rows
         speedup_rows = ""
-        for network, speedup in speedups.items():
+        if sorted_runs:
+            # Add baseline row
+            baseline = sorted_runs[0]
+            speedup_rows += f"""
+              <tr class="border-t bg-gray-50">
+                <td class="px-4 py-2 font-mono text-sm">{baseline.command} (baseline)</td>
+                <td class="px-4 py-2 text-center">-</td>
+              </tr>
+            """
+        for name, speedup in speedups.items():
             color_class = ""
             if speedup > 0:
                 color_class = "text-green-600"
             elif speedup < 0:
                 color_class = "text-red-600"
 
+            sign = "+" if speedup > 0 else ""
             speedup_rows += f"""
               <tr class="border-t">
-                <td class="px-4 py-2 font-mono text-sm">{network}</td>
-                <td class="px-4 py-2 text-center {color_class}">{speedup}%</td>
+                <td class="px-4 py-2 font-mono text-sm">{name}</td>
+                <td class="px-4 py-2 text-center {color_class}">{sign}{speedup}%</td>
               </tr>
             """
 
@@ -326,6 +335,7 @@ class ReportGenerator:
 
     def _linkify_commit(self, command: str) -> str:
         """Convert commit hashes in command to links."""
+
         def replace_commit(match):
             commit = match.group(1)
             short_commit = commit[:8] if len(commit) > 8 else commit

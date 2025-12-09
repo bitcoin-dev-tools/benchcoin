@@ -5,11 +5,24 @@ A CLI for building, benchmarking, analyzing, and reporting on Bitcoin Core
 performance.
 
 Usage:
-    bench.py build BASE HEAD          Build bitcoind at two commits
-    bench.py run BASE HEAD            Run benchmark
-    bench.py analyze LOGFILE          Generate plots from debug.log
+    bench.py build COMMIT[:NAME]...   Build bitcoind at one or more commits
+    bench.py run NAME:BINARY...       Benchmark one or more binaries
+    bench.py analyze COMMIT LOGFILE   Generate plots from debug.log
+    bench.py compare RESULTS...       Compare benchmark results
     bench.py report INPUT OUTPUT      Generate HTML report
-    bench.py full BASE HEAD           Complete pipeline: build → run → analyze
+
+Examples:
+    # Build two commits
+    bench.py build HEAD~1:before HEAD:after
+
+    # Benchmark built binaries
+    bench.py run before:./binaries/before/bitcoind after:./binaries/after/bitcoind --datadir /data
+
+    # Compare results
+    bench.py compare ./bench-output/results.json
+
+    # Generate HTML report
+    bench.py report ./bench-output ./report
 """
 
 from __future__ import annotations
@@ -30,13 +43,13 @@ logger = logging.getLogger(__name__)
 
 
 def cmd_build(args: argparse.Namespace) -> int:
-    """Build bitcoind at two commits."""
+    """Build bitcoind at one or more commits."""
     from bench.build import BuildPhase
 
     capabilities = detect_capabilities()
     config = build_config(
         cli_args={
-            "binaries_dir": args.binaries_dir,
+            "binaries_dir": args.output_dir,
             "skip_existing": args.skip_existing,
             "dry_run": args.dry_run,
             "verbose": args.verbose,
@@ -52,12 +65,12 @@ def cmd_build(args: argparse.Namespace) -> int:
 
     try:
         result = phase.run(
-            args.base_commit,
-            args.head_commit,
-            binaries_dir=Path(args.binaries_dir) if args.binaries_dir else None,
+            args.commits,
+            output_dir=Path(args.output_dir) if args.output_dir else None,
         )
-        logger.info(f"Built base binary: {result.base_binary}")
-        logger.info(f"Built head binary: {result.head_binary}")
+        logger.info(f"Built {len(result.binaries)} binary(ies):")
+        for binary in result.binaries:
+            logger.info(f"  {binary.name}: {binary.path}")
         return 0
     except Exception as e:
         logger.error(f"Build failed: {e}")
@@ -65,15 +78,14 @@ def cmd_build(args: argparse.Namespace) -> int:
 
 
 def cmd_run(args: argparse.Namespace) -> int:
-    """Run benchmark comparing two commits."""
-    from bench.benchmark import BenchmarkPhase
+    """Run benchmark on one or more binaries."""
+    from bench.benchmark import BenchmarkPhase, parse_binary_spec
 
     capabilities = detect_capabilities()
     config = build_config(
         cli_args={
             "datadir": args.datadir,
             "tmp_datadir": args.tmp_datadir,
-            "binaries_dir": args.binaries_dir,
             "output_dir": args.output_dir,
             "stop_height": args.stop_height,
             "dbcache": args.dbcache,
@@ -98,31 +110,25 @@ def cmd_run(args: argparse.Namespace) -> int:
             logger.error(error)
         return 1
 
-    binaries_dir = (
-        Path(args.binaries_dir) if args.binaries_dir else Path(config.binaries_dir)
-    )
-    base_binary = binaries_dir / "base" / "bitcoind"
-    head_binary = binaries_dir / "head" / "bitcoind"
-
-    if not base_binary.exists():
-        logger.error(f"Base binary not found: {base_binary}")
-        logger.error("Run 'bench.py build' first")
+    # Parse binary specs
+    try:
+        binaries = [parse_binary_spec(spec) for spec in args.binaries]
+    except ValueError as e:
+        logger.error(str(e))
         return 1
 
-    if not head_binary.exists():
-        logger.error(f"Head binary not found: {head_binary}")
-        logger.error("Run 'bench.py build' first")
-        return 1
+    # Validate binaries exist
+    for name, path in binaries:
+        if not path.exists():
+            logger.error(f"Binary not found: {path} ({name})")
+            return 1
 
     phase = BenchmarkPhase(config, capabilities)
     output_dir = Path(config.output_dir)
 
     try:
         result = phase.run(
-            base_commit=args.base_commit,
-            head_commit=args.head_commit,
-            base_binary=base_binary,
-            head_binary=head_binary,
+            binaries=binaries,
             datadir=Path(config.datadir),
             output_dir=output_dir,
         )
@@ -134,29 +140,60 @@ def cmd_run(args: argparse.Namespace) -> int:
 
             analyze_phase = AnalyzePhase()
 
-            if result.debug_log_base:
-                try:
-                    analyze_phase.run(
-                        commit=args.base_commit,
-                        log_file=result.debug_log_base,
-                        output_dir=output_dir / "plots",
-                    )
-                except Exception as e:
-                    logger.warning(f"Analysis for base failed: {e}")
-
-            if result.debug_log_head:
-                try:
-                    analyze_phase.run(
-                        commit=args.head_commit,
-                        log_file=result.debug_log_head,
-                        output_dir=output_dir / "plots",
-                    )
-                except Exception as e:
-                    logger.warning(f"Analysis for head failed: {e}")
+            for binary_result in result.binaries:
+                if binary_result.debug_log:
+                    try:
+                        analyze_phase.run(
+                            commit=binary_result.name,
+                            log_file=binary_result.debug_log,
+                            output_dir=output_dir / "plots",
+                        )
+                    except Exception as e:
+                        logger.warning(f"Analysis for {binary_result.name} failed: {e}")
 
         return 0
     except Exception as e:
         logger.error(f"Benchmark failed: {e}")
+        if args.verbose:
+            import traceback
+
+            traceback.print_exc()
+        return 1
+
+
+def cmd_compare(args: argparse.Namespace) -> int:
+    """Compare benchmark results from multiple files."""
+    from bench.compare import ComparePhase
+
+    if args.verbose:
+        logging.getLogger().setLevel(logging.DEBUG)
+
+    results_files = [Path(f) for f in args.results_files]
+
+    # Validate files exist
+    for f in results_files:
+        if not f.exists():
+            logger.error(f"Results file not found: {f}")
+            return 1
+
+    phase = ComparePhase()
+
+    try:
+        result = phase.run(results_files, baseline=args.baseline)
+
+        # Output results
+        output_json = phase.to_json(result)
+
+        if args.output:
+            output_path = Path(args.output)
+            output_path.write_text(output_json)
+            logger.info(f"Comparison saved to: {output_path}")
+        else:
+            print(output_json)
+
+        return 0
+    except Exception as e:
+        logger.error(f"Comparison failed: {e}")
         if args.verbose:
             import traceback
 
@@ -237,110 +274,6 @@ def cmd_report(args: argparse.Namespace) -> int:
         return 1
 
 
-def cmd_full(args: argparse.Namespace) -> int:
-    """Run full pipeline: build → run → analyze."""
-    from bench.analyze import AnalyzePhase
-    from bench.benchmark import BenchmarkPhase
-    from bench.build import BuildPhase
-
-    capabilities = detect_capabilities()
-    config = build_config(
-        cli_args={
-            "datadir": args.datadir,
-            "tmp_datadir": args.tmp_datadir,
-            "binaries_dir": args.binaries_dir,
-            "output_dir": args.output_dir,
-            "stop_height": args.stop_height,
-            "dbcache": args.dbcache,
-            "runs": args.runs,
-            "connect": args.connect,
-            "chain": args.chain,
-            "instrumented": args.instrumented,
-            "skip_existing": args.skip_existing,
-            "no_cache_drop": args.no_cache_drop,
-            "dry_run": args.dry_run,
-            "verbose": args.verbose,
-        },
-        config_file=Path(args.config) if args.config else None,
-        profile=args.profile,
-    )
-
-    if args.verbose:
-        logging.getLogger().setLevel(logging.DEBUG)
-
-    # Validate config
-    errors = config.validate()
-    if errors:
-        for error in errors:
-            logger.error(error)
-        return 1
-
-    output_dir = Path(config.output_dir)
-    binaries_dir = Path(config.binaries_dir)
-
-    # Phase 1: Build
-    logger.info("=== Phase 1: Build ===")
-    build_phase = BuildPhase(config, capabilities)
-
-    try:
-        build_result = build_phase.run(
-            args.base_commit,
-            args.head_commit,
-            binaries_dir=binaries_dir,
-        )
-    except Exception as e:
-        logger.error(f"Build failed: {e}")
-        return 1
-
-    # Phase 2: Benchmark
-    logger.info("=== Phase 2: Benchmark ===")
-    benchmark_phase = BenchmarkPhase(config, capabilities)
-
-    try:
-        benchmark_result = benchmark_phase.run(
-            base_commit=build_result.base_commit,
-            head_commit=build_result.head_commit,
-            base_binary=build_result.base_binary,
-            head_binary=build_result.head_binary,
-            datadir=Path(config.datadir),
-            output_dir=output_dir,
-        )
-    except Exception as e:
-        logger.error(f"Benchmark failed: {e}")
-        return 1
-
-    # Phase 3: Analyze (for instrumented runs)
-    if config.instrumented:
-        logger.info("=== Phase 3: Analyze ===")
-        analyze_phase = AnalyzePhase()
-
-        # Analyze base debug log
-        if benchmark_result.debug_log_base:
-            try:
-                analyze_phase.run(
-                    commit=build_result.base_commit,
-                    log_file=benchmark_result.debug_log_base,
-                    output_dir=output_dir / "plots",
-                )
-            except Exception as e:
-                logger.warning(f"Analysis for base failed: {e}")
-
-        # Analyze head debug log
-        if benchmark_result.debug_log_head:
-            try:
-                analyze_phase.run(
-                    commit=build_result.head_commit,
-                    log_file=benchmark_result.debug_log_head,
-                    output_dir=output_dir / "plots",
-                )
-            except Exception as e:
-                logger.warning(f"Analysis for head failed: {e}")
-
-    logger.info("=== Complete ===")
-    logger.info(f"Results: {benchmark_result.results_file}")
-    return 0
-
-
 def main() -> int:
     """Main entry point."""
     parser = argparse.ArgumentParser(
@@ -375,11 +308,21 @@ def main() -> int:
     subparsers = parser.add_subparsers(dest="command", help="Commands")
 
     # Build command
-    build_parser = subparsers.add_parser("build", help="Build bitcoind at two commits")
-    build_parser.add_argument("base_commit", help="Base commit (for comparison)")
-    build_parser.add_argument("head_commit", help="Head commit (new code)")
+    build_parser = subparsers.add_parser(
+        "build",
+        help="Build bitcoind at one or more commits",
+        description="Build bitcoind binaries from git commits. "
+        "Each commit can optionally have a name suffix: COMMIT:NAME",
+    )
     build_parser.add_argument(
-        "--binaries-dir",
+        "commits",
+        nargs="+",
+        metavar="COMMIT[:NAME]",
+        help="Commit(s) to build. Format: COMMIT or COMMIT:NAME (e.g., HEAD:latest, abc123:v27)",
+    )
+    build_parser.add_argument(
+        "-o",
+        "--output-dir",
         metavar="PATH",
         help="Where to store binaries (default: ./binaries)",
     )
@@ -391,9 +334,18 @@ def main() -> int:
     build_parser.set_defaults(func=cmd_build)
 
     # Run command
-    run_parser = subparsers.add_parser("run", help="Run benchmark")
-    run_parser.add_argument("base_commit", help="Base commit hash")
-    run_parser.add_argument("head_commit", help="Head commit hash")
+    run_parser = subparsers.add_parser(
+        "run",
+        help="Run benchmark on one or more binaries",
+        description="Benchmark bitcoind binaries using hyperfine. "
+        "Each binary must have a name and path: NAME:PATH",
+    )
+    run_parser.add_argument(
+        "binaries",
+        nargs="+",
+        metavar="NAME:PATH",
+        help="Binary(ies) to benchmark. Format: NAME:PATH (e.g., v27:./binaries/v27/bitcoind)",
+    )
     run_parser.add_argument(
         "--datadir",
         required=True,
@@ -406,14 +358,10 @@ def main() -> int:
         help="Temp datadir for benchmark runs",
     )
     run_parser.add_argument(
-        "--binaries-dir",
-        metavar="PATH",
-        help="Location of pre-built binaries",
-    )
-    run_parser.add_argument(
+        "-o",
         "--output-dir",
         metavar="PATH",
-        help="Output directory for results",
+        help="Output directory for results (default: ./bench-output)",
     )
     run_parser.add_argument(
         "--stop-height",
@@ -469,6 +417,32 @@ def main() -> int:
     )
     analyze_parser.set_defaults(func=cmd_analyze)
 
+    # Compare command
+    compare_parser = subparsers.add_parser(
+        "compare",
+        help="Compare benchmark results from multiple files",
+        description="Load and compare results from one or more results.json files. "
+        "Calculates speedup percentages relative to a baseline.",
+    )
+    compare_parser.add_argument(
+        "results_files",
+        nargs="+",
+        metavar="RESULTS_FILE",
+        help="results.json file(s) to compare",
+    )
+    compare_parser.add_argument(
+        "--baseline",
+        metavar="NAME",
+        help="Name of the baseline entry (default: first entry)",
+    )
+    compare_parser.add_argument(
+        "-o",
+        "--output",
+        metavar="FILE",
+        help="Output file for comparison JSON (default: stdout)",
+    )
+    compare_parser.set_defaults(func=cmd_compare)
+
     # Report command
     report_parser = subparsers.add_parser("report", help="Generate HTML report")
     report_parser.add_argument("input_dir", help="Directory with results.json")
@@ -478,78 +452,6 @@ def main() -> int:
         help="Report title",
     )
     report_parser.set_defaults(func=cmd_report)
-
-    # Full command
-    full_parser = subparsers.add_parser(
-        "full", help="Full pipeline: build → run → analyze"
-    )
-    full_parser.add_argument("base_commit", help="Base commit (for comparison)")
-    full_parser.add_argument("head_commit", help="Head commit (new code)")
-    full_parser.add_argument(
-        "--datadir",
-        required=True,
-        metavar="PATH",
-        help="Source datadir with blockchain snapshot",
-    )
-    full_parser.add_argument(
-        "--tmp-datadir",
-        metavar="PATH",
-        help="Temp datadir for benchmark runs",
-    )
-    full_parser.add_argument(
-        "--binaries-dir",
-        metavar="PATH",
-        help="Where to store binaries",
-    )
-    full_parser.add_argument(
-        "--output-dir",
-        metavar="PATH",
-        help="Output directory for results",
-    )
-    full_parser.add_argument(
-        "--stop-height",
-        type=int,
-        metavar="N",
-        help="Block height to stop at",
-    )
-    full_parser.add_argument(
-        "--dbcache",
-        type=int,
-        metavar="N",
-        help="Database cache size in MB",
-    )
-    full_parser.add_argument(
-        "--runs",
-        type=int,
-        metavar="N",
-        help="Number of benchmark iterations",
-    )
-    full_parser.add_argument(
-        "--connect",
-        metavar="ADDR",
-        help="Connect address for sync",
-    )
-    full_parser.add_argument(
-        "--chain",
-        choices=["main", "testnet", "signet", "regtest"],
-        help="Chain to use",
-    )
-    full_parser.add_argument(
-        "--instrumented",
-        action="store_true",
-        help="Enable profiling (flamegraph + debug logging)",
-    )
-    full_parser.add_argument(
-        "--skip-existing",
-        action="store_true",
-        help="Skip build if binary already exists",
-    )
-    full_parser.add_argument(
-        "--no-cache-drop",
-        action="store_true",
-        help="Skip cache dropping between runs",
-    )
-    full_parser.set_defaults(func=cmd_full)
 
     args = parser.parse_args()
 

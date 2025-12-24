@@ -1,0 +1,74 @@
+{
+  "results": [
+    {
+      "network": "mainnet-default-instrumented",
+      "command": "base",
+      "mean": 718.7786009397599,
+      "stddev": null,
+      "user": 1161.00821322,
+      "system": 230.83198549999997
+    },
+    {
+      "network": "mainnet-default-instrumented",
+      "command": "head",
+      "mean": 728.73021523376,
+      "stddev": null,
+      "user": 1057.71449622,
+      "system": 227.52786849999998
+    },
+    {
+      "network": "mainnet-large-instrumented",
+      "command": "base",
+      "mean": 623.1762407439401,
+      "stddev": null,
+      "user": 806.1122796,
+      "system": 131.3083605
+    },
+    {
+      "network": "mainnet-large-instrumented",
+      "command": "head",
+      "mean": 576.10122435394,
+      "stddev": null,
+      "user": 754.1854506,
+      "system": 128.0004035
+    },
+    {
+      "network": "mainnet-default-uninstrumented",
+      "command": "base",
+      "mean": 702.3023308381535,
+      "stddev": 4.027429566792007,
+      "user": 1166.7325791933333,
+      "system": 226.0181931
+    },
+    {
+      "network": "mainnet-default-uninstrumented",
+      "command": "head",
+      "mean": 675.3943479041534,
+      "stddev": 7.744868061457862,
+      "user": 1085.18366086,
+      "system": 223.5383961
+    },
+    {
+      "network": "mainnet-large-uninstrumented",
+      "command": "base",
+      "mean": 645.8861593201801,
+      "stddev": 7.091383382421477,
+      "user": 802.3738215466666,
+      "system": 121.00601631333332
+    },
+    {
+      "network": "mainnet-large-uninstrumented",
+      "command": "head",
+      "mean": 614.0158153261801,
+      "stddev": 10.98250386890726,
+      "user": 755.9124272133334,
+      "system": 118.52401164666666
+    }
+  ],
+  "speedups": {
+    "mainnet-default-instrumented": -1.4,
+    "mainnet-large-instrumented": 7.6,
+    "mainnet-default-uninstrumented": 3.8,
+    "mainnet-large-uninstrumented": 4.9
+  }
+}

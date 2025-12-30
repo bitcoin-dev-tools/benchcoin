@@ -449,15 +449,6 @@ class ReportGenerator:
 
         # Generate speedup rows
         speedup_rows = ""
-        if sorted_runs:
-            # Add baseline row
-            baseline = sorted_runs[0]
-            speedup_rows += f"""
-              <tr class="border-t bg-gray-50">
-                <td class="px-4 py-2 font-mono text-sm">{baseline.command} (baseline)</td>
-                <td class="px-4 py-2 text-center">-</td>
-              </tr>
-            """
         for name, speedup in speedups.items():
             # Skip instrumented runs in speedup summary
             if name.lower().endswith("-instrumented"):

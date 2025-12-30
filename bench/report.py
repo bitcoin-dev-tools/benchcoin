@@ -562,7 +562,7 @@ class ReportGenerator:
 
             if flamegraph_path:
                 graphs_html += f"""
-                <object data="{flamegraph_name}" type="image/svg+xml" width="100%" style="height: 400px;" class="mb-4"></object>
+                <object data="{flamegraph_name}" type="image/svg+xml" width="100%" class="mb-4"></object>
                 """
 
             if plot_files and plots_dir:

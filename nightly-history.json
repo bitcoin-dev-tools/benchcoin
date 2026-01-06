@@ -1,0 +1,49 @@
+{
+  "results": [
+    {
+      "date": "2026-01-06",
+      "commit": "a933b9c8438a147bcf851aa8285b34a214e24507",
+      "config": "32000",
+      "dbcache": 32000,
+      "mean": 612.85576170434,
+      "stddev": 4.998670222153479,
+      "runs": 2
+    },
+    {
+      "date": "2026-01-06",
+      "commit": "a933b9c8438a147bcf851aa8285b34a214e24507",
+      "config": "450",
+      "dbcache": 450,
+      "mean": 702.9980965234399,
+      "stddev": 9.525738866762428,
+      "runs": 2
+    }
+  ],
+  "config": {
+    "start_height": 840000,
+    "runs": 2,
+    "command_template": "bitcoind -datadir={datadir} -dbcache={dbcache} -stopatheight=855000 -chain=main -connect=148.251.128.115:33333 -prune=10000 -daemon=0 -printtoconsole=0",
+    "bitcoind": {
+      "stopatheight": 855000,
+      "chain": "main",
+      "connect": "148.251.128.115:33333",
+      "prune": 10000,
+      "daemon": false,
+      "printtoconsole": false
+    },
+    "matrix": {
+      "dbcache": [
+        450,
+        32000
+      ]
+    }
+  },
+  "machine": {
+    "cpu_model": "AMD EPYC 7763 64-Core Processor",
+    "architecture": "x86_64",
+    "cpu_cores": 4,
+    "disk_type": "HDD",
+    "os_kernel": "6.11.0-1018-azure",
+    "total_ram_gb": 15.6
+  }
+}

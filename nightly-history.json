@@ -29,20 +29,38 @@
     },
     {
       "date": "2026-01-07",
+      "commit": "bd4f4782f23b59f8ddd608e1b5a3690e134f2a0e",
+      "config": "32000",
+      "dbcache": 32000,
+      "mean": 2603.53606938938,
+      "stddev": 3.1590848856682348,
+      "runs": 2
+    },
+    {
+      "date": "2026-01-07",
       "commit": "241f8607a40bdd98fcd86c8ace19844983b36b54",
       "config": "450",
       "dbcache": 450,
       "mean": 713.9004484853001,
       "stddev": 7.556264783706519,
       "runs": 2
+    },
+    {
+      "date": "2026-01-07",
+      "commit": "bd4f4782f23b59f8ddd608e1b5a3690e134f2a0e",
+      "config": "450",
+      "dbcache": 450,
+      "mean": 3157.7827738555798,
+      "stddev": 188.2899932724234,
+      "runs": 2
     }
   ],
   "config": {
     "start_height": 840000,
     "runs": 2,
-    "command_template": "bitcoind -datadir={datadir} -dbcache={dbcache} -stopatheight=855000 -chain=main -connect=148.251.128.115:33333 -prune=10000 -daemon=0 -printtoconsole=0",
+    "command_template": "bitcoind -datadir={datadir} -dbcache={dbcache} -stopatheight=900000 -chain=main -connect=148.251.128.115:33333 -prune=10000 -daemon=0 -printtoconsole=0",
     "bitcoind": {
-      "stopatheight": 855000,
+      "stopatheight": 900000,
       "chain": "main",
       "connect": "148.251.128.115:33333",
       "prune": 10000,

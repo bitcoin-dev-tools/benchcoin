@@ -60,7 +60,7 @@
     <div class="w-full">
       <h1 class="text-3xl font-bold mb-2">Bitcoin Core Nightly IBD Benchmark</h1>
       <p class="text-secondary mb-4">
-        IBD from a single networked peer from block 840,000 to 855,000 on a Hetzner AX52
+        IBD from a single networked peer from block 840,000 to 900,000 on a Hetzner AX52
       </p>
       <div class="card rounded-lg p-4">
         <div id="nightly-chart" style="width:100%; height:calc(100vh - 200px); min-height:400px;"></div>
@@ -70,7 +70,7 @@
       </p>
     </div>
     <script>
-      const data = [{"date": "2026-01-06", "commit": "a933b9c8438a147bcf851aa8285b34a214e24507", "config": "32000", "dbcache": 32000, "mean": 612.85576170434, "stddev": 4.998670222153479, "runs": 2}, {"date": "2026-01-06", "commit": "a933b9c8438a147bcf851aa8285b34a214e24507", "config": "450", "dbcache": 450, "mean": 702.9980965234399, "stddev": 9.525738866762428, "runs": 2}, {"date": "2026-01-07", "commit": "241f8607a40bdd98fcd86c8ace19844983b36b54", "config": "32000", "dbcache": 32000, "mean": 618.4414128441599, "stddev": 3.1666917827354943, "runs": 2}, {"date": "2026-01-07", "commit": "241f8607a40bdd98fcd86c8ace19844983b36b54", "config": "450", "dbcache": 450, "mean": 713.9004484853001, "stddev": 7.556264783706519, "runs": 2}];
+      const data = [{"date": "2026-01-06", "commit": "a933b9c8438a147bcf851aa8285b34a214e24507", "config": "32000", "dbcache": 32000, "mean": 612.85576170434, "stddev": 4.998670222153479, "runs": 2}, {"date": "2026-01-06", "commit": "a933b9c8438a147bcf851aa8285b34a214e24507", "config": "450", "dbcache": 450, "mean": 702.9980965234399, "stddev": 9.525738866762428, "runs": 2}, {"date": "2026-01-07", "commit": "241f8607a40bdd98fcd86c8ace19844983b36b54", "config": "32000", "dbcache": 32000, "mean": 618.4414128441599, "stddev": 3.1666917827354943, "runs": 2}, {"date": "2026-01-07", "commit": "bd4f4782f23b59f8ddd608e1b5a3690e134f2a0e", "config": "32000", "dbcache": 32000, "mean": 2603.53606938938, "stddev": 3.1590848856682348, "runs": 2}, {"date": "2026-01-07", "commit": "241f8607a40bdd98fcd86c8ace19844983b36b54", "config": "450", "dbcache": 450, "mean": 713.9004484853001, "stddev": 7.556264783706519, "runs": 2}, {"date": "2026-01-07", "commit": "bd4f4782f23b59f8ddd608e1b5a3690e134f2a0e", "config": "450", "dbcache": 450, "mean": 3157.7827738555798, "stddev": 188.2899932724234, "runs": 2}];
 
       // Detect system preference and saved preference
       function getPreferredTheme() {

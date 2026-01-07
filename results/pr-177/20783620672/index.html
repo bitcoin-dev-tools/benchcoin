@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Benchmark Results</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+  </head>
+  <body class="bg-gray-100 p-8">
+    <div class="w-9/10 mx-auto">
+      <h1 class="text-3xl font-bold mb-8">Benchmark Results</h1>
+      <div class="bg-white rounded-lg shadow p-6 mb-8">
+        <h2 class="text-xl font-semibold mb-4">PR #177 - Run 20783620672</h2>
+
+        <!-- Run Data Table -->
+        <h3 class="text-lg font-semibold mb-4">Run Data</h3>
+        <div class="overflow-x-auto mb-8">
+          <table class="min-w-full table-auto">
+            <thead>
+              <tr class="bg-gray-50">
+                <th class="px-4 py-2 text-left">Config</th>
+                <th class="px-4 py-2">Mean (s)</th>
+                <th class="px-4 py-2">Std Dev</th>
+                <th class="px-4 py-2">User (s)</th>
+                <th class="px-4 py-2">System (s)</th>
+              </tr>
+            </thead>
+            <tbody>
+              
+              <tr class="border-t">
+                <td class="px-4 py-2 font-mono text-sm">32000-false</td>
+                <td class="px-4 py-2 text-center">2626.008</td>
+                <td class="px-4 py-2 text-center">19.201</td>
+                <td class="px-4 py-2 text-center">3245.649</td>
+                <td class="px-4 py-2 text-center">475.323</td>
+              </tr>
+            
+              <tr class="border-t">
+                <td class="px-4 py-2 font-mono text-sm">32000-true</td>
+                <td class="px-4 py-2 text-center">2658.434</td>
+                <td class="px-4 py-2 text-center">N/A</td>
+                <td class="px-4 py-2 text-center">3272.788</td>
+                <td class="px-4 py-2 text-center">495.220</td>
+              </tr>
+            
+              <tr class="border-t">
+                <td class="px-4 py-2 font-mono text-sm">450-false</td>
+                <td class="px-4 py-2 text-center">3298.071</td>
+                <td class="px-4 py-2 text-center">182.601</td>
+                <td class="px-4 py-2 text-center">4118.598</td>
+                <td class="px-4 py-2 text-center">681.796</td>
+              </tr>
+            
+              <tr class="border-t">
+                <td class="px-4 py-2 font-mono text-sm">450-true</td>
+                <td class="px-4 py-2 text-center">3461.547</td>
+                <td class="px-4 py-2 text-center">N/A</td>
+                <td class="px-4 py-2 text-center">4115.985</td>
+                <td class="px-4 py-2 text-center">676.088</td>
+              </tr>
+            
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Nightly Comparison Section -->
+        
+        <h3 class="text-lg font-semibold mb-4">Comparison to Nightly Master</h3>
+        <div class="overflow-x-auto mb-8">
+          <table class="min-w-full table-auto">
+            <thead>
+              <tr class="bg-gray-50">
+                <th class="px-4 py-2 text-left">Config</th>
+                <th class="px-4 py-2">PR Time</th>
+                <th class="px-4 py-2">Nightly Time (Date)</th>
+                <th class="px-4 py-2">Change</th>
+              </tr>
+            </thead>
+            <tbody>
+              
+              <tr class="border-t">
+                <td class="px-4 py-2 font-mono text-sm">32 GB</td>
+                <td class="px-4 py-2 text-center">43.8 min</td>
+                <td class="px-4 py-2 text-center">43.4 min (2026-01-07, <a href="https://github.com/bitcoin-dev-tools/benchcoin/commit/bd4f4782f23b59f8ddd608e1b5a3690e134f2a0e" target="_blank" class="text-blue-600 hover:underline">bd4f478</a>)</td>
+                <td class="px-4 py-2 text-center"><span class="text-red-600">-0.9%</span></td>
+              </tr>
+            
+              <tr class="border-t">
+                <td class="px-4 py-2 font-mono text-sm">450 MB</td>
+                <td class="px-4 py-2 text-center">55.0 min</td>
+                <td class="px-4 py-2 text-center">52.6 min (2026-01-07, <a href="https://github.com/bitcoin-dev-tools/benchcoin/commit/bd4f4782f23b59f8ddd608e1b5a3690e134f2a0e" target="_blank" class="text-blue-600 hover:underline">bd4f478</a>)</td>
+                <td class="px-4 py-2 text-center"><span class="text-red-600">-4.4%</span></td>
+              </tr>
+            
+            </tbody>
+          </table>
+        </div>
+        
+            <h3 class="text-lg font-semibold mb-4">Performance Trend</h3>
+            <div class="mb-8">
+              
+<div id="pr-comparison-chart" style="width:100%; height:400px;"></div>
+<script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+<script>
+  const nightlyData = [{"date": "2026-01-06", "commit": "a933b9c8438a147bcf851aa8285b34a214e24507", "config": "32000", "dbcache": 32000, "mean": 612.85576170434, "stddev": 4.998670222153479, "runs": 2}, {"date": "2026-01-06", "commit": "a933b9c8438a147bcf851aa8285b34a214e24507", "config": "450", "dbcache": 450, "mean": 702.9980965234399, "stddev": 9.525738866762428, "runs": 2}, {"date": "2026-01-07", "commit": "241f8607a40bdd98fcd86c8ace19844983b36b54", "config": "32000", "dbcache": 32000, "mean": 618.4414128441599, "stddev": 3.1666917827354943, "runs": 2}, {"date": "2026-01-07", "commit": "bd4f4782f23b59f8ddd608e1b5a3690e134f2a0e", "config": "32000", "dbcache": 32000, "mean": 2603.53606938938, "stddev": 3.1590848856682348, "runs": 2}, {"date": "2026-01-07", "commit": "241f8607a40bdd98fcd86c8ace19844983b36b54", "config": "450", "dbcache": 450, "mean": 713.9004484853001, "stddev": 7.556264783706519, "runs": 2}, {"date": "2026-01-07", "commit": "bd4f4782f23b59f8ddd608e1b5a3690e134f2a0e", "config": "450", "dbcache": 450, "mean": 3157.7827738555798, "stddev": 188.2899932724234, "runs": 2}];
+  const prData = [{"config": "32000", "mean": 2626.00772633202, "stddev": 19.200560222626688, "commit": "d83ca05241d8c0f10304f4e7bbc5f467050dc6f8", "date": "2026-01-07"}, {"config": "450", "mean": 3298.07114344588, "stddev": 182.60090238893693, "commit": "d83ca05241d8c0f10304f4e7bbc5f467050dc6f8", "date": "2026-01-07"}];
+
+  const colors = {
+    '450': { line: '#3b82f6', error: 'rgba(59, 130, 246, 0.3)' },
+    '32000': { line: '#f97316', error: 'rgba(249, 115, 22, 0.3)' }
+  };
+  const prColors = {
+    '450': '#10b981',   // Green for PR 450
+    '32000': '#ef4444'  // Red for PR 32000
+  };
+
+  const toMinutes = (seconds) => seconds / 60;
+
+  function buildTraces() {
+    const traces = [];
+
+    // Nightly traces (lines with markers)
+    ['450', '32000'].forEach(config => {
+      const configData = nightlyData.filter(d => d.config === config);
+      if (configData.length > 0) {
+        traces.push({
+          name: config === '450' ? '450MB nightly' : '32GB nightly',
+          x: configData.map(d => d.date),
+          y: configData.map(d => toMinutes(d.mean)),
+          text: configData.map(d => d.commit.slice(0, 8)),
+          customdata: configData.map(d => [d.commit, toMinutes(d.stddev || 0)]),
+          hovertemplate: '<b>%{text}</b><br>%{y:.1f} min<br>\u00b1%{customdata[1]:.1f} min<extra>' + (config === '450' ? '450MB' : '32GB') + ' nightly</extra>',
+          mode: 'lines+markers',
+          line: { color: colors[config].line, width: 2 },
+          marker: { size: 6 },
+          error_y: {
+            type: 'data',
+            array: configData.map(d => toMinutes(d.stddev || 0)),
+            visible: true,
+            color: colors[config].error,
+            thickness: 1.5
+          }
+        });
+      }
+    });
+
+    // PR traces (star markers)
+    prData.forEach(pr => {
+      const config = pr.config;
+      traces.push({
+        name: config === '450' ? '450MB PR' : '32GB PR',
+        x: [pr.date],
+        y: [toMinutes(pr.mean)],
+        text: [pr.commit.slice(0, 8)],
+        customdata: [[pr.commit, toMinutes(pr.stddev || 0)]],
+        hovertemplate: '<b>PR %{text}</b><br>%{y:.1f} min<br>\u00b1%{customdata[1]:.1f} min<extra>' + (config === '450' ? '450MB' : '32GB') + ' PR</extra>',
+        mode: 'markers',
+        marker: {
+          symbol: 'star',
+          size: 16,
+          color: prColors[config],
+          line: { color: '#ffffff', width: 2 }
+        }
+      });
+    });
+
+    return traces;
+  }
+
+  const layout = {
+    title: {
+      text: 'PR vs Nightly Sync Performance',
+      font: { size: 16 }
+    },
+    xaxis: {
+      title: { text: 'Date' },
+      tickangle: -45
+    },
+    yaxis: {
+      title: { text: 'Time (minutes)' },
+      rangemode: 'tozero'
+    },
+    legend: {
+      orientation: 'h',
+      yanchor: 'bottom',
+      y: 1.02,
+      xanchor: 'right',
+      x: 1
+    },
+    hovermode: 'closest',
+    margin: { t: 60, b: 80 }
+  };
+
+  const config = {
+    responsive: true,
+    displayModeBar: 'hover',
+    modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d'],
+    displaylogo: false
+  };
+
+  Plotly.newPlot('pr-comparison-chart', buildTraces(), layout, config);
+</script>
+
+            </div>
+            
+
+        <!-- Flamegraphs and Plots -->
+        
+            <h3 class="text-lg font-semibold mb-4">Flamegraphs and Plots</h3>
+            
+            <div class="mb-8">
+              <h4 class="text-md font-medium mb-2">450-true - pr</h4>
+            
+                <object data="450-true-pr-flamegraph.svg" type="image/svg+xml" width="100%" class="mb-4"></object>
+                
+                <a href="450-true-plots/pr-cache_vs_height.png" target="_blank">
+                  <img src="450-true-plots/pr-cache_vs_height.png" alt="pr-cache_vs_height.png" class="mb-4 max-w-full h-auto">
+                </a>
+                
+                <a href="450-true-plots/pr-cache_vs_time.png" target="_blank">
+                  <img src="450-true-plots/pr-cache_vs_time.png" alt="pr-cache_vs_time.png" class="mb-4 max-w-full h-auto">
+                </a>
+                
+                <a href="450-true-plots/pr-coindb_commit_txout_vs_time.png" target="_blank">
+                  <img src="450-true-plots/pr-coindb_commit_txout_vs_time.png" alt="pr-coindb_commit_txout_vs_time.png" class="mb-4 max-w-full h-auto">
+                </a>
+                
+                <a href="450-true-plots/pr-coindb_write_batch_size_vs_time.png" target="_blank">
+                  <img src="450-true-plots/pr-coindb_write_batch_size_vs_time.png" alt="pr-coindb_write_batch_size_vs_time.png" class="mb-4 max-w-full h-auto">
+                </a>
+                
+                <a href="450-true-plots/pr-coins_cache_vs_height.png" target="_blank">
+                  <img src="450-true-plots/pr-coins_cache_vs_height.png" alt="pr-coins_cache_vs_height.png" class="mb-4 max-w-full h-auto">
+                </a>
+                
+                <a href="450-true-plots/pr-height_vs_time.png" target="_blank">
+                  <img src="450-true-plots/pr-height_vs_time.png" alt="pr-height_vs_time.png" class="mb-4 max-w-full h-auto">
+                </a>
+                
+                <a href="450-true-plots/pr-leveldb_compact_vs_time.png" target="_blank">
+                  <img src="450-true-plots/pr-leveldb_compact_vs_time.png" alt="pr-leveldb_compact_vs_time.png" class="mb-4 max-w-full h-auto">
+                </a>
+                
+                <a href="450-true-plots/pr-leveldb_gen_bytes_vs_time.png" target="_blank">
+                  <img src="450-true-plots/pr-leveldb_gen_bytes_vs_time.png" alt="pr-leveldb_gen_bytes_vs_time.png" class="mb-4 max-w-full h-auto">
+                </a>
+                
+                <a href="450-true-plots/pr-leveldb_gen_keys_vs_time.png" target="_blank">
+                  <img src="450-true-plots/pr-leveldb_gen_keys_vs_time.png" alt="pr-leveldb_gen_keys_vs_time.png" class="mb-4 max-w-full h-auto">
+                </a>
+                
+                <a href="450-true-plots/pr-tx_vs_height.png" target="_blank">
+                  <img src="450-true-plots/pr-tx_vs_height.png" alt="pr-tx_vs_height.png" class="mb-4 max-w-full h-auto">
+                </a>
+                </div>
+            <div class="mb-8">
+              <h4 class="text-md font-medium mb-2">32000-true - pr</h4>
+            
+                <object data="32000-true-pr-flamegraph.svg" type="image/svg+xml" width="100%" class="mb-4"></object>
+                
+                <a href="32000-true-plots/pr-cache_vs_height.png" target="_blank">
+                  <img src="32000-true-plots/pr-cache_vs_height.png" alt="pr-cache_vs_height.png" class="mb-4 max-w-full h-auto">
+                </a>
+                
+                <a href="32000-true-plots/pr-cache_vs_time.png" target="_blank">
+                  <img src="32000-true-plots/pr-cache_vs_time.png" alt="pr-cache_vs_time.png" class="mb-4 max-w-full h-auto">
+                </a>
+                
+                <a href="32000-true-plots/pr-coindb_commit_txout_vs_time.png" target="_blank">
+                  <img src="32000-true-plots/pr-coindb_commit_txout_vs_time.png" alt="pr-coindb_commit_txout_vs_time.png" class="mb-4 max-w-full h-auto">
+                </a>
+                
+                <a href="32000-true-plots/pr-coindb_write_batch_size_vs_time.png" target="_blank">
+                  <img src="32000-true-plots/pr-coindb_write_batch_size_vs_time.png" alt="pr-coindb_write_batch_size_vs_time.png" class="mb-4 max-w-full h-auto">
+                </a>
+                
+                <a href="32000-true-plots/pr-coins_cache_vs_height.png" target="_blank">
+                  <img src="32000-true-plots/pr-coins_cache_vs_height.png" alt="pr-coins_cache_vs_height.png" class="mb-4 max-w-full h-auto">
+                </a>
+                
+                <a href="32000-true-plots/pr-height_vs_time.png" target="_blank">
+                  <img src="32000-true-plots/pr-height_vs_time.png" alt="pr-height_vs_time.png" class="mb-4 max-w-full h-auto">
+                </a>
+                
+                <a href="32000-true-plots/pr-leveldb_compact_vs_time.png" target="_blank">
+                  <img src="32000-true-plots/pr-leveldb_compact_vs_time.png" alt="pr-leveldb_compact_vs_time.png" class="mb-4 max-w-full h-auto">
+                </a>
+                
+                <a href="32000-true-plots/pr-leveldb_gen_bytes_vs_time.png" target="_blank">
+                  <img src="32000-true-plots/pr-leveldb_gen_bytes_vs_time.png" alt="pr-leveldb_gen_bytes_vs_time.png" class="mb-4 max-w-full h-auto">
+                </a>
+                
+                <a href="32000-true-plots/pr-leveldb_gen_keys_vs_time.png" target="_blank">
+                  <img src="32000-true-plots/pr-leveldb_gen_keys_vs_time.png" alt="pr-leveldb_gen_keys_vs_time.png" class="mb-4 max-w-full h-auto">
+                </a>
+                
+                <a href="32000-true-plots/pr-tx_vs_height.png" target="_blank">
+                  <img src="32000-true-plots/pr-tx_vs_height.png" alt="pr-tx_vs_height.png" class="mb-4 max-w-full h-auto">
+                </a>
+                </div>
+            
+      </div>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,76 @@
+{
+  "results": [
+    {
+      "date": "2026-01-08",
+      "commit": "bd4f4782f23b59f8ddd608e1b5a3690e134f2a0e",
+      "mean": 3802.1192467214396,
+      "stddev": 83.16079068825492,
+      "runs": 2,
+      "config": {
+        "start_height": 840000,
+        "runs": 2,
+        "command_template": "bitcoind -datadir={datadir} -dbcache={dbcache} -stopatheight=900000 -chain=main -connect=148.251.128.115:33333 -prune=10000 -daemon=0 -printtoconsole=0",
+        "bitcoind": {
+          "stopatheight": 900000,
+          "chain": "main",
+          "connect": "148.251.128.115:33333",
+          "prune": 10000,
+          "daemon": false,
+          "printtoconsole": false,
+          "dbcache": 450
+        },
+        "matrix": {
+          "dbcache": [
+            450,
+            32000
+          ]
+        },
+        "instrumentation": "uninstrumented"
+      },
+      "machine": {
+        "cpu_model": "AMD EPYC 7763 64-Core Processor",
+        "architecture": "x86_64",
+        "cpu_cores": 4,
+        "disk_type": "HDD",
+        "os_kernel": "6.11.0-1018-azure",
+        "total_ram_gb": 15.6
+      }
+    },
+    {
+      "date": "2026-01-08",
+      "commit": "bd4f4782f23b59f8ddd608e1b5a3690e134f2a0e",
+      "mean": 2778.19841005334,
+      "stddev": 3.6059343416583016,
+      "runs": 2,
+      "config": {
+        "start_height": 840000,
+        "runs": 2,
+        "command_template": "bitcoind -datadir={datadir} -dbcache={dbcache} -stopatheight=900000 -chain=main -connect=148.251.128.115:33333 -prune=10000 -daemon=0 -printtoconsole=0",
+        "bitcoind": {
+          "stopatheight": 900000,
+          "chain": "main",
+          "connect": "148.251.128.115:33333",
+          "prune": 10000,
+          "daemon": false,
+          "printtoconsole": false,
+          "dbcache": 32000
+        },
+        "matrix": {
+          "dbcache": [
+            450,
+            32000
+          ]
+        },
+        "instrumentation": "uninstrumented"
+      },
+      "machine": {
+        "cpu_model": "AMD EPYC 7763 64-Core Processor",
+        "architecture": "x86_64",
+        "cpu_cores": 4,
+        "disk_type": "HDD",
+        "os_kernel": "6.11.0-1018-azure",
+        "total_ram_gb": 15.6
+      }
+    }
+  ]
+}

@@ -28,12 +28,12 @@
         "instrumentation": "uninstrumented"
       },
       "machine": {
-        "cpu_model": "AMD EPYC 7763 64-Core Processor",
+        "cpu_model": "AMD Ryzen 7 7700 8-Core Processor",
         "architecture": "x86_64",
-        "cpu_cores": 4,
-        "disk_type": "HDD",
-        "os_kernel": "6.11.0-1018-azure",
-        "total_ram_gb": 15.6
+        "cpu_cores": 8,
+        "disk_type": "NVMe SSD",
+        "os_kernel": "6.6.114",
+        "total_ram_gb": 64
       }
     },
     {
@@ -64,12 +64,12 @@
         "instrumentation": "uninstrumented"
       },
       "machine": {
-        "cpu_model": "AMD EPYC 7763 64-Core Processor",
+        "cpu_model": "AMD Ryzen 7 7700 8-Core Processor",
         "architecture": "x86_64",
-        "cpu_cores": 4,
-        "disk_type": "HDD",
-        "os_kernel": "6.11.0-1018-azure",
-        "total_ram_gb": 15.6
+        "cpu_cores": 8,
+        "disk_type": "NVMe SSD",
+        "os_kernel": "6.6.114",
+        "total_ram_gb": 64
       }
     },
     {
@@ -100,12 +100,12 @@
         "instrumentation": "uninstrumented"
       },
       "machine": {
-        "cpu_model": "AMD EPYC 7763 64-Core Processor",
+        "cpu_model": "AMD Ryzen 7 7700 8-Core Processor",
         "architecture": "x86_64",
-        "cpu_cores": 4,
-        "disk_type": "HDD",
-        "os_kernel": "6.11.0-1018-azure",
-        "total_ram_gb": 15.6
+        "cpu_cores": 8,
+        "disk_type": "NVMe SSD",
+        "os_kernel": "6.6.114",
+        "total_ram_gb": 64
       }
     },
     {
@@ -136,12 +136,12 @@
         "instrumentation": "uninstrumented"
       },
       "machine": {
-        "cpu_model": "AMD EPYC 7763 64-Core Processor",
+        "cpu_model": "AMD Ryzen 7 7700 8-Core Processor",
         "architecture": "x86_64",
-        "cpu_cores": 4,
-        "disk_type": "HDD",
-        "os_kernel": "6.11.0-1018-azure",
-        "total_ram_gb": 15.6
+        "cpu_cores": 8,
+        "disk_type": "NVMe SSD",
+        "os_kernel": "6.6.114",
+        "total_ram_gb": 64
       }
     }
   ]

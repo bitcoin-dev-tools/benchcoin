@@ -33,7 +33,7 @@
         "cpu_cores": 8,
         "disk_type": "NVMe SSD",
         "os_kernel": "6.6.114",
-        "total_ram_gb": 64
+        "total_ram_gb": 62.0
       }
     },
     {
@@ -69,7 +69,7 @@
         "cpu_cores": 8,
         "disk_type": "NVMe SSD",
         "os_kernel": "6.6.114",
-        "total_ram_gb": 64
+        "total_ram_gb": 62.0
       }
     },
     {

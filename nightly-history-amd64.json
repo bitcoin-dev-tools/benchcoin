@@ -75,8 +75,8 @@
     {
       "date": "2026-01-09",
       "commit": "6c3fb719d1a8f34352e6518e28eda0f46ce54ce7",
-      "mean": 3765.3339284604,
-      "stddev": 110.78367628867879,
+      "mean": 3834.72160341028,
+      "stddev": 164.23520351852275,
       "runs": 2,
       "config": {
         "start_height": 840000,
@@ -102,17 +102,17 @@
       "machine": {
         "cpu_model": "AMD Ryzen 7 7700 8-Core Processor",
         "architecture": "x86_64",
-        "cpu_cores": 8,
+        "cpu_cores": 16,
         "disk_type": "NVMe SSD",
         "os_kernel": "6.6.114",
-        "total_ram_gb": 64
+        "total_ram_gb": 62.0
       }
     },
     {
       "date": "2026-01-09",
       "commit": "6c3fb719d1a8f34352e6518e28eda0f46ce54ce7",
-      "mean": 2786.84109126292,
-      "stddev": 37.39747361158945,
+      "mean": 2813.23517253976,
+      "stddev": 12.599235597133521,
       "runs": 2,
       "config": {
         "start_height": 840000,
@@ -138,10 +138,10 @@
       "machine": {
         "cpu_model": "AMD Ryzen 7 7700 8-Core Processor",
         "architecture": "x86_64",
-        "cpu_cores": 8,
+        "cpu_cores": 16,
         "disk_type": "NVMe SSD",
         "os_kernel": "6.6.114",
-        "total_ram_gb": 64
+        "total_ram_gb": 62.0
       }
     }
   ]

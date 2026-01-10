@@ -182,9 +182,81 @@
     },
     {
       "date": "2026-01-10",
+      "commit": "aeaa67a9eac0decb89c60a67f9755ca10cbcc1d9",
+      "mean": 3704.4353773922003,
+      "stddev": 195.31656421572941,
+      "runs": 2,
+      "config": {
+        "start_height": 840000,
+        "runs": 2,
+        "command_template": "bitcoind -datadir={datadir} -dbcache={dbcache} -stopatheight=900000 -chain=main -connect=148.251.128.115:33333 -prune=10000 -daemon=0 -printtoconsole=0",
+        "bitcoind": {
+          "stopatheight": 900000,
+          "chain": "main",
+          "connect": "148.251.128.115:33333",
+          "prune": 10000,
+          "daemon": false,
+          "printtoconsole": false,
+          "dbcache": 450
+        },
+        "matrix": {
+          "dbcache": [
+            450,
+            32000
+          ]
+        },
+        "instrumentation": "uninstrumented"
+      },
+      "machine": {
+        "cpu_model": "AMD Ryzen 7 7700 8-Core Processor",
+        "architecture": "x86_64",
+        "cpu_cores": 16,
+        "disk_type": "NVMe SSD",
+        "os_kernel": "6.6.114",
+        "total_ram_gb": 62.0
+      }
+    },
+    {
+      "date": "2026-01-10",
       "commit": "6c3fb719d1a8f34352e6518e28eda0f46ce54ce7",
       "mean": 2699.87590591786,
       "stddev": 16.350081996243595,
+      "runs": 2,
+      "config": {
+        "start_height": 840000,
+        "runs": 2,
+        "command_template": "bitcoind -datadir={datadir} -dbcache={dbcache} -stopatheight=900000 -chain=main -connect=148.251.128.115:33333 -prune=10000 -daemon=0 -printtoconsole=0",
+        "bitcoind": {
+          "stopatheight": 900000,
+          "chain": "main",
+          "connect": "148.251.128.115:33333",
+          "prune": 10000,
+          "daemon": false,
+          "printtoconsole": false,
+          "dbcache": 32000
+        },
+        "matrix": {
+          "dbcache": [
+            450,
+            32000
+          ]
+        },
+        "instrumentation": "uninstrumented"
+      },
+      "machine": {
+        "cpu_model": "AMD Ryzen 7 7700 8-Core Processor",
+        "architecture": "x86_64",
+        "cpu_cores": 16,
+        "disk_type": "NVMe SSD",
+        "os_kernel": "6.6.114",
+        "total_ram_gb": 62.0
+      }
+    },
+    {
+      "date": "2026-01-10",
+      "commit": "aeaa67a9eac0decb89c60a67f9755ca10cbcc1d9",
+      "mean": 2757.26946200128,
+      "stddev": 38.531909431387355,
       "runs": 2,
       "config": {
         "start_height": 840000,

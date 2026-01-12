@@ -1,7 +1,7 @@
 {
   "results": [
     {
-      "date": "2026-01-08",
+      "date": "2026-01-04",
       "commit": "bd4f4782f23b59f8ddd608e1b5a3690e134f2a0e",
       "mean": 3802.1192467214396,
       "stddev": 83.16079068825492,
@@ -34,10 +34,11 @@
         "disk_type": "NVMe SSD",
         "os_kernel": "6.6.114",
         "total_ram_gb": 62.0
-      }
+      },
+      "run_date": "2026-01-08"
     },
     {
-      "date": "2026-01-08",
+      "date": "2026-01-04",
       "commit": "bd4f4782f23b59f8ddd608e1b5a3690e134f2a0e",
       "mean": 2778.19841005334,
       "stddev": 3.6059343416583016,
@@ -70,10 +71,11 @@
         "disk_type": "NVMe SSD",
         "os_kernel": "6.6.114",
         "total_ram_gb": 62.0
-      }
+      },
+      "run_date": "2026-01-08"
     },
     {
-      "date": "2026-01-09",
+      "date": "2026-01-08",
       "commit": "6c3fb719d1a8f34352e6518e28eda0f46ce54ce7",
       "mean": 3834.72160341028,
       "stddev": 164.23520351852275,
@@ -106,10 +108,11 @@
         "disk_type": "NVMe SSD",
         "os_kernel": "6.6.114",
         "total_ram_gb": 62.0
-      }
+      },
+      "run_date": "2026-01-09"
     },
     {
-      "date": "2026-01-09",
+      "date": "2026-01-08",
       "commit": "6c3fb719d1a8f34352e6518e28eda0f46ce54ce7",
       "mean": 2813.23517253976,
       "stddev": 12.599235597133521,
@@ -142,10 +145,11 @@
         "disk_type": "NVMe SSD",
         "os_kernel": "6.6.114",
         "total_ram_gb": 62.0
-      }
+      },
+      "run_date": "2026-01-09"
     },
     {
-      "date": "2026-01-10",
+      "date": "2026-01-08",
       "commit": "6c3fb719d1a8f34352e6518e28eda0f46ce54ce7",
       "mean": 3808.74295071984,
       "stddev": 51.46634386171854,
@@ -178,10 +182,11 @@
         "disk_type": "NVMe SSD",
         "os_kernel": "6.6.114",
         "total_ram_gb": 62.0
-      }
+      },
+      "run_date": "2026-01-10"
     },
     {
-      "date": "2026-01-10",
+      "date": "2026-01-09",
       "commit": "aeaa67a9eac0decb89c60a67f9755ca10cbcc1d9",
       "mean": 3704.4353773922003,
       "stddev": 195.31656421572941,
@@ -214,10 +219,11 @@
         "disk_type": "NVMe SSD",
         "os_kernel": "6.6.114",
         "total_ram_gb": 62.0
-      }
+      },
+      "run_date": "2026-01-10"
     },
     {
-      "date": "2026-01-10",
+      "date": "2026-01-08",
       "commit": "6c3fb719d1a8f34352e6518e28eda0f46ce54ce7",
       "mean": 2699.87590591786,
       "stddev": 16.350081996243595,
@@ -250,10 +256,11 @@
         "disk_type": "NVMe SSD",
         "os_kernel": "6.6.114",
         "total_ram_gb": 62.0
-      }
+      },
+      "run_date": "2026-01-10"
     },
     {
-      "date": "2026-01-10",
+      "date": "2026-01-09",
       "commit": "aeaa67a9eac0decb89c60a67f9755ca10cbcc1d9",
       "mean": 2757.26946200128,
       "stddev": 38.531909431387355,
@@ -286,10 +293,11 @@
         "disk_type": "NVMe SSD",
         "os_kernel": "6.6.114",
         "total_ram_gb": 62.0
-      }
+      },
+      "run_date": "2026-01-10"
     },
     {
-      "date": "2026-01-11",
+      "date": "2026-01-09",
       "commit": "aeaa67a9eac0decb89c60a67f9755ca10cbcc1d9",
       "mean": 3854.8208417329397,
       "stddev": 34.950590901602766,
@@ -322,10 +330,11 @@
         "disk_type": "NVMe SSD",
         "os_kernel": "6.6.114",
         "total_ram_gb": 62.0
-      }
+      },
+      "run_date": "2026-01-11"
     },
     {
-      "date": "2026-01-11",
+      "date": "2026-01-09",
       "commit": "aeaa67a9eac0decb89c60a67f9755ca10cbcc1d9",
       "mean": 2763.49335186454,
       "stddev": 38.01082700536186,
@@ -358,10 +367,11 @@
         "disk_type": "NVMe SSD",
         "os_kernel": "6.6.114",
         "total_ram_gb": 62.0
-      }
+      },
+      "run_date": "2026-01-11"
     },
     {
-      "date": "2026-01-12",
+      "date": "2026-01-11",
       "commit": "abc6a3a4eb9814a7f17e40f7a4d330cbef86bff0",
       "mean": 2894.77680267356,
       "stddev": 86.66570614012079,
@@ -394,10 +404,11 @@
         "disk_type": "NVMe SSD",
         "os_kernel": "6.6.114",
         "total_ram_gb": 62.0
-      }
+      },
+      "run_date": "2026-01-12"
     },
     {
-      "date": "2026-01-12",
+      "date": "2026-01-11",
       "commit": "abc6a3a4eb9814a7f17e40f7a4d330cbef86bff0",
       "mean": 2565.7873539501998,
       "stddev": 1.197851169774789,
@@ -430,7 +441,8 @@
         "disk_type": "NVMe SSD",
         "os_kernel": "6.6.114",
         "total_ram_gb": 62.0
-      }
+      },
+      "run_date": "2026-01-12"
     }
   ]
 }

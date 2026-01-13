@@ -1,0 +1,36 @@
+{
+  "results": [
+    {
+      "network": "450-uninstrumented",
+      "command": "pr",
+      "mean": 2920.4632469870803,
+      "stddev": 82.31231296754433,
+      "user": 4286.955846679999,
+      "system": 674.4668644599999
+    },
+    {
+      "network": "450-instrumented",
+      "command": "pr",
+      "mean": 2766.50475058546,
+      "stddev": null,
+      "user": 4236.7035330399995,
+      "system": 705.9973668599999
+    },
+    {
+      "network": "32000-uninstrumented",
+      "command": "pr",
+      "mean": 2349.0698875581797,
+      "stddev": 41.96942706828691,
+      "user": 3533.0373361799993,
+      "system": 499.17023854
+    },
+    {
+      "network": "32000-instrumented",
+      "command": "pr",
+      "mean": 2347.22412116732,
+      "stddev": null,
+      "user": 3532.4381772,
+      "system": 546.6702051999999
+    }
+  ]
+}

@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Benchmark Results</title>
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+  
+</head>
+<body class="bg-gray-100 p-8">
+  
+<div class="w-9/10 mx-auto">
+  <h1 class="text-3xl font-bold mb-8">Benchmark Results</h1>
+  <div class="bg-white rounded-lg shadow p-6 mb-8">
+    <h2 class="text-xl font-semibold mb-4">PR #178 - Run 20953410797</h2>
+
+    <h3 class="text-lg font-semibold mb-4">Run Data</h3>
+    <div class="overflow-x-auto mb-8">
+      <table class="min-w-full table-auto">
+        <thead>
+          <tr class="bg-gray-50">
+            <th class="px-4 py-2 text-left">Config</th>
+            <th class="px-4 py-2">Mean (s)</th>
+            <th class="px-4 py-2">Std Dev</th>
+            <th class="px-4 py-2">User (s)</th>
+            <th class="px-4 py-2">System (s)</th>
+          </tr>
+        </thead>
+        <tbody>
+          
+          <tr class="border-t">
+            <td class="px-4 py-2 font-mono text-sm">dbcache=32GB (instrumented)</td>
+            <td class="px-4 py-2 text-center">2347.224</td>
+            <td class="px-4 py-2 text-center">N/A</td>
+            <td class="px-4 py-2 text-center">3532.438</td>
+            <td class="px-4 py-2 text-center">546.670</td>
+          </tr>
+          
+          <tr class="border-t">
+            <td class="px-4 py-2 font-mono text-sm">dbcache=32GB</td>
+            <td class="px-4 py-2 text-center">2349.070</td>
+            <td class="px-4 py-2 text-center">41.969</td>
+            <td class="px-4 py-2 text-center">3533.037</td>
+            <td class="px-4 py-2 text-center">499.170</td>
+          </tr>
+          
+          <tr class="border-t">
+            <td class="px-4 py-2 font-mono text-sm">dbcache=450MB (instrumented)</td>
+            <td class="px-4 py-2 text-center">2766.505</td>
+            <td class="px-4 py-2 text-center">N/A</td>
+            <td class="px-4 py-2 text-center">4236.704</td>
+            <td class="px-4 py-2 text-center">705.997</td>
+          </tr>
+          
+          <tr class="border-t">
+            <td class="px-4 py-2 font-mono text-sm">dbcache=450MB</td>
+            <td class="px-4 py-2 text-center">2920.463</td>
+            <td class="px-4 py-2 text-center">82.312</td>
+            <td class="px-4 py-2 text-center">4286.956</td>
+            <td class="px-4 py-2 text-center">674.467</td>
+          </tr>
+          
+        </tbody>
+      </table>
+    </div>
+
+    
+    <div class="bg-yellow-50 border border-yellow-200 rounded p-4 mb-8">
+      <p class="text-yellow-800">No nightly baseline data available for comparison.</p>
+    </div>
+    
+
+    
+    <h3 class="text-lg font-semibold mb-4">Flamegraphs and Plots</h3>
+    
+    <div class="mb-8">
+      <h4 class="text-md font-medium mb-2">450-instrumented - pr</h4>
+      
+      <object data="450-instrumented-pr-flamegraph.svg" type="image/svg+xml" width="100%" class="mb-4"></object>
+      
+      
+      <a href="450-instrumented-plots/pr-cache_vs_height.png" target="_blank">
+        <img src="450-instrumented-plots/pr-cache_vs_height.png" alt="pr-cache_vs_height.png" class="mb-4 max-w-full h-auto">
+      </a>
+      
+      <a href="450-instrumented-plots/pr-cache_vs_time.png" target="_blank">
+        <img src="450-instrumented-plots/pr-cache_vs_time.png" alt="pr-cache_vs_time.png" class="mb-4 max-w-full h-auto">
+      </a>
+      
+      <a href="450-instrumented-plots/pr-coindb_commit_txout_vs_time.png" target="_blank">
+        <img src="450-instrumented-plots/pr-coindb_commit_txout_vs_time.png" alt="pr-coindb_commit_txout_vs_time.png" class="mb-4 max-w-full h-auto">
+      </a>
+      
+      <a href="450-instrumented-plots/pr-coindb_write_batch_size_vs_time.png" target="_blank">
+        <img src="450-instrumented-plots/pr-coindb_write_batch_size_vs_time.png" alt="pr-coindb_write_batch_size_vs_time.png" class="mb-4 max-w-full h-auto">
+      </a>
+      
+      <a href="450-instrumented-plots/pr-coins_cache_vs_height.png" target="_blank">
+        <img src="450-instrumented-plots/pr-coins_cache_vs_height.png" alt="pr-coins_cache_vs_height.png" class="mb-4 max-w-full h-auto">
+      </a>
+      
+      <a href="450-instrumented-plots/pr-height_vs_time.png" target="_blank">
+        <img src="450-instrumented-plots/pr-height_vs_time.png" alt="pr-height_vs_time.png" class="mb-4 max-w-full h-auto">
+      </a>
+      
+      <a href="450-instrumented-plots/pr-leveldb_compact_vs_time.png" target="_blank">
+        <img src="450-instrumented-plots/pr-leveldb_compact_vs_time.png" alt="pr-leveldb_compact_vs_time.png" class="mb-4 max-w-full h-auto">
+      </a>
+      
+      <a href="450-instrumented-plots/pr-leveldb_gen_bytes_vs_time.png" target="_blank">
+        <img src="450-instrumented-plots/pr-leveldb_gen_bytes_vs_time.png" alt="pr-leveldb_gen_bytes_vs_time.png" class="mb-4 max-w-full h-auto">
+      </a>
+      
+      <a href="450-instrumented-plots/pr-leveldb_gen_keys_vs_time.png" target="_blank">
+        <img src="450-instrumented-plots/pr-leveldb_gen_keys_vs_time.png" alt="pr-leveldb_gen_keys_vs_time.png" class="mb-4 max-w-full h-auto">
+      </a>
+      
+      <a href="450-instrumented-plots/pr-tx_vs_height.png" target="_blank">
+        <img src="450-instrumented-plots/pr-tx_vs_height.png" alt="pr-tx_vs_height.png" class="mb-4 max-w-full h-auto">
+      </a>
+      
+    </div>
+    
+    <div class="mb-8">
+      <h4 class="text-md font-medium mb-2">32000-instrumented - pr</h4>
+      
+      <object data="32000-instrumented-pr-flamegraph.svg" type="image/svg+xml" width="100%" class="mb-4"></object>
+      
+      
+      <a href="32000-instrumented-plots/pr-cache_vs_height.png" target="_blank">
+        <img src="32000-instrumented-plots/pr-cache_vs_height.png" alt="pr-cache_vs_height.png" class="mb-4 max-w-full h-auto">
+      </a>
+      
+      <a href="32000-instrumented-plots/pr-cache_vs_time.png" target="_blank">
+        <img src="32000-instrumented-plots/pr-cache_vs_time.png" alt="pr-cache_vs_time.png" class="mb-4 max-w-full h-auto">
+      </a>
+      
+      <a href="32000-instrumented-plots/pr-coindb_commit_txout_vs_time.png" target="_blank">
+        <img src="32000-instrumented-plots/pr-coindb_commit_txout_vs_time.png" alt="pr-coindb_commit_txout_vs_time.png" class="mb-4 max-w-full h-auto">
+      </a>
+      
+      <a href="32000-instrumented-plots/pr-coindb_write_batch_size_vs_time.png" target="_blank">
+        <img src="32000-instrumented-plots/pr-coindb_write_batch_size_vs_time.png" alt="pr-coindb_write_batch_size_vs_time.png" class="mb-4 max-w-full h-auto">
+      </a>
+      
+      <a href="32000-instrumented-plots/pr-coins_cache_vs_height.png" target="_blank">
+        <img src="32000-instrumented-plots/pr-coins_cache_vs_height.png" alt="pr-coins_cache_vs_height.png" class="mb-4 max-w-full h-auto">
+      </a>
+      
+      <a href="32000-instrumented-plots/pr-height_vs_time.png" target="_blank">
+        <img src="32000-instrumented-plots/pr-height_vs_time.png" alt="pr-height_vs_time.png" class="mb-4 max-w-full h-auto">
+      </a>
+      
+      <a href="32000-instrumented-plots/pr-leveldb_compact_vs_time.png" target="_blank">
+        <img src="32000-instrumented-plots/pr-leveldb_compact_vs_time.png" alt="pr-leveldb_compact_vs_time.png" class="mb-4 max-w-full h-auto">
+      </a>
+      
+      <a href="32000-instrumented-plots/pr-leveldb_gen_bytes_vs_time.png" target="_blank">
+        <img src="32000-instrumented-plots/pr-leveldb_gen_bytes_vs_time.png" alt="pr-leveldb_gen_bytes_vs_time.png" class="mb-4 max-w-full h-auto">
+      </a>
+      
+      <a href="32000-instrumented-plots/pr-leveldb_gen_keys_vs_time.png" target="_blank">
+        <img src="32000-instrumented-plots/pr-leveldb_gen_keys_vs_time.png" alt="pr-leveldb_gen_keys_vs_time.png" class="mb-4 max-w-full h-auto">
+      </a>
+      
+      <a href="32000-instrumented-plots/pr-tx_vs_height.png" target="_blank">
+        <img src="32000-instrumented-plots/pr-tx_vs_height.png" alt="pr-tx_vs_height.png" class="mb-4 max-w-full h-auto">
+      </a>
+      
+    </div>
+    
+    
+
+  </div>
+</div>
+
+  
+</body>
+</html>

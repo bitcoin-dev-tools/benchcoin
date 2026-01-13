@@ -32,5 +32,31 @@
       "user": 3532.4381772,
       "system": 546.6702051999999
     }
-  ]
+  ],
+  "nightly_comparison": {
+    "450": {
+      "pr_mean": 2920.4632469870803,
+      "pr_stddev": 82.31231296754433,
+      "pr_commit": null,
+      "nightly_mean": 3653.46392316102,
+      "nightly_stddev": 112.66308071225097,
+      "nightly_date": "2026-01-12",
+      "nightly_commit": "3c8d389a84d29c7e5532548320228f3e8107969d",
+      "speedup_percent": 20.1,
+      "series_key": "ryzen777008core|64GB|nvme|6.6|db450|840000-900000",
+      "series_label": "x86_64, Ryzen 7 7700, 62GB RAM, 840000-900000, dbcache 450"
+    },
+    "32000": {
+      "pr_mean": 2349.0698875581797,
+      "pr_stddev": 41.96942706828691,
+      "pr_commit": null,
+      "nightly_mean": 2720.8385390530602,
+      "nightly_stddev": 19.504592449752536,
+      "nightly_date": "2026-01-12",
+      "nightly_commit": "3c8d389a84d29c7e5532548320228f3e8107969d",
+      "speedup_percent": 13.7,
+      "series_key": "ryzen777008core|64GB|nvme|6.6|db32000|840000-900000",
+      "series_label": "x86_64, Ryzen 7 7700, 62GB RAM, 840000-900000, dbcache 32000"
+    }
+  }
 }

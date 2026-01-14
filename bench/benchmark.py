@@ -104,6 +104,7 @@ class BenchmarkPhase:
 
         # Setup directories
         output_dir.mkdir(parents=True, exist_ok=True)
+        assert self.config.tmp_datadir is not None
         tmp_datadir = Path(self.config.tmp_datadir)
         tmp_datadir.mkdir(parents=True, exist_ok=True)
 

@@ -1,0 +1,2 @@
+[src]
+include = ["bench.py", "bench/*.py"]

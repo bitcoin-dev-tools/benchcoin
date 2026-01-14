@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Benchmark Results</title>
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+  
+</head>
+<body class="bg-gray-100 p-8">
+  
+<div class="w-9/10 mx-auto">
+  <h1 class="text-3xl font-bold mb-8">Benchmark Results</h1>
+  <div class="bg-white rounded-lg shadow p-6 mb-8">
+    <h2 class="text-xl font-semibold mb-4">PR #178 - Run 20972344661</h2>
+
+    <h3 class="text-lg font-semibold mb-4">Run Data</h3>
+    <div class="overflow-x-auto mb-8">
+      <table class="min-w-full table-auto">
+        <thead>
+          <tr class="bg-gray-50">
+            <th class="px-4 py-2 text-left">Config</th>
+            <th class="px-4 py-2">Mean (s)</th>
+            <th class="px-4 py-2">Std Dev</th>
+            <th class="px-4 py-2">User (s)</th>
+            <th class="px-4 py-2">System (s)</th>
+          </tr>
+        </thead>
+        <tbody>
+          
+          <tr class="border-t">
+            <td class="px-4 py-2 font-mono text-sm">dbcache=32GB (instrumented)</td>
+            <td class="px-4 py-2 text-center">2331.874</td>
+            <td class="px-4 py-2 text-center">N/A</td>
+            <td class="px-4 py-2 text-center">3535.654</td>
+            <td class="px-4 py-2 text-center">553.101</td>
+          </tr>
+          
+          <tr class="border-t">
+            <td class="px-4 py-2 font-mono text-sm">dbcache=32GB</td>
+            <td class="px-4 py-2 text-center">2309.148</td>
+            <td class="px-4 py-2 text-center">116.334</td>
+            <td class="px-4 py-2 text-center">3519.199</td>
+            <td class="px-4 py-2 text-center">489.203</td>
+          </tr>
+          
+          <tr class="border-t">
+            <td class="px-4 py-2 font-mono text-sm">dbcache=450MB (instrumented)</td>
+            <td class="px-4 py-2 text-center">2862.759</td>
+            <td class="px-4 py-2 text-center">N/A</td>
+            <td class="px-4 py-2 text-center">4252.372</td>
+            <td class="px-4 py-2 text-center">652.945</td>
+          </tr>
+          
+          <tr class="border-t">
+            <td class="px-4 py-2 font-mono text-sm">dbcache=450MB</td>
+            <td class="px-4 py-2 text-center">2921.419</td>
+            <td class="px-4 py-2 text-center">27.815</td>
+            <td class="px-4 py-2 text-center">4263.657</td>
+            <td class="px-4 py-2 text-center">685.361</td>
+          </tr>
+          
+        </tbody>
+      </table>
+    </div>
+
+    
+    <h3 class="text-lg font-semibold mb-4">Comparison to Nightly Master</h3>
+    <div class="overflow-x-auto mb-8">
+      <table class="min-w-full table-auto">
+        <thead>
+          <tr class="bg-gray-50">
+            <th class="px-4 py-2 text-left">Config</th>
+            <th class="px-4 py-2">PR Time</th>
+            <th class="px-4 py-2">Nightly Time (Date)</th>
+            <th class="px-4 py-2">Change</th>
+          </tr>
+        </thead>
+        <tbody>
+          
+          <tr class="border-t">
+            <td class="px-4 py-2 font-mono text-sm">dbcache=32GB</td>
+            <td class="px-4 py-2 text-center">38.5 min</td>
+            <td class="px-4 py-2 text-center">
+              
+                45.3 min
+                (2026-01-12,
+                <a href="https://github.com/bitcoin-dev-tools/benchcoin/commit/3c8d389a84d29c7e5532548320228f3e8107969d" target="_blank" class="text-blue-600 hover:underline">3c8d389</a>)
+              
+            </td>
+            <td class="px-4 py-2 text-center">
+              
+                
+                  <span class="text-green-600">+15.1%</span>
+                
+              
+            </td>
+          </tr>
+          
+          <tr class="border-t">
+            <td class="px-4 py-2 font-mono text-sm">dbcache=450MB</td>
+            <td class="px-4 py-2 text-center">48.7 min</td>
+            <td class="px-4 py-2 text-center">
+              
+                60.9 min
+                (2026-01-12,
+                <a href="https://github.com/bitcoin-dev-tools/benchcoin/commit/3c8d389a84d29c7e5532548320228f3e8107969d" target="_blank" class="text-blue-600 hover:underline">3c8d389</a>)
+              
+            </td>
+            <td class="px-4 py-2 text-center">
+              
+                
+                  <span class="text-green-600">+20.0%</span>
+                
+              
+            </td>
+          </tr>
+          
+        </tbody>
+      </table>
+    </div>
+
+    
+    <h3 class="text-lg font-semibold mb-4">Performance Trend</h3>
+    <div class="mb-8">
+      <div id="pr-comparison-chart" style="width:100%; height:800px;"></div>
+<script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+<script>
+  const nightlyData = [{"color_index": 9, "commit": "bd4f4782f23b59f8ddd608e1b5a3690e134f2a0e", "config": "450", "date": "2026-01-04", "mean": 3802.1192467214396, "series_key": "ryzen777008core|64GB|nvme|6.6|db450|840000-900000", "series_label": "x86_64, Ryzen 7 7700, 62GB RAM, 840000-900000, dbcache 450", "stddev": 83.16079068825492}, {"color_index": 3, "commit": "bd4f4782f23b59f8ddd608e1b5a3690e134f2a0e", "config": "32000", "date": "2026-01-04", "mean": 2778.19841005334, "series_key": "ryzen777008core|64GB|nvme|6.6|db32000|840000-900000", "series_label": "x86_64, Ryzen 7 7700, 62GB RAM, 840000-900000, dbcache 32000", "stddev": 3.6059343416583016}, {"color_index": 9, "commit": "6c3fb719d1a8f34352e6518e28eda0f46ce54ce7", "config": "450", "date": "2026-01-08", "mean": 3834.72160341028, "series_key": "ryzen777008core|64GB|nvme|6.6|db450|840000-900000", "series_label": "x86_64, Ryzen 7 7700, 62GB RAM, 840000-900000, dbcache 450", "stddev": 164.23520351852275}, {"color_index": 9, "commit": "6c3fb719d1a8f34352e6518e28eda0f46ce54ce7", "config": "450", "date": "2026-01-08", "mean": 3808.74295071984, "series_key": "ryzen777008core|64GB|nvme|6.6|db450|840000-900000", "series_label": "x86_64, Ryzen 7 7700, 62GB RAM, 840000-900000, dbcache 450", "stddev": 51.46634386171854}, {"color_index": 3, "commit": "6c3fb719d1a8f34352e6518e28eda0f46ce54ce7", "config": "32000", "date": "2026-01-08", "mean": 2813.23517253976, "series_key": "ryzen777008core|64GB|nvme|6.6|db32000|840000-900000", "series_label": "x86_64, Ryzen 7 7700, 62GB RAM, 840000-900000, dbcache 32000", "stddev": 12.599235597133521}, {"color_index": 3, "commit": "6c3fb719d1a8f34352e6518e28eda0f46ce54ce7", "config": "32000", "date": "2026-01-08", "mean": 2699.87590591786, "series_key": "ryzen777008core|64GB|nvme|6.6|db32000|840000-900000", "series_label": "x86_64, Ryzen 7 7700, 62GB RAM, 840000-900000, dbcache 32000", "stddev": 16.350081996243595}, {"color_index": 9, "commit": "aeaa67a9eac0decb89c60a67f9755ca10cbcc1d9", "config": "450", "date": "2026-01-09", "mean": 3704.4353773922003, "series_key": "ryzen777008core|64GB|nvme|6.6|db450|840000-900000", "series_label": "x86_64, Ryzen 7 7700, 62GB RAM, 840000-900000, dbcache 450", "stddev": 195.31656421572941}, {"color_index": 9, "commit": "aeaa67a9eac0decb89c60a67f9755ca10cbcc1d9", "config": "450", "date": "2026-01-09", "mean": 3854.8208417329397, "series_key": "ryzen777008core|64GB|nvme|6.6|db450|840000-900000", "series_label": "x86_64, Ryzen 7 7700, 62GB RAM, 840000-900000, dbcache 450", "stddev": 34.950590901602766}, {"color_index": 3, "commit": "aeaa67a9eac0decb89c60a67f9755ca10cbcc1d9", "config": "32000", "date": "2026-01-09", "mean": 2757.26946200128, "series_key": "ryzen777008core|64GB|nvme|6.6|db32000|840000-900000", "series_label": "x86_64, Ryzen 7 7700, 62GB RAM, 840000-900000, dbcache 32000", "stddev": 38.531909431387355}, {"color_index": 3, "commit": "aeaa67a9eac0decb89c60a67f9755ca10cbcc1d9", "config": "32000", "date": "2026-01-09", "mean": 2763.49335186454, "series_key": "ryzen777008core|64GB|nvme|6.6|db32000|840000-900000", "series_label": "x86_64, Ryzen 7 7700, 62GB RAM, 840000-900000, dbcache 32000", "stddev": 38.01082700536186}, {"color_index": 9, "commit": "abc6a3a4eb9814a7f17e40f7a4d330cbef86bff0", "config": "450", "date": "2026-01-11", "mean": 2894.77680267356, "series_key": "ryzen777008core|64GB|nvme|6.6|db450|840000-900000", "series_label": "x86_64, Ryzen 7 7700, 62GB RAM, 840000-900000, dbcache 450", "stddev": 86.66570614012079}, {"color_index": 3, "commit": "abc6a3a4eb9814a7f17e40f7a4d330cbef86bff0", "config": "32000", "date": "2026-01-11", "mean": 2565.7873539501998, "series_key": "ryzen777008core|64GB|nvme|6.6|db32000|840000-900000", "series_label": "x86_64, Ryzen 7 7700, 62GB RAM, 840000-900000, dbcache 32000", "stddev": 1.197851169774789}, {"color_index": 9, "commit": "3c8d389a84d29c7e5532548320228f3e8107969d", "config": "450", "date": "2026-01-12", "mean": 3653.46392316102, "series_key": "ryzen777008core|64GB|nvme|6.6|db450|840000-900000", "series_label": "x86_64, Ryzen 7 7700, 62GB RAM, 840000-900000, dbcache 450", "stddev": 112.66308071225097}, {"color_index": 3, "commit": "3c8d389a84d29c7e5532548320228f3e8107969d", "config": "32000", "date": "2026-01-12", "mean": 2720.8385390530602, "series_key": "ryzen777008core|64GB|nvme|6.6|db32000|840000-900000", "series_label": "x86_64, Ryzen 7 7700, 62GB RAM, 840000-900000, dbcache 32000", "stddev": 19.504592449752536}];
+  const prData = [{"color_index": 3, "commit": "91977763cb3539f77755cde1b12813651d3a77a0", "config": "32000", "date": "2026-01-14", "mean": 2309.1478707121796, "series_key": "ryzen777008core|64GB|nvme|6.6|db32000|840000-900000", "series_label": "x86_64, Ryzen 7 7700, 62GB RAM, 840000-900000, dbcache 32000", "stddev": 116.33409494031987}, {"color_index": 9, "commit": "91977763cb3539f77755cde1b12813651d3a77a0", "config": "450", "date": "2026-01-14", "mean": 2921.4194689384403, "series_key": "ryzen777008core|64GB|nvme|6.6|db450|840000-900000", "series_label": "x86_64, Ryzen 7 7700, 62GB RAM, 840000-900000, dbcache 450", "stddev": 27.81474184846121}];
+
+  const PALETTE = [
+    '#636EFA', '#EF553B', '#00CC96', '#AB63FA', '#FFA15A',
+    '#19D3F3', '#FF6692', '#B6E880', '#FF97FF', '#FECB52'
+  ];
+
+  function getSeriesColor(colorIndex) {
+    return PALETTE[colorIndex % PALETTE.length];
+  }
+
+  function getErrorColor(hexColor) {
+    const r = parseInt(hexColor.slice(1, 3), 16);
+    const g = parseInt(hexColor.slice(3, 5), 16);
+    const b = parseInt(hexColor.slice(5, 7), 16);
+    return `rgba(${r}, ${g}, ${b}, 0.3)`;
+  }
+
+  const toMinutes = (seconds) => seconds / 60;
+
+  function buildTraces() {
+    const traces = [];
+
+    const nightlySeriesMap = new Map();
+    nightlyData.forEach(d => {
+      const key = d.series_key || d.config;
+      if (!nightlySeriesMap.has(key)) {
+        nightlySeriesMap.set(key, {
+          label: d.series_label || (d.config + ' dbcache'),
+          colorIndex: d.color_index || 0,
+          points: []
+        });
+      }
+      nightlySeriesMap.get(key).points.push(d);
+    });
+
+    const sortedSeries = Array.from(nightlySeriesMap.entries())
+      .sort((a, b) => a[1].label.localeCompare(b[1].label));
+
+    sortedSeries.forEach(([seriesKey, series]) => {
+      const points = series.points.sort((a, b) => a.date.localeCompare(b.date));
+      const color = getSeriesColor(series.colorIndex);
+
+      traces.push({
+        name: series.label + ' (nightly)',
+        x: points.map(d => d.date),
+        y: points.map(d => toMinutes(d.mean)),
+        text: points.map(d => d.commit.slice(0, 8)),
+        customdata: points.map(d => [d.commit, toMinutes(d.stddev || 0)]),
+        hovertemplate: '<b>%{text}</b><br>%{y:.1f} min<br>\u00b1%{customdata[1]:.1f} min<extra>' + series.label + ' nightly</extra>',
+        mode: 'lines+markers',
+        line: { color: color, width: 2 },
+        marker: { size: 6 },
+        error_y: {
+          type: 'data',
+          array: points.map(d => toMinutes(d.stddev || 0)),
+          visible: true,
+          color: getErrorColor(color),
+          thickness: 1.5
+        }
+      });
+    });
+
+    prData.forEach(pr => {
+      const key = pr.series_key || pr.config;
+      const label = pr.series_label || (pr.config + ' dbcache');
+      const color = getSeriesColor(pr.color_index || 0);
+
+      traces.push({
+        name: label + ' (PR)',
+        x: [pr.date],
+        y: [toMinutes(pr.mean)],
+        text: [pr.commit.slice(0, 8)],
+        customdata: [[pr.commit, toMinutes(pr.stddev || 0)]],
+        hovertemplate: '<b>PR %{text}</b><br>%{y:.1f} min<br>\u00b1%{customdata[1]:.1f} min<extra>' + label + ' PR</extra>',
+        mode: 'markers',
+        marker: {
+          symbol: 'star',
+          size: 16,
+          color: color,
+          line: { color: '#ffffff', width: 2 }
+        },
+        showlegend: false
+      });
+    });
+
+    return traces;
+  }
+
+  const layout = {
+    title: {
+      text: 'PR vs Nightly Sync Performance',
+      font: { size: 16 }
+    },
+    xaxis: {
+      title: { text: 'Date' },
+      tickangle: -45
+    },
+    yaxis: {
+      title: { text: 'Time (minutes)' },
+      rangemode: 'tozero'
+    },
+    legend: {
+      orientation: 'h',
+      yanchor: 'top',
+      y: -0.15,
+      xanchor: 'center',
+      x: 0.5,
+      font: { size: 11 },
+      itemclick: 'toggle',
+      itemdoubleclick: 'toggleothers'
+    },
+    hovermode: 'closest',
+    margin: { t: 60, b: 150 }
+  };
+
+  const config = {
+    responsive: true,
+    displayModeBar: 'hover',
+    modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d'],
+    displaylogo: false
+  };
+
+  Plotly.newPlot('pr-comparison-chart', buildTraces(), layout, config);
+
+  document.getElementById('pr-comparison-chart').on('plotly_click', function(data) {
+    const commit = data.points[0].customdata[0];
+    window.open('https://github.com/bitcoin/bitcoin/commit/' + commit, '_blank');
+  });
+</script>
+    </div>
+    
+
+    
+
+    
+    <h3 class="text-lg font-semibold mb-4">Flamegraphs and Plots</h3>
+    
+    <div class="mb-8">
+      <h4 class="text-md font-medium mb-2">450-instrumented - pr</h4>
+      
+      <object data="450-instrumented-pr-flamegraph.svg" type="image/svg+xml" width="100%" class="mb-4"></object>
+      
+      
+      <a href="450-instrumented-plots/pr-cache_vs_height.png" target="_blank">
+        <img src="450-instrumented-plots/pr-cache_vs_height.png" alt="pr-cache_vs_height.png" class="mb-4 max-w-full h-auto">
+      </a>
+      
+      <a href="450-instrumented-plots/pr-cache_vs_time.png" target="_blank">
+        <img src="450-instrumented-plots/pr-cache_vs_time.png" alt="pr-cache_vs_time.png" class="mb-4 max-w-full h-auto">
+      </a>
+      
+      <a href="450-instrumented-plots/pr-coindb_commit_txout_vs_time.png" target="_blank">
+        <img src="450-instrumented-plots/pr-coindb_commit_txout_vs_time.png" alt="pr-coindb_commit_txout_vs_time.png" class="mb-4 max-w-full h-auto">
+      </a>
+      
+      <a href="450-instrumented-plots/pr-coindb_write_batch_size_vs_time.png" target="_blank">
+        <img src="450-instrumented-plots/pr-coindb_write_batch_size_vs_time.png" alt="pr-coindb_write_batch_size_vs_time.png" class="mb-4 max-w-full h-auto">
+      </a>
+      
+      <a href="450-instrumented-plots/pr-coins_cache_vs_height.png" target="_blank">
+        <img src="450-instrumented-plots/pr-coins_cache_vs_height.png" alt="pr-coins_cache_vs_height.png" class="mb-4 max-w-full h-auto">
+      </a>
+      
+      <a href="450-instrumented-plots/pr-height_vs_time.png" target="_blank">
+        <img src="450-instrumented-plots/pr-height_vs_time.png" alt="pr-height_vs_time.png" class="mb-4 max-w-full h-auto">
+      </a>
+      
+      <a href="450-instrumented-plots/pr-leveldb_compact_vs_time.png" target="_blank">
+        <img src="450-instrumented-plots/pr-leveldb_compact_vs_time.png" alt="pr-leveldb_compact_vs_time.png" class="mb-4 max-w-full h-auto">
+      </a>
+      
+      <a href="450-instrumented-plots/pr-leveldb_gen_bytes_vs_time.png" target="_blank">
+        <img src="450-instrumented-plots/pr-leveldb_gen_bytes_vs_time.png" alt="pr-leveldb_gen_bytes_vs_time.png" class="mb-4 max-w-full h-auto">
+      </a>
+      
+      <a href="450-instrumented-plots/pr-leveldb_gen_keys_vs_time.png" target="_blank">
+        <img src="450-instrumented-plots/pr-leveldb_gen_keys_vs_time.png" alt="pr-leveldb_gen_keys_vs_time.png" class="mb-4 max-w-full h-auto">
+      </a>
+      
+      <a href="450-instrumented-plots/pr-tx_vs_height.png" target="_blank">
+        <img src="450-instrumented-plots/pr-tx_vs_height.png" alt="pr-tx_vs_height.png" class="mb-4 max-w-full h-auto">
+      </a>
+      
+    </div>
+    
+    <div class="mb-8">
+      <h4 class="text-md font-medium mb-2">32000-instrumented - pr</h4>
+      
+      <object data="32000-instrumented-pr-flamegraph.svg" type="image/svg+xml" width="100%" class="mb-4"></object>
+      
+      
+      <a href="32000-instrumented-plots/pr-cache_vs_height.png" target="_blank">
+        <img src="32000-instrumented-plots/pr-cache_vs_height.png" alt="pr-cache_vs_height.png" class="mb-4 max-w-full h-auto">
+      </a>
+      
+      <a href="32000-instrumented-plots/pr-cache_vs_time.png" target="_blank">
+        <img src="32000-instrumented-plots/pr-cache_vs_time.png" alt="pr-cache_vs_time.png" class="mb-4 max-w-full h-auto">
+      </a>
+      
+      <a href="32000-instrumented-plots/pr-coindb_commit_txout_vs_time.png" target="_blank">
+        <img src="32000-instrumented-plots/pr-coindb_commit_txout_vs_time.png" alt="pr-coindb_commit_txout_vs_time.png" class="mb-4 max-w-full h-auto">
+      </a>
+      
+      <a href="32000-instrumented-plots/pr-coindb_write_batch_size_vs_time.png" target="_blank">
+        <img src="32000-instrumented-plots/pr-coindb_write_batch_size_vs_time.png" alt="pr-coindb_write_batch_size_vs_time.png" class="mb-4 max-w-full h-auto">
+      </a>
+      
+      <a href="32000-instrumented-plots/pr-coins_cache_vs_height.png" target="_blank">
+        <img src="32000-instrumented-plots/pr-coins_cache_vs_height.png" alt="pr-coins_cache_vs_height.png" class="mb-4 max-w-full h-auto">
+      </a>
+      
+      <a href="32000-instrumented-plots/pr-height_vs_time.png" target="_blank">
+        <img src="32000-instrumented-plots/pr-height_vs_time.png" alt="pr-height_vs_time.png" class="mb-4 max-w-full h-auto">
+      </a>
+      
+      <a href="32000-instrumented-plots/pr-leveldb_compact_vs_time.png" target="_blank">
+        <img src="32000-instrumented-plots/pr-leveldb_compact_vs_time.png" alt="pr-leveldb_compact_vs_time.png" class="mb-4 max-w-full h-auto">
+      </a>
+      
+      <a href="32000-instrumented-plots/pr-leveldb_gen_bytes_vs_time.png" target="_blank">
+        <img src="32000-instrumented-plots/pr-leveldb_gen_bytes_vs_time.png" alt="pr-leveldb_gen_bytes_vs_time.png" class="mb-4 max-w-full h-auto">
+      </a>
+      
+      <a href="32000-instrumented-plots/pr-leveldb_gen_keys_vs_time.png" target="_blank">
+        <img src="32000-instrumented-plots/pr-leveldb_gen_keys_vs_time.png" alt="pr-leveldb_gen_keys_vs_time.png" class="mb-4 max-w-full h-auto">
+      </a>
+      
+      <a href="32000-instrumented-plots/pr-tx_vs_height.png" target="_blank">
+        <img src="32000-instrumented-plots/pr-tx_vs_height.png" alt="pr-tx_vs_height.png" class="mb-4 max-w-full h-auto">
+      </a>
+      
+    </div>
+    
+    
+
+  </div>
+</div>
+
+  
+</body>
+</html>

@@ -1,0 +1,2 @@
+target-version = "py312"
+include = ["bench.py", "bench/*.py"]

@@ -7,22 +7,22 @@
 #     pr:/path/to/pr/bitcoind
 
 [benchmark]
-start_height = 840000
-runs = 2
+runs = 1
+full_ibd = true
 
 [bitcoind]
-stopatheight = 900000
+stopatheight = 930000
 chain = "main"
 connect = "148.251.128.115:33333"
-prune = 10000
+prune = 200000
 daemon = false
 printtoconsole = false
 
 # Parameter matrix - creates multiple benchmark configurations
-# Matrix expands to: 450-uninstrumented, 450-instrumented, 32000-uninstrumented, 32000-instrumented
+# Matrix expands to: 450-uninstrumented, 32000-uninstrumented
 [bitcoind.matrix]
 dbcache = [450, 32000]
-instrumentation = ["uninstrumented", "instrumented"]
+instrumentation = ["uninstrumented"]
 
 # Debug flags enabled when instrumentation = "instrumented"
 [bitcoind.instrumented]

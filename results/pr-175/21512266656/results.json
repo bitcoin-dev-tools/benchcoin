@@ -1,0 +1,62 @@
+{
+  "results": [
+    {
+      "network": "450-uninstrumented",
+      "command": "pr",
+      "mean": 3677.90028910186,
+      "stddev": 131.60895257480013,
+      "user": 4078.5465111799995,
+      "system": 643.78588382
+    },
+    {
+      "network": "450-instrumented",
+      "command": "pr",
+      "mean": 3793.0077012839997,
+      "stddev": null,
+      "user": 4094.0447437599996,
+      "system": 687.39186232
+    },
+    {
+      "network": "32000-uninstrumented",
+      "command": "pr",
+      "mean": 2657.2962243971,
+      "stddev": 37.59827236614523,
+      "user": 3275.21591598,
+      "system": 490.54774848
+    },
+    {
+      "network": "32000-instrumented",
+      "command": "pr",
+      "mean": 2699.62091238858,
+      "stddev": null,
+      "user": 3311.65949288,
+      "system": 511.77085026000003
+    }
+  ],
+  "nightly_comparison": {
+    "450": {
+      "pr_mean": 3677.90028910186,
+      "pr_stddev": 131.60895257480013,
+      "pr_commit": "c11090886c91af61bb399980c6e7caeaa0bfc3af",
+      "nightly_mean": 3878.4287480938797,
+      "nightly_stddev": 84.85979540432322,
+      "nightly_date": "2026-01-29",
+      "nightly_commit": "5401e673d56198f2c0bad366581e70d5d9cd765c",
+      "speedup_percent": 5.2,
+      "series_key": "ryzen777008core|64GB|nvme|6.6|db450|840000-900000",
+      "series_label": "x86_64, Ryzen 7 7700, 62GB RAM, 840000-900000, dbcache 450"
+    },
+    "32000": {
+      "pr_mean": 2657.2962243971,
+      "pr_stddev": 37.59827236614523,
+      "pr_commit": "c11090886c91af61bb399980c6e7caeaa0bfc3af",
+      "nightly_mean": 2754.4478074827002,
+      "nightly_stddev": 6.289539669011535,
+      "nightly_date": "2026-01-29",
+      "nightly_commit": "5401e673d56198f2c0bad366581e70d5d9cd765c",
+      "speedup_percent": 3.5,
+      "series_key": "ryzen777008core|64GB|nvme|6.6|db32000|840000-900000",
+      "series_label": "x86_64, Ryzen 7 7700, 62GB RAM, 840000-900000, dbcache 32000"
+    }
+  }
+}

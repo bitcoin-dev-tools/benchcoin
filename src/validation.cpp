@@ -3426,10 +3426,10 @@ bool Chainstate::ActivateBestChain(BlockValidationState& state, std::shared_ptr<
                 }
                 pindexNewTip = m_chain.Tip();
 
-                for (const PerBlockConnectTrace& trace : connectTrace.GetBlocksConnected()) {
+                for (PerBlockConnectTrace& trace : connectTrace.GetBlocksConnected()) {
                     assert(trace.pblock && trace.pindex);
                     if (m_chainman.m_options.signals) {
-                        m_chainman.m_options.signals->BlockConnected(chainstate_role, trace.pblock, trace.pindex);
+                        m_chainman.m_options.signals->BlockConnected(chainstate_role, std::move(trace.pblock), trace.pindex);
                     }
                 }
 

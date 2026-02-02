@@ -1657,8 +1657,8 @@
     {
       "date": "2026-01-31",
       "commit": "8bb77f348ef390b7f7c7fb6b57fdc7e86ddb4ce7",
-      "mean": 3849.51313174488,
-      "stddev": 121.06148905523821,
+      "mean": 2914.1757141274,
+      "stddev": 54.312810901141724,
       "runs": 2,
       "config": {
         "full_ibd": false,
@@ -1690,13 +1690,13 @@
         "os_kernel": "6.6.114",
         "total_ram_gb": 62.0
       },
-      "run_date": "2026-02-01"
+      "run_date": "2026-02-02"
     },
     {
       "date": "2026-01-31",
       "commit": "8bb77f348ef390b7f7c7fb6b57fdc7e86ddb4ce7",
-      "mean": 2764.9697098036204,
-      "stddev": 6.559320270860522,
+      "mean": 2600.6579476765396,
+      "stddev": 27.536336471454618,
       "runs": 2,
       "config": {
         "full_ibd": false,
@@ -1728,7 +1728,7 @@
         "os_kernel": "6.6.114",
         "total_ram_gb": 62.0
       },
-      "run_date": "2026-02-01"
+      "run_date": "2026-02-02"
     }
   ]
 }

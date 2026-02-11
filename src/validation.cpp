@@ -59,6 +59,7 @@
 #include <util/signalinterrupt.h>
 #include <util/strencodings.h>
 #include <util/string.h>
+#include <util/thread.h>
 #include <util/time.h>
 #include <util/trace.h>
 #include <util/translation.h>
@@ -4427,7 +4428,7 @@ bool ChainstateManager::AcceptBlock(const std::shared_ptr<const CBlock>& pblock,
     return true;
 }
 
-bool ChainstateManager::ProcessNewBlock(const std::shared_ptr<const CBlock>& block, bool force_processing, bool min_pow_checked, bool* new_block)
+bool ChainstateManager::ProcessNewBlock(const std::shared_ptr<const CBlock>& block, bool force_processing, bool min_pow_checked, bool* new_block, bool activate_chain) EXCLUSIVE_LOCKS_REQUIRED(!m_connector_mutex)
 {
     AssertLockNotHeld(cs_main);
 
@@ -4465,18 +4466,22 @@ bool ChainstateManager::ProcessNewBlock(const std::shared_ptr<const CBlock>& blo
 
     NotifyHeaderTip();
 
-    BlockValidationState state; // Only used to report errors, not invalidity - ignore it
-    if (!ActiveChainstate().ActivateBestChain(state, block)) {
-        LogError("%s: ActivateBestChain failed (%s)\n", __func__, state.ToString());
-        return false;
-    }
+    if (!activate_chain) {
+        WakeConnector();
+    } else {
+        BlockValidationState state;
+        if (!ActiveChainstate().ActivateBestChain(state, block)) {
+            LogError("%s: ActivateBestChain failed (%s)\n", __func__, state.ToString());
+            return false;
+        }
 
-    Chainstate* bg_chain{WITH_LOCK(cs_main, return HistoricalChainstate())};
-    BlockValidationState bg_state;
-    if (bg_chain && !bg_chain->ActivateBestChain(bg_state, block)) {
-        LogError("%s: [background] ActivateBestChain failed (%s)\n", __func__, bg_state.ToString());
-        return false;
-     }
+        Chainstate* bg_chain{WITH_LOCK(cs_main, return HistoricalChainstate())};
+        BlockValidationState bg_state;
+        if (bg_chain && !bg_chain->ActivateBestChain(bg_state, block)) {
+            LogError("%s: [background] ActivateBestChain failed (%s)\n", __func__, bg_state.ToString());
+            return false;
+        }
+    }
 
     return true;
 }
@@ -6164,9 +6169,62 @@ ChainstateManager::ChainstateManager(const util::SignalInterrupt& interrupt, Opt
 
 ChainstateManager::~ChainstateManager()
 {
+    InterruptConnectorThread();
+    JoinConnectorThread();
+
     LOCK(::cs_main);
 
     m_versionbitscache.Clear();
+}
+
+void ChainstateManager::ConnectorThreadFunc() EXCLUSIVE_LOCKS_REQUIRED(!m_connector_mutex)
+{
+    while (true) {
+        {
+            WAIT_LOCK(m_connector_mutex, lock);
+            m_connector_cv.wait(lock, [&]() EXCLUSIVE_LOCKS_REQUIRED(m_connector_mutex) {
+                return m_connector_wake || m_connector_shutdown;
+            });
+            if (m_connector_shutdown) return;
+            m_connector_wake = false;
+        }
+
+        BlockValidationState state;
+        ActiveChainstate().ActivateBestChain(state);
+
+        if (auto* bg = WITH_LOCK(::cs_main, return HistoricalChainstate())) {
+            BlockValidationState bg_state;
+            bg->ActivateBestChain(bg_state);
+        }
+    }
+}
+
+void ChainstateManager::WakeConnector() EXCLUSIVE_LOCKS_REQUIRED(!m_connector_mutex)
+{
+    {
+        LOCK(m_connector_mutex);
+        m_connector_wake = true;
+    }
+    m_connector_cv.notify_one();
+}
+
+void ChainstateManager::StartConnectorThread()
+{
+    m_connector_thread = std::thread(&util::TraceThread, "blkconnect", [this] { ConnectorThreadFunc(); });
+}
+
+void ChainstateManager::InterruptConnectorThread() EXCLUSIVE_LOCKS_REQUIRED(!m_connector_mutex)
+{
+    {
+        LOCK(m_connector_mutex);
+        m_connector_shutdown = true;
+    }
+    m_connector_cv.notify_one();
+}
+
+void ChainstateManager::JoinConnectorThread()
+{
+    if (m_connector_thread.joinable()) m_connector_thread.join();
 }
 
 Chainstate* ChainstateManager::LoadAssumeutxoChainstate()

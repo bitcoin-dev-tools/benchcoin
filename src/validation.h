@@ -40,6 +40,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <condition_variable>
 #include <cstdint>
 #include <map>
 #include <memory>
@@ -47,6 +48,7 @@
 #include <set>
 #include <span>
 #include <string>
+#include <thread>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -973,6 +975,17 @@ private:
     //! A queue for script verifications that have to be performed by worker threads.
     CCheckQueue<CScriptCheck> m_script_check_queue;
 
+    //! Background thread that calls ActivateBestChain() during IBD, so
+    //! the message handler thread can continue processing new blocks.
+    std::thread m_connector_thread;
+    Mutex m_connector_mutex;
+    std::condition_variable m_connector_cv;
+    bool m_connector_wake GUARDED_BY(m_connector_mutex){false};
+    bool m_connector_shutdown GUARDED_BY(m_connector_mutex){false};
+
+    void ConnectorThreadFunc() EXCLUSIVE_LOCKS_REQUIRED(!m_connector_mutex);
+    void WakeConnector() EXCLUSIVE_LOCKS_REQUIRED(!m_connector_mutex);
+
     //! Timers and counters used for benchmarking validation in both background
     //! and active chainstates.
     SteadyClock::duration GUARDED_BY(::cs_main) time_check{};
@@ -1246,9 +1259,12 @@ public:
      *                               block header is already present in block
      *                               index then this parameter has no effect)
      * @param[out]  new_block A boolean which is set to indicate if the block was first received via this call
+     * @param[in]   activate_chain  If true (default), call ActivateBestChain before returning.
+     *                              When false, the caller is responsible for ensuring ActivateBestChain
+     *                              is called (e.g. via the connector thread during IBD).
      * @returns     If the block was processed, independently of block validity
      */
-    bool ProcessNewBlock(const std::shared_ptr<const CBlock>& block, bool force_processing, bool min_pow_checked, bool* new_block) LOCKS_EXCLUDED(cs_main);
+    bool ProcessNewBlock(const std::shared_ptr<const CBlock>& block, bool force_processing, bool min_pow_checked, bool* new_block, bool activate_chain = true) LOCKS_EXCLUDED(cs_main) EXCLUSIVE_LOCKS_REQUIRED(!m_connector_mutex);
 
     /**
      * Process incoming block headers.
@@ -1360,6 +1376,10 @@ public:
     std::optional<int> BlocksAheadOfTip() const LOCKS_EXCLUDED(::cs_main);
 
     CCheckQueue<CScriptCheck>& GetCheckQueue() { return m_script_check_queue; }
+
+    void StartConnectorThread();
+    void InterruptConnectorThread() EXCLUSIVE_LOCKS_REQUIRED(!m_connector_mutex);
+    void JoinConnectorThread();
 
     ~ChainstateManager();
 

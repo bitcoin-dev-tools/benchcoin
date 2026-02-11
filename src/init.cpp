@@ -321,7 +321,9 @@ void Shutdown(NodeContext& node)
 
     StopTorControl();
 
+    if (node.chainman) node.chainman->InterruptConnectorThread();
     if (node.background_init_thread.joinable()) node.background_init_thread.join();
+    if (node.chainman) node.chainman->JoinConnectorThread();
     // After everything has been shut down, but before things get flushed, stop the
     // the scheduler. After this point, SyncWithValidationInterfaceQueue() should not be called anymore
     // as this would prevent the shutdown from completing.
@@ -2016,6 +2018,8 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
     for (const std::string& strFile : args.GetArgs("-loadblock")) {
         vImportFiles.push_back(fs::PathFromString(strFile));
     }
+
+    chainman.StartConnectorThread();
 
     node.background_init_thread = std::thread(&util::TraceThread, "initload", [=, &chainman, &args, &node] {
         ScheduleBatchPriority();

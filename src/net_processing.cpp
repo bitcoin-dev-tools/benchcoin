@@ -1440,6 +1440,19 @@ void PeerManagerImpl::FindNextBlocksToDownload(const Peer& peer, unsigned int co
     int nWindowEnd = state->pindexLastCommonBlock->nHeight + BLOCK_DOWNLOAD_WINDOW;
 
     FindNextBlocks(vBlocks, peer, state, pindexWalk, count, nWindowEnd, &m_chainman.ActiveChain(), &nodeStaller);
+
+    // pindexLastCommonBlock may have advanced during the walk (blocks stored
+    // but not yet connected to the active chain). Recompute the window and
+    // retry to avoid false stall detection and to request newly-visible blocks.
+    if (state->pindexLastCommonBlock->nHeight > pindexWalk->nHeight) {
+        int nNewWindowEnd = state->pindexLastCommonBlock->nHeight + download_window;
+        if (nNewWindowEnd > nWindowEnd) {
+            nodeStaller = -1;
+            FindNextBlocks(vBlocks, peer, state, state->pindexLastCommonBlock,
+                           count - vBlocks.size(), nNewWindowEnd,
+                           &m_chainman.ActiveChain(), &nodeStaller);
+        }
+    }
 }
 
 void PeerManagerImpl::TryDownloadingHistoricalBlocks(const Peer& peer, unsigned int count, std::vector<const CBlockIndex*>& vBlocks, const CBlockIndex *from_tip, const CBlockIndex* target_block)
@@ -3427,7 +3440,8 @@ void PeerManagerImpl::ProcessGetCFCheckPt(CNode& node, Peer& peer, DataStream& v
 void PeerManagerImpl::ProcessBlock(CNode& node, const std::shared_ptr<const CBlock>& block, bool force_processing, bool min_pow_checked)
 {
     bool new_block{false};
-    m_chainman.ProcessNewBlock(block, force_processing, min_pow_checked, &new_block);
+    const bool activate_chain = !m_chainman.IsInitialBlockDownload();
+    m_chainman.ProcessNewBlock(block, force_processing, min_pow_checked, &new_block, activate_chain);
     if (new_block) {
         node.m_last_block_time = GetTime<std::chrono::seconds>();
         // In case this block came from a different peer than we requested

@@ -3048,6 +3048,14 @@ bool Chainstate::ConnectTip(
     // Read block from disk.
     const auto time_1{SteadyClock::now()};
     if (!block_to_connect) {
+        LOCK(m_chainman.m_block_cache_mutex);
+        auto it = m_chainman.m_block_cache.find(pindexNew->GetBlockHash());
+        if (it != m_chainman.m_block_cache.end()) {
+            block_to_connect = std::move(it->second);
+            m_chainman.m_block_cache.erase(it);
+        }
+    }
+    if (!block_to_connect) {
         std::shared_ptr<CBlock> pblockNew = std::make_shared<CBlock>();
         if (!m_blockman.ReadBlock(*pblockNew, *pindexNew)) {
             return FatalError(m_chainman.GetNotifications(), state, _("Failed to read block."));
@@ -4467,6 +4475,12 @@ bool ChainstateManager::ProcessNewBlock(const std::shared_ptr<const CBlock>& blo
     NotifyHeaderTip();
 
     if (!activate_chain) {
+        {
+            LOCK(m_block_cache_mutex);
+            if (m_block_cache.size() < MAX_BLOCK_CACHE_SIZE) {
+                m_block_cache.emplace(block->GetHash(), block);
+            }
+        }
         WakeConnector();
     } else {
         BlockValidationState state;

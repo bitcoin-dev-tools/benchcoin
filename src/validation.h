@@ -50,6 +50,7 @@
 #include <string>
 #include <thread>
 #include <type_traits>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -986,6 +987,12 @@ private:
     void ConnectorThreadFunc() EXCLUSIVE_LOCKS_REQUIRED(!m_connector_mutex);
     void WakeConnector() EXCLUSIVE_LOCKS_REQUIRED(!m_connector_mutex);
 
+    //! Cache of in-memory blocks for the connector thread, so ConnectTip
+    //! can skip re-reading them from disk during IBD.
+    static constexpr size_t MAX_BLOCK_CACHE_SIZE{128};
+    Mutex m_block_cache_mutex;
+    std::unordered_map<uint256, std::shared_ptr<const CBlock>, BlockHasher> m_block_cache GUARDED_BY(m_block_cache_mutex);
+
     //! Timers and counters used for benchmarking validation in both background
     //! and active chainstates.
     SteadyClock::duration GUARDED_BY(::cs_main) time_check{};
@@ -1264,7 +1271,7 @@ public:
      *                              is called (e.g. via the connector thread during IBD).
      * @returns     If the block was processed, independently of block validity
      */
-    bool ProcessNewBlock(const std::shared_ptr<const CBlock>& block, bool force_processing, bool min_pow_checked, bool* new_block, bool activate_chain = true) LOCKS_EXCLUDED(cs_main) EXCLUSIVE_LOCKS_REQUIRED(!m_connector_mutex);
+    bool ProcessNewBlock(const std::shared_ptr<const CBlock>& block, bool force_processing, bool min_pow_checked, bool* new_block, bool activate_chain = true) LOCKS_EXCLUDED(cs_main) EXCLUSIVE_LOCKS_REQUIRED(!m_connector_mutex, !m_block_cache_mutex);
 
     /**
      * Process incoming block headers.

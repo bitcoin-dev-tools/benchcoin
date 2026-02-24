@@ -4459,9 +4459,23 @@ bool ChainstateManager::ProcessNewBlock(const std::shared_ptr<const CBlock>& blo
             return false;
         }
 
+        // During IBD, write the block to disk before acquiring cs_main so
+        // the lock is only held briefly for the index update, not the I/O.
+        const FlatFilePos* dbp_ptr{nullptr};
+        FlatFilePos block_pos{};
+        if (!activate_chain) {
+            const CBlockIndex* parent{WITH_LOCK(::cs_main, return m_blockman.LookupBlockIndex(block->hashPrevBlock))};
+            if (parent) {
+                block_pos = m_blockman.WriteBlock(*block, parent->nHeight + 1);
+                if (!block_pos.IsNull()) {
+                    dbp_ptr = &block_pos;
+                }
+            }
+        }
+
         {
             LOCK(cs_main);
-            bool ret = AcceptBlock(block, state, &pindex, force_processing, nullptr, new_block, min_pow_checked);
+            bool ret = AcceptBlock(block, state, &pindex, force_processing, dbp_ptr, new_block, min_pow_checked);
             if (!ret) {
                 if (m_options.signals) {
                     m_options.signals->BlockChecked(block, state);

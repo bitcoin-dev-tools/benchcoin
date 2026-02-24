@@ -1,0 +1,84 @@
+{
+  "results": [
+    {
+      "command": "base (92df3f79bc9236d98563f5b214e6ded977176492)",
+      "mean": 454.59538817078,
+      "stddev": null,
+      "median": 454.59538817078,
+      "user": 666.11009372,
+      "system": 129.60189165999998,
+      "min": 454.59538817078,
+      "max": 454.59538817078,
+      "times": [
+        454.59538817078
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "92df3f79bc9236d98563f5b214e6ded977176492"
+      },
+      "network": "mainnet"
+    },
+    {
+      "command": "head (96daea0f43d24d626edfd2caae5eabee9b01f297)",
+      "mean": 470.78172101677995,
+      "stddev": null,
+      "median": 470.78172101677995,
+      "user": 655.14472272,
+      "system": 126.40336366,
+      "min": 470.78172101677995,
+      "max": 470.78172101677995,
+      "times": [
+        470.78172101677995
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "96daea0f43d24d626edfd2caae5eabee9b01f297"
+      },
+      "network": "mainnet"
+    },
+    {
+      "command": "base (92df3f79bc9236d98563f5b214e6ded977176492)",
+      "mean": 25.04893429352,
+      "stddev": null,
+      "median": 25.04893429352,
+      "user": 2.22567318,
+      "system": 0.7627725,
+      "min": 25.04893429352,
+      "max": 25.04893429352,
+      "times": [
+        25.04893429352
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "92df3f79bc9236d98563f5b214e6ded977176492"
+      },
+      "network": "signet"
+    },
+    {
+      "command": "head (96daea0f43d24d626edfd2caae5eabee9b01f297)",
+      "mean": 25.08568479752,
+      "stddev": null,
+      "median": 25.08568479752,
+      "user": 2.3039591799999997,
+      "system": 0.7640125,
+      "min": 25.08568479752,
+      "max": 25.08568479752,
+      "times": [
+        25.08568479752
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "96daea0f43d24d626edfd2caae5eabee9b01f297"
+      },
+      "network": "signet"
+    }
+  ]
+}

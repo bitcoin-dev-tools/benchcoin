@@ -1,0 +1,84 @@
+{
+  "results": [
+    {
+      "command": "base (d3304e391fb8cc4abc8257517c8acb60ffabd548)",
+      "mean": 17.41271869098,
+      "stddev": null,
+      "median": 17.41271869098,
+      "user": 5.438745920000001,
+      "system": 0.8374497399999999,
+      "min": 17.41271869098,
+      "max": 17.41271869098,
+      "times": [
+        17.41271869098
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "d3304e391fb8cc4abc8257517c8acb60ffabd548"
+      },
+      "network": "signet"
+    },
+    {
+      "command": "head (fe401f720a6116ff1ba89e486085eca5e843e4a4)",
+      "mean": 17.63646489098,
+      "stddev": null,
+      "median": 17.63646489098,
+      "user": 4.04295892,
+      "system": 0.70356074,
+      "min": 17.63646489098,
+      "max": 17.63646489098,
+      "times": [
+        17.63646489098
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "fe401f720a6116ff1ba89e486085eca5e843e4a4"
+      },
+      "network": "signet"
+    },
+    {
+      "command": "base (d3304e391fb8cc4abc8257517c8acb60ffabd548)",
+      "mean": 1086.28139374746,
+      "stddev": null,
+      "median": 1086.28139374746,
+      "user": 5261.12537248,
+      "system": 753.2294622,
+      "min": 1086.28139374746,
+      "max": 1086.28139374746,
+      "times": [
+        1086.28139374746
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "d3304e391fb8cc4abc8257517c8acb60ffabd548"
+      },
+      "network": "mainnet"
+    },
+    {
+      "command": "head (fe401f720a6116ff1ba89e486085eca5e843e4a4)",
+      "mean": 3201.20536182246,
+      "stddev": null,
+      "median": 3201.20536182246,
+      "user": 3311.95424948,
+      "system": 487.05686119999996,
+      "min": 3201.20536182246,
+      "max": 3201.20536182246,
+      "times": [
+        3201.20536182246
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "fe401f720a6116ff1ba89e486085eca5e843e4a4"
+      },
+      "network": "mainnet"
+    }
+  ]
+}

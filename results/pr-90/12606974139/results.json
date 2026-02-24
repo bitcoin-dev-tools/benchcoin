@@ -1,0 +1,84 @@
+{
+  "results": [
+    {
+      "command": "base (d158c68b105e1f684733a17c8263ffdc0bfc3cff)",
+      "mean": 5.13455521502,
+      "stddev": null,
+      "median": 5.13455521502,
+      "user": 3.91865016,
+      "system": 0.58948766,
+      "min": 5.13455521502,
+      "max": 5.13455521502,
+      "times": [
+        5.13455521502
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "d158c68b105e1f684733a17c8263ffdc0bfc3cff"
+      },
+      "network": "mainnet"
+    },
+    {
+      "command": "head (8a1916343fd3ce4cdff1effd0745c62c47b00def)",
+      "mean": 5.13824407102,
+      "stddev": null,
+      "median": 5.13824407102,
+      "user": 3.85487316,
+      "system": 0.63894166,
+      "min": 5.13824407102,
+      "max": 5.13824407102,
+      "times": [
+        5.13824407102
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "8a1916343fd3ce4cdff1effd0745c62c47b00def"
+      },
+      "network": "mainnet"
+    },
+    {
+      "command": "base (d158c68b105e1f684733a17c8263ffdc0bfc3cff)",
+      "mean": 2.15849395922,
+      "stddev": null,
+      "median": 2.15849395922,
+      "user": 0.73640986,
+      "system": 0.16880077999999998,
+      "min": 2.15849395922,
+      "max": 2.15849395922,
+      "times": [
+        2.15849395922
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "d158c68b105e1f684733a17c8263ffdc0bfc3cff"
+      },
+      "network": "signet"
+    },
+    {
+      "command": "head (8a1916343fd3ce4cdff1effd0745c62c47b00def)",
+      "mean": 2.12511030022,
+      "stddev": null,
+      "median": 2.12511030022,
+      "user": 0.7357098599999999,
+      "system": 0.15895278,
+      "min": 2.12511030022,
+      "max": 2.12511030022,
+      "times": [
+        2.12511030022
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "8a1916343fd3ce4cdff1effd0745c62c47b00def"
+      },
+      "network": "signet"
+    }
+  ]
+}

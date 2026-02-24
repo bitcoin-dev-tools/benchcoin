@@ -1,0 +1,9 @@
+{
+  "os": "Linux",
+  "arch": "X64",
+  "name": "ax52",
+  "environment": "self-hosted",
+  "tool_cache": "/run/github-runner/ax52/_tool",
+  "temp": "/run/github-runner/ax52/_temp",
+  "workspace": "/run/github-runner/ax52/benchcoin"
+}

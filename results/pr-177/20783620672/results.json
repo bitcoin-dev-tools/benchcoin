@@ -1,0 +1,58 @@
+{
+  "results": [
+    {
+      "network": "450-true",
+      "command": "pr",
+      "mean": 3461.5474682544796,
+      "stddev": null,
+      "user": 4115.98532362,
+      "system": 676.08750384
+    },
+    {
+      "network": "32000-true",
+      "command": "pr",
+      "mean": 2658.4343215784797,
+      "stddev": null,
+      "user": 3272.78784228,
+      "system": 495.2198818
+    },
+    {
+      "network": "450-false",
+      "command": "pr",
+      "mean": 3298.07114344588,
+      "stddev": 182.60090238893693,
+      "user": 4118.59842588,
+      "system": 681.7961009200001
+    },
+    {
+      "network": "32000-false",
+      "command": "pr",
+      "mean": 2626.00772633202,
+      "stddev": 19.200560222626688,
+      "user": 3245.6494355199998,
+      "system": 475.32311119999997
+    }
+  ],
+  "nightly_comparison": {
+    "450": {
+      "pr_mean": 3298.07114344588,
+      "pr_stddev": 182.60090238893693,
+      "pr_commit": "d83ca05241d8c0f10304f4e7bbc5f467050dc6f8",
+      "nightly_mean": 3157.7827738555798,
+      "nightly_stddev": 188.2899932724234,
+      "nightly_date": "2026-01-07",
+      "nightly_commit": "bd4f4782f23b59f8ddd608e1b5a3690e134f2a0e",
+      "speedup_percent": -4.4
+    },
+    "32000": {
+      "pr_mean": 2626.00772633202,
+      "pr_stddev": 19.200560222626688,
+      "pr_commit": "d83ca05241d8c0f10304f4e7bbc5f467050dc6f8",
+      "nightly_mean": 2603.53606938938,
+      "nightly_stddev": 3.1590848856682348,
+      "nightly_date": "2026-01-07",
+      "nightly_commit": "bd4f4782f23b59f8ddd608e1b5a3690e134f2a0e",
+      "speedup_percent": -0.9
+    }
+  }
+}

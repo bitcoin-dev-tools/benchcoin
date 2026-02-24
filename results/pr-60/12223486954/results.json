@@ -1,0 +1,84 @@
+{
+  "results": [
+    {
+      "command": "base (0ceefb0062d5829efc19b0c8caa8f08d52e24aa1)",
+      "mean": 437.39706614076,
+      "stddev": null,
+      "median": 437.39706614076,
+      "user": 641.9604839,
+      "system": 123.70590428,
+      "min": 437.39706614076,
+      "max": 437.39706614076,
+      "times": [
+        437.39706614076
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "0ceefb0062d5829efc19b0c8caa8f08d52e24aa1"
+      },
+      "network": "mainnet"
+    },
+    {
+      "command": "head (2a77d2e272f390ea9a148c0bb90840e7d7efe381)",
+      "mean": 451.55116585976,
+      "stddev": null,
+      "median": 451.55116585976,
+      "user": 628.6122419,
+      "system": 121.65576628,
+      "min": 451.55116585976,
+      "max": 451.55116585976,
+      "times": [
+        451.55116585976
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "2a77d2e272f390ea9a148c0bb90840e7d7efe381"
+      },
+      "network": "mainnet"
+    },
+    {
+      "command": "base (0ceefb0062d5829efc19b0c8caa8f08d52e24aa1)",
+      "mean": 17.536443111159997,
+      "stddev": null,
+      "median": 17.536443111159997,
+      "user": 2.6313539599999998,
+      "system": 0.84031192,
+      "min": 17.536443111159997,
+      "max": 17.536443111159997,
+      "times": [
+        17.536443111159997
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "0ceefb0062d5829efc19b0c8caa8f08d52e24aa1"
+      },
+      "network": "signet"
+    },
+    {
+      "command": "head (2a77d2e272f390ea9a148c0bb90840e7d7efe381)",
+      "mean": 17.37926066716,
+      "stddev": null,
+      "median": 17.37926066716,
+      "user": 2.67775996,
+      "system": 0.79782492,
+      "min": 17.37926066716,
+      "max": 17.37926066716,
+      "times": [
+        17.37926066716
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "2a77d2e272f390ea9a148c0bb90840e7d7efe381"
+      },
+      "network": "signet"
+    }
+  ]
+}

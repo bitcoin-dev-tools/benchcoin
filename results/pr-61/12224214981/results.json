@@ -1,0 +1,84 @@
+{
+  "results": [
+    {
+      "command": "base (0ceefb0062d5829efc19b0c8caa8f08d52e24aa1)",
+      "mean": 456.81982991348,
+      "stddev": null,
+      "median": 456.81982991348,
+      "user": 620.07270972,
+      "system": 118.1080262,
+      "min": 456.81982991348,
+      "max": 456.81982991348,
+      "times": [
+        456.81982991348
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "0ceefb0062d5829efc19b0c8caa8f08d52e24aa1"
+      },
+      "network": "mainnet"
+    },
+    {
+      "command": "head (2ce0e0200f8e5735d1f4665c212e2571b4ae3841)",
+      "mean": 447.29409746647997,
+      "stddev": null,
+      "median": 447.29409746647997,
+      "user": 618.90539372,
+      "system": 113.4995252,
+      "min": 447.29409746647997,
+      "max": 447.29409746647997,
+      "times": [
+        447.29409746647997
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "2ce0e0200f8e5735d1f4665c212e2571b4ae3841"
+      },
+      "network": "mainnet"
+    },
+    {
+      "command": "base (0ceefb0062d5829efc19b0c8caa8f08d52e24aa1)",
+      "mean": 17.38422639342,
+      "stddev": null,
+      "median": 17.38422639342,
+      "user": 2.68233684,
+      "system": 0.8204748599999999,
+      "min": 17.38422639342,
+      "max": 17.38422639342,
+      "times": [
+        17.38422639342
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "0ceefb0062d5829efc19b0c8caa8f08d52e24aa1"
+      },
+      "network": "signet"
+    },
+    {
+      "command": "head (2ce0e0200f8e5735d1f4665c212e2571b4ae3841)",
+      "mean": 17.42410204942,
+      "stddev": null,
+      "median": 17.42410204942,
+      "user": 2.64476884,
+      "system": 0.81839286,
+      "min": 17.42410204942,
+      "max": 17.42410204942,
+      "times": [
+        17.42410204942
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "2ce0e0200f8e5735d1f4665c212e2571b4ae3841"
+      },
+      "network": "signet"
+    }
+  ]
+}

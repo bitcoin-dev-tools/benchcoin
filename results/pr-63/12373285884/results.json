@@ -1,0 +1,84 @@
+{
+  "results": [
+    {
+      "command": "base (0ceefb0062d5829efc19b0c8caa8f08d52e24aa1)",
+      "mean": 420.03124420524,
+      "stddev": null,
+      "median": 420.03124420524,
+      "user": 659.67231894,
+      "system": 133.17068665999997,
+      "min": 420.03124420524,
+      "max": 420.03124420524,
+      "times": [
+        420.03124420524
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "0ceefb0062d5829efc19b0c8caa8f08d52e24aa1"
+      },
+      "network": "mainnet"
+    },
+    {
+      "command": "head (b5a64526826ed5da647c4a4a5bb8aae82f625d3d)",
+      "mean": 385.70807444824,
+      "stddev": null,
+      "median": 385.70807444824,
+      "user": 619.17695294,
+      "system": 124.23010666,
+      "min": 385.70807444824,
+      "max": 385.70807444824,
+      "times": [
+        385.70807444824
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "b5a64526826ed5da647c4a4a5bb8aae82f625d3d"
+      },
+      "network": "mainnet"
+    },
+    {
+      "command": "base (0ceefb0062d5829efc19b0c8caa8f08d52e24aa1)",
+      "mean": 17.46382679788,
+      "stddev": null,
+      "median": 17.46382679788,
+      "user": 2.6689535799999997,
+      "system": 0.8323930199999999,
+      "min": 17.46382679788,
+      "max": 17.46382679788,
+      "times": [
+        17.46382679788
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "0ceefb0062d5829efc19b0c8caa8f08d52e24aa1"
+      },
+      "network": "signet"
+    },
+    {
+      "command": "head (b5a64526826ed5da647c4a4a5bb8aae82f625d3d)",
+      "mean": 17.60788513088,
+      "stddev": null,
+      "median": 17.60788513088,
+      "user": 2.6116895799999997,
+      "system": 0.8296290199999999,
+      "min": 17.60788513088,
+      "max": 17.60788513088,
+      "times": [
+        17.60788513088
+      ],
+      "exit_codes": [
+        0
+      ],
+      "parameters": {
+        "commit": "b5a64526826ed5da647c4a4a5bb8aae82f625d3d"
+      },
+      "network": "signet"
+    }
+  ]
+}

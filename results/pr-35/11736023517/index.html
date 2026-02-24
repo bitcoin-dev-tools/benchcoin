@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Benchmark Results</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+  </head>
+  <body class="bg-gray-100 p-8">
+    <div class="max-w-4xl mx-auto">
+      <h1 class="text-3xl font-bold mb-8">Benchmark Results</h1>
+      <div class="bg-white rounded-lg shadow p-6 mb-8">
+        <h2 class="text-xl font-semibold mb-4">PR #35 - Run 11736023517</h2>
+        <div class="overflow-x-auto">
+          
+              <table class="min-w-full table-auto">
+                <thead>
+                  <tr class="bg-gray-50">
+                    <th class="px-4 py-2">Branch</th>
+                    <th class="px-4 py-2">Command</th>
+                    <th class="px-4 py-2">Mean (s)</th>
+                    <th class="px-4 py-2">Std Dev</th>
+                    <th class="px-4 py-2">User (s)</th>
+                    <th class="px-4 py-2">System (s)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr class="border-t">
+                    <td class="px-4 py-2 font-mono text-sm">
+                      <a href="https://github.com/bitcoin-dev-tools/benchcoin/commit/e1d02018">e1d02018</a>
+                    </td>
+                    <td class="px-4 py-2 font-mono text-sm">perf script flamegraph build/src/bitcoind -datadir=$TMP_DATADIR -connect=148.251.128.115:55555 -daemon=0 -signet -stopatheight=170000</td>
+                    <td class="px-4 py-2 text-right">17.424</td>
+                    <td class="px-4 py-2 text-right">N/A</td>
+                    <td class="px-4 py-2 text-right">2.531</td>
+                    <td class="px-4 py-2 text-right">0.673</td>
+                  </tr>
+                </tbody>
+              </table>
+
+              
+                <iframe src="e1d0201840cfd4ce0568c4f54f40c19cb1dc68f0-flamegraph.html" width="100%" height="600px" frameborder="0"></iframe>
+              
+            
+              <table class="min-w-full table-auto">
+                <thead>
+                  <tr class="bg-gray-50">
+                    <th class="px-4 py-2">Branch</th>
+                    <th class="px-4 py-2">Command</th>
+                    <th class="px-4 py-2">Mean (s)</th>
+                    <th class="px-4 py-2">Std Dev</th>
+                    <th class="px-4 py-2">User (s)</th>
+                    <th class="px-4 py-2">System (s)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr class="border-t">
+                    <td class="px-4 py-2 font-mono text-sm">
+                      <a href="https://github.com/bitcoin-dev-tools/benchcoin/commit/696837a5">696837a5</a>
+                    </td>
+                    <td class="px-4 py-2 font-mono text-sm">perf script flamegraph build/src/bitcoind -datadir=$TMP_DATADIR -connect=148.251.128.115:55555 -daemon=0 -signet -stopatheight=170000</td>
+                    <td class="px-4 py-2 text-right">0.834</td>
+                    <td class="px-4 py-2 text-right">N/A</td>
+                    <td class="px-4 py-2 text-right">0.587</td>
+                    <td class="px-4 py-2 text-right">0.084</td>
+                  </tr>
+                </tbody>
+              </table>
+
+              
+                <iframe src="696837a53c61040f922a991e6bea23aaf92cfb3a-flamegraph.html" width="100%" height="600px" frameborder="0"></iframe>
+              
+            
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

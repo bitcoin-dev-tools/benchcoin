@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Benchmark Results</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+  </head>
+  <body class="bg-gray-100 p-8">
+    <div class="w-9/10 mx-auto">
+      <h1 class="text-3xl font-bold mb-8">Benchmark Results</h1>
+      <div class="bg-white rounded-lg shadow p-6 mb-8">
+        <h2 class="text-xl font-semibold mb-4">PR #85 - Run 13887984502</h2>
+        
+          <div class="mb-8">
+            <h3 class="text-lg font-semibold mb-4 capitalize">
+              mainnet-default-instrumented Results
+              <span class="text-sm font-normal ml-2">(-6.4% speedup)</span>
+            </h3>
+            <div class="overflow-x-auto">
+              
+                    <table class="min-w-full table-auto">
+                      <thead>
+                        <tr class="bg-gray-50">
+                          <th class="px-4 py-2">Command</th>
+                          <th class="px-4 py-2">Mean (s)</th>
+                          <th class="px-4 py-2">Std Dev</th>
+                          <th class="px-4 py-2">User (s)</th>
+                          <th class="px-4 py-2">System (s)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr class="border-t">
+                          <td class="px-4 py-2 font-mono text-sm text-center">
+                            base (<a href="https://github.com/bitcoin-dev-tools/benchcoin/commit/4912c0c5f16d6c5bc61a288bafcbfc4b0b96c4b1" target="_blank">4912c0c5</a>)
+                          </td>
+                          <td class="px-4 py-2 text-center">1073.883</td>
+                          <td class="px-4 py-2 text-center">N/A</td>
+                          <td class="px-4 py-2 text-center">1379.317</td>
+                          <td class="px-4 py-2 text-center">280.092</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                    
+                      <object data="mainnet-default-instrumented-base-flamegraph.svg" type="image/svg+xml" width="100%" style="height: 100%;" class="mb-4"></object>
+                    
+                    
+                          <a href="mainnet-default-instrumented-plots/cache_vs_height.png" target="_blank">
+                            <img src="mainnet-default-instrumented-plots/cache_vs_height.png" alt="cache_vs_height.png" class="mb-4 max-w-full h-auto">
+                          </a>
+                        
+                          <a href="mainnet-default-instrumented-plots/cache_vs_time.png" target="_blank">
+                            <img src="mainnet-default-instrumented-plots/cache_vs_time.png" alt="cache_vs_time.png" class="mb-4 max-w-full h-auto">
+                          </a>
+                        
+                          <a href="mainnet-default-instrumented-plots/coindb_commit_txout_vs_time.png" target="_blank">
+                            <img src="mainnet-default-instrumented-plots/coindb_commit_txout_vs_time.png" alt="coindb_commit_txout_vs_time.png" class="mb-4 max-w-full h-auto">
+                          </a>
+                        
+                          <a href="mainnet-default-instrumented-plots/coindb_write_batch_size_vs_time.png" target="_blank">
+                            <img src="mainnet-default-instrumented-plots/coindb_write_batch_size_vs_time.png" alt="coindb_write_batch_size_vs_time.png" class="mb-4 max-w-full h-auto">
+                          </a>
+                        
+                          <a href="mainnet-default-instrumented-plots/coins_cache_vs_time.png" target="_blank">
+                            <img src="mainnet-default-instrumented-plots/coins_cache_vs_time.png" alt="coins_cache_vs_time.png" class="mb-4 max-w-full h-auto">
+                          </a>
+                        
+                          <a href="mainnet-default-instrumented-plots/height_vs_time.png" target="_blank">
+                            <img src="mainnet-default-instrumented-plots/height_vs_time.png" alt="height_vs_time.png" class="mb-4 max-w-full h-auto">
+                          </a>
+                        
+                          <a href="mainnet-default-instrumented-plots/leveldb_compact_vs_time.png" target="_blank">
+                            <img src="mainnet-default-instrumented-plots/leveldb_compact_vs_time.png" alt="leveldb_compact_vs_time.png" class="mb-4 max-w-full h-auto">
+                          </a>
+                        
+                          <a href="mainnet-default-instrumented-plots/leveldb_gen_bytes_vs_time.png" target="_blank">
+                            <img src="mainnet-default-instrumented-plots/leveldb_gen_bytes_vs_time.png" alt="leveldb_gen_bytes_vs_time.png" class="mb-4 max-w-full h-auto">
+                          </a>
+                        
+                          <a href="mainnet-default-instrumented-plots/leveldb_gen_keys_vs_time.png" target="_blank">
+                            <img src="mainnet-default-instrumented-plots/leveldb_gen_keys_vs_time.png" alt="leveldb_gen_keys_vs_time.png" class="mb-4 max-w-full h-auto">
+                          </a>
+                        
+                          <a href="mainnet-default-instrumented-plots/tx_vs_height.png" target="_blank">
+                            <img src="mainnet-default-instrumented-plots/tx_vs_height.png" alt="tx_vs_height.png" class="mb-4 max-w-full h-auto">
+                          </a>
+                        
+                  
+                    <table class="min-w-full table-auto">
+                      <thead>
+                        <tr class="bg-gray-50">
+                          <th class="px-4 py-2">Command</th>
+                          <th class="px-4 py-2">Mean (s)</th>
+                          <th class="px-4 py-2">Std Dev</th>
+                          <th class="px-4 py-2">User (s)</th>
+                          <th class="px-4 py-2">System (s)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr class="border-t">
+                          <td class="px-4 py-2 font-mono text-sm text-center">
+                            head (<a href="https://github.com/bitcoin-dev-tools/benchcoin/commit/ae282a71d2bea24ebf32fd2bbadd2538692cb66c" target="_blank">ae282a71</a>)
+                          </td>
+                          <td class="px-4 py-2 text-center">1142.910</td>
+                          <td class="px-4 py-2 text-center">N/A</td>
+                          <td class="px-4 py-2 text-center">1348.847</td>
+                          <td class="px-4 py-2 text-center">251.517</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                    
+                      <object data="mainnet-default-instrumented-head-flamegraph.svg" type="image/svg+xml" width="100%" style="height: 100%;" class="mb-4"></object>
+                    
+                    
+                          <a href="mainnet-default-instrumented-plots/cache_vs_height.png" target="_blank">
+                            <img src="mainnet-default-instrumented-plots/cache_vs_height.png" alt="cache_vs_height.png" class="mb-4 max-w-full h-auto">
+                          </a>
+                        
+                          <a href="mainnet-default-instrumented-plots/cache_vs_time.png" target="_blank">
+                            <img src="mainnet-default-instrumented-plots/cache_vs_time.png" alt="cache_vs_time.png" class="mb-4 max-w-full h-auto">
+                          </a>
+                        
+                          <a href="mainnet-default-instrumented-plots/coindb_commit_txout_vs_time.png" target="_blank">
+                            <img src="mainnet-default-instrumented-plots/coindb_commit_txout_vs_time.png" alt="coindb_commit_txout_vs_time.png" class="mb-4 max-w-full h-auto">
+                          </a>
+                        
+                          <a href="mainnet-default-instrumented-plots/coindb_write_batch_size_vs_time.png" target="_blank">
+                            <img src="mainnet-default-instrumented-plots/coindb_write_batch_size_vs_time.png" alt="coindb_write_batch_size_vs_time.png" class="mb-4 max-w-full h-auto">
+                          </a>
+                        
+                          <a href="mainnet-default-instrumented-plots/coins_cache_vs_time.png" target="_blank">
+                            <img src="mainnet-default-instrumented-plots/coins_cache_vs_time.png" alt="coins_cache_vs_time.png" class="mb-4 max-w-full h-auto">
+                          </a>
+                        
+                          <a href="mainnet-default-instrumented-plots/height_vs_time.png" target="_blank">
+                            <img src="mainnet-default-instrumented-plots/height_vs_time.png" alt="height_vs_time.png" class="mb-4 max-w-full h-auto">
+                          </a>
+                        
+                          <a href="mainnet-default-instrumented-plots/leveldb_compact_vs_time.png" target="_blank">
+                            <img src="mainnet-default-instrumented-plots/leveldb_compact_vs_time.png" alt="leveldb_compact_vs_time.png" class="mb-4 max-w-full h-auto">
+                          </a>
+                        
+                          <a href="mainnet-default-instrumented-plots/leveldb_gen_bytes_vs_time.png" target="_blank">
+                            <img src="mainnet-default-instrumented-plots/leveldb_gen_bytes_vs_time.png" alt="leveldb_gen_bytes_vs_time.png" class="mb-4 max-w-full h-auto">
+                          </a>
+                        
+                          <a href="mainnet-default-instrumented-plots/leveldb_gen_keys_vs_time.png" target="_blank">
+                            <img src="mainnet-default-instrumented-plots/leveldb_gen_keys_vs_time.png" alt="leveldb_gen_keys_vs_time.png" class="mb-4 max-w-full h-auto">
+                          </a>
+                        
+                          <a href="mainnet-default-instrumented-plots/tx_vs_height.png" target="_blank">
+                            <img src="mainnet-default-instrumented-plots/tx_vs_height.png" alt="tx_vs_height.png" class="mb-4 max-w-full h-auto">
+                          </a>
+                        
+                  
+            </div>
+          </div>
+        
+          <div class="mb-8">
+            <h3 class="text-lg font-semibold mb-4 capitalize">
+              mainnet-large-instrumented Results
+              <span class="text-sm font-normal ml-2">(1.8% speedup)</span>
+            </h3>
+            <div class="overflow-x-auto">
+              
+                    <table class="min-w-full table-auto">
+                      <thead>
+                        <tr class="bg-gray-50">
+                          <th class="px-4 py-2">Command</th>
+                          <th class="px-4 py-2">Mean (s)</th>
+                          <th class="px-4 py-2">Std Dev</th>
+                          <th class="px-4 py-2">User (s)</th>
+                          <th class="px-4 py-2">System (s)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr class="border-t">
+                          <td class="px-4 py-2 font-mono text-sm text-center">
+                            base (<a href="https://github.com/bitcoin-dev-tools/benchcoin/commit/4912c0c5f16d6c5bc61a288bafcbfc4b0b96c4b1" target="_blank">4912c0c5</a>)
+                          </td>
+                          <td class="px-4 py-2 text-center">787.425</td>
+                          <td class="px-4 py-2 text-center">N/A</td>
+                          <td class="px-4 py-2 text-center">982.386</td>
+                          <td class="px-4 py-2 text-center">166.793</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                    
+                      <object data="mainnet-large-instrumented-base-flamegraph.svg" type="image/svg+xml" width="100%" style="height: 100%;" class="mb-4"></object>
+                    
+                    
+                          <a href="mainnet-large-instrumented-plots/cache_vs_height.png" target="_blank">
+                            <img src="mainnet-large-instrumented-plots/cache_vs_height.png" alt="cache_vs_height.png" class="mb-4 max-w-full h-auto">
+                          </a>
+                        
+                          <a href="mainnet-large-instrumented-plots/cache_vs_time.png" target="_blank">
+                            <img src="mainnet-large-instrumented-plots/cache_vs_time.png" alt="cache_vs_time.png" class="mb-4 max-w-full h-auto">
+                          </a>
+                        
+                          <a href="mainnet-large-instrumented-plots/coindb_commit_txout_vs_time.png" target="_blank">
+                            <img src="mainnet-large-instrumented-plots/coindb_commit_txout_vs_time.png" alt="coindb_commit_txout_vs_time.png" class="mb-4 max-w-full h-auto">
+                          </a>
+                        
+                          <a href="mainnet-large-instrumented-plots/coindb_write_batch_size_vs_time.png" target="_blank">
+                            <img src="mainnet-large-instrumented-plots/coindb_write_batch_size_vs_time.png" alt="coindb_write_batch_size_vs_time.png" class="mb-4 max-w-full h-auto">
+                          </a>
+                        
+                          <a href="mainnet-large-instrumented-plots/coins_cache_vs_time.png" target="_blank">
+                            <img src="mainnet-large-instrumented-plots/coins_cache_vs_time.png" alt="coins_cache_vs_time.png" class="mb-4 max-w-full h-auto">
+                          </a>
+                        
+                          <a href="mainnet-large-instrumented-plots/height_vs_time.png" target="_blank">
+                            <img src="mainnet-large-instrumented-plots/height_vs_time.png" alt="height_vs_time.png" class="mb-4 max-w-full h-auto">
+                          </a>
+                        
+                          <a href="mainnet-large-instrumented-plots/leveldb_compact_vs_time.png" target="_blank">
+                            <img src="mainnet-large-instrumented-plots/leveldb_compact_vs_time.png" alt="leveldb_compact_vs_time.png" class="mb-4 max-w-full h-auto">
+                          </a>
+                        
+                          <a href="mainnet-large-instrumented-plots/leveldb_gen_bytes_vs_time.png" target="_blank">
+                            <img src="mainnet-large-instrumented-plots/leveldb_gen_bytes_vs_time.png" alt="leveldb_gen_bytes_vs_time.png" class="mb-4 max-w-full h-auto">
+                          </a>
+                        
+                          <a href="mainnet-large-instrumented-plots/leveldb_gen_keys_vs_time.png" target="_blank">
+                            <img src="mainnet-large-instrumented-plots/leveldb_gen_keys_vs_time.png" alt="leveldb_gen_keys_vs_time.png" class="mb-4 max-w-full h-auto">
+                          </a>
+                        
+                          <a href="mainnet-large-instrumented-plots/tx_vs_height.png" target="_blank">
+                            <img src="mainnet-large-instrumented-plots/tx_vs_height.png" alt="tx_vs_height.png" class="mb-4 max-w-full h-auto">
+                          </a>
+                        
+                  
+                    <table class="min-w-full table-auto">
+                      <thead>
+                        <tr class="bg-gray-50">
+                          <th class="px-4 py-2">Command</th>
+                          <th class="px-4 py-2">Mean (s)</th>
+                          <th class="px-4 py-2">Std Dev</th>
+                          <th class="px-4 py-2">User (s)</th>
+                          <th class="px-4 py-2">System (s)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr class="border-t">
+                          <td class="px-4 py-2 font-mono text-sm text-center">
+                            head (<a href="https://github.com/bitcoin-dev-tools/benchcoin/commit/ae282a71d2bea24ebf32fd2bbadd2538692cb66c" target="_blank">ae282a71</a>)
+                          </td>
+                          <td class="px-4 py-2 text-center">773.290</td>
+                          <td class="px-4 py-2 text-center">N/A</td>
+                          <td class="px-4 py-2 text-center">979.535</td>
+                          <td class="px-4 py-2 text-center">148.537</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                    
+                      <object data="mainnet-large-instrumented-head-flamegraph.svg" type="image/svg+xml" width="100%" style="height: 100%;" class="mb-4"></object>
+                    
+                    
+                          <a href="mainnet-large-instrumented-plots/cache_vs_height.png" target="_blank">
+                            <img src="mainnet-large-instrumented-plots/cache_vs_height.png" alt="cache_vs_height.png" class="mb-4 max-w-full h-auto">
+                          </a>
+                        
+                          <a href="mainnet-large-instrumented-plots/cache_vs_time.png" target="_blank">
+                            <img src="mainnet-large-instrumented-plots/cache_vs_time.png" alt="cache_vs_time.png" class="mb-4 max-w-full h-auto">
+                          </a>
+                        
+                          <a href="mainnet-large-instrumented-plots/coindb_commit_txout_vs_time.png" target="_blank">
+                            <img src="mainnet-large-instrumented-plots/coindb_commit_txout_vs_time.png" alt="coindb_commit_txout_vs_time.png" class="mb-4 max-w-full h-auto">
+                          </a>
+                        
+                          <a href="mainnet-large-instrumented-plots/coindb_write_batch_size_vs_time.png" target="_blank">
+                            <img src="mainnet-large-instrumented-plots/coindb_write_batch_size_vs_time.png" alt="coindb_write_batch_size_vs_time.png" class="mb-4 max-w-full h-auto">
+                          </a>
+                        
+                          <a href="mainnet-large-instrumented-plots/coins_cache_vs_time.png" target="_blank">
+                            <img src="mainnet-large-instrumented-plots/coins_cache_vs_time.png" alt="coins_cache_vs_time.png" class="mb-4 max-w-full h-auto">
+                          </a>
+                        
+                          <a href="mainnet-large-instrumented-plots/height_vs_time.png" target="_blank">
+                            <img src="mainnet-large-instrumented-plots/height_vs_time.png" alt="height_vs_time.png" class="mb-4 max-w-full h-auto">
+                          </a>
+                        
+                          <a href="mainnet-large-instrumented-plots/leveldb_compact_vs_time.png" target="_blank">
+                            <img src="mainnet-large-instrumented-plots/leveldb_compact_vs_time.png" alt="leveldb_compact_vs_time.png" class="mb-4 max-w-full h-auto">
+                          </a>
+                        
+                          <a href="mainnet-large-instrumented-plots/leveldb_gen_bytes_vs_time.png" target="_blank">
+                            <img src="mainnet-large-instrumented-plots/leveldb_gen_bytes_vs_time.png" alt="leveldb_gen_bytes_vs_time.png" class="mb-4 max-w-full h-auto">
+                          </a>
+                        
+                          <a href="mainnet-large-instrumented-plots/leveldb_gen_keys_vs_time.png" target="_blank">
+                            <img src="mainnet-large-instrumented-plots/leveldb_gen_keys_vs_time.png" alt="leveldb_gen_keys_vs_time.png" class="mb-4 max-w-full h-auto">
+                          </a>
+                        
+                          <a href="mainnet-large-instrumented-plots/tx_vs_height.png" target="_blank">
+                            <img src="mainnet-large-instrumented-plots/tx_vs_height.png" alt="tx_vs_height.png" class="mb-4 max-w-full h-auto">
+                          </a>
+                        
+                  
+            </div>
+          </div>
+        
+          <div class="mb-8">
+            <h3 class="text-lg font-semibold mb-4 capitalize">
+              mainnet-default-uninstrumented Results
+              <span class="text-sm font-normal ml-2">(-3.1% speedup)</span>
+            </h3>
+            <div class="overflow-x-auto">
+              
+                    <table class="min-w-full table-auto">
+                      <thead>
+                        <tr class="bg-gray-50">
+                          <th class="px-4 py-2">Command</th>
+                          <th class="px-4 py-2">Mean (s)</th>
+                          <th class="px-4 py-2">Std Dev</th>
+                          <th class="px-4 py-2">User (s)</th>
+                          <th class="px-4 py-2">System (s)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr class="border-t">
+                          <td class="px-4 py-2 font-mono text-sm text-center">
+                            base (<a href="https://github.com/bitcoin-dev-tools/benchcoin/commit/4912c0c5f16d6c5bc61a288bafcbfc4b0b96c4b1" target="_blank">4912c0c5</a>)
+                          </td>
+                          <td class="px-4 py-2 text-center">1502.566</td>
+                          <td class="px-4 py-2 text-center">8.517</td>
+                          <td class="px-4 py-2 text-center">1250.666</td>
+                          <td class="px-4 py-2 text-center">227.504</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                    
+                    
+                  
+                    <table class="min-w-full table-auto">
+                      <thead>
+                        <tr class="bg-gray-50">
+                          <th class="px-4 py-2">Command</th>
+                          <th class="px-4 py-2">Mean (s)</th>
+                          <th class="px-4 py-2">Std Dev</th>
+                          <th class="px-4 py-2">User (s)</th>
+                          <th class="px-4 py-2">System (s)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr class="border-t">
+                          <td class="px-4 py-2 font-mono text-sm text-center">
+                            head (<a href="https://github.com/bitcoin-dev-tools/benchcoin/commit/ae282a71d2bea24ebf32fd2bbadd2538692cb66c" target="_blank">ae282a71</a>)
+                          </td>
+                          <td class="px-4 py-2 text-center">1548.930</td>
+                          <td class="px-4 py-2 text-center">8.514</td>
+                          <td class="px-4 py-2 text-center">1279.793</td>
+                          <td class="px-4 py-2 text-center">230.919</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                    
+                    
+                  
+            </div>
+          </div>
+        
+          <div class="mb-8">
+            <h3 class="text-lg font-semibold mb-4 capitalize">
+              mainnet-large-uninstrumented Results
+              <span class="text-sm font-normal ml-2">(-0.3% speedup)</span>
+            </h3>
+            <div class="overflow-x-auto">
+              
+                    <table class="min-w-full table-auto">
+                      <thead>
+                        <tr class="bg-gray-50">
+                          <th class="px-4 py-2">Command</th>
+                          <th class="px-4 py-2">Mean (s)</th>
+                          <th class="px-4 py-2">Std Dev</th>
+                          <th class="px-4 py-2">User (s)</th>
+                          <th class="px-4 py-2">System (s)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr class="border-t">
+                          <td class="px-4 py-2 font-mono text-sm text-center">
+                            base (<a href="https://github.com/bitcoin-dev-tools/benchcoin/commit/4912c0c5f16d6c5bc61a288bafcbfc4b0b96c4b1" target="_blank">4912c0c5</a>)
+                          </td>
+                          <td class="px-4 py-2 text-center">1032.377</td>
+                          <td class="px-4 py-2 text-center">4.218</td>
+                          <td class="px-4 py-2 text-center">898.298</td>
+                          <td class="px-4 py-2 text-center">112.428</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                    
+                    
+                  
+                    <table class="min-w-full table-auto">
+                      <thead>
+                        <tr class="bg-gray-50">
+                          <th class="px-4 py-2">Command</th>
+                          <th class="px-4 py-2">Mean (s)</th>
+                          <th class="px-4 py-2">Std Dev</th>
+                          <th class="px-4 py-2">User (s)</th>
+                          <th class="px-4 py-2">System (s)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr class="border-t">
+                          <td class="px-4 py-2 font-mono text-sm text-center">
+                            head (<a href="https://github.com/bitcoin-dev-tools/benchcoin/commit/ae282a71d2bea24ebf32fd2bbadd2538692cb66c" target="_blank">ae282a71</a>)
+                          </td>
+                          <td class="px-4 py-2 text-center">1035.414</td>
+                          <td class="px-4 py-2 text-center">5.522</td>
+                          <td class="px-4 py-2 text-center">897.601</td>
+                          <td class="px-4 py-2 text-center">112.401</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                    
+                    
+                  
+            </div>
+          </div>
+        
+      </div>
+    </div>
+  </body>
+</html>

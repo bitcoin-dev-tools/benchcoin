@@ -1,0 +1,62 @@
+{
+  "results": [
+    {
+      "network": "450-uninstrumented",
+      "command": "pr",
+      "mean": 3891.0155605111804,
+      "stddev": 167.61158845502936,
+      "user": 4315.51923632,
+      "system": 703.93166984
+    },
+    {
+      "network": "450-instrumented",
+      "command": "pr",
+      "mean": 3892.71200610432,
+      "stddev": null,
+      "user": 4352.23285426,
+      "system": 746.10416214
+    },
+    {
+      "network": "32000-uninstrumented",
+      "command": "pr",
+      "mean": 3219.81606019262,
+      "stddev": 20.906275763886203,
+      "user": 3185.3734486599997,
+      "system": 433.9957945599999
+    },
+    {
+      "network": "32000-instrumented",
+      "command": "pr",
+      "mean": 3332.58132753276,
+      "stddev": null,
+      "user": 3171.6343605399998,
+      "system": 459.06915382
+    }
+  ],
+  "nightly_comparison": {
+    "450": {
+      "pr_mean": 3891.0155605111804,
+      "pr_stddev": 167.61158845502936,
+      "pr_commit": "e688b593dd451a3e7374a8a193a3894870a79ab7",
+      "nightly_mean": 3846.8382698774203,
+      "nightly_stddev": 30.367868180343237,
+      "nightly_date": "2026-02-25",
+      "nightly_commit": "707ad466968b947b364cfc25bcb4d6895e799418",
+      "speedup_percent": -1.1,
+      "series_key": "ryzen777008core|64GB|nvme|6.6|db450|prune1000000|840000-900000",
+      "series_label": "x86_64, Ryzen 7 7700, 62GB RAM, 840000-900000, dbcache 450, prune 1000000"
+    },
+    "32000": {
+      "pr_mean": 3219.81606019262,
+      "pr_stddev": 20.906275763886203,
+      "pr_commit": "e688b593dd451a3e7374a8a193a3894870a79ab7",
+      "nightly_mean": 2517.24009488498,
+      "nightly_stddev": 49.93774589991403,
+      "nightly_date": "2026-02-25",
+      "nightly_commit": "707ad466968b947b364cfc25bcb4d6895e799418",
+      "speedup_percent": -27.9,
+      "series_key": "ryzen777008core|64GB|nvme|6.6|db32000|prune1000000|840000-900000",
+      "series_label": "x86_64, Ryzen 7 7700, 62GB RAM, 840000-900000, dbcache 32000, prune 1000000"
+    }
+  }
+}

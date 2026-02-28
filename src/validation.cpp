@@ -59,6 +59,7 @@
 #include <util/signalinterrupt.h>
 #include <util/strencodings.h>
 #include <util/string.h>
+#include <util/thread.h>
 #include <util/time.h>
 #include <util/trace.h>
 #include <util/translation.h>
@@ -3047,6 +3048,14 @@ bool Chainstate::ConnectTip(
     // Read block from disk.
     const auto time_1{SteadyClock::now()};
     if (!block_to_connect) {
+        LOCK(m_chainman.m_block_cache_mutex);
+        auto it = m_chainman.m_block_cache.find(pindexNew->GetBlockHash());
+        if (it != m_chainman.m_block_cache.end()) {
+            block_to_connect = std::move(it->second);
+            m_chainman.m_block_cache.erase(it);
+        }
+    }
+    if (!block_to_connect) {
         std::shared_ptr<CBlock> pblockNew = std::make_shared<CBlock>();
         if (!m_blockman.ReadBlock(*pblockNew, *pindexNew)) {
             return FatalError(m_chainman.GetNotifications(), state, _("Failed to read block."));
@@ -3868,7 +3877,7 @@ static bool CheckBlockHeader(const CBlockHeader& block, BlockValidationState& st
 
 static bool CheckMerkleRoot(const CBlock& block, BlockValidationState& state)
 {
-    if (block.m_checked_merkle_root) return true;
+    if (block.m_checked_merkle_root.load(std::memory_order_relaxed)) return true;
 
     bool mutated;
     uint256 merkle_root = BlockMerkleRoot(block, &mutated);
@@ -3889,7 +3898,7 @@ static bool CheckMerkleRoot(const CBlock& block, BlockValidationState& state)
             /*debug_message=*/"duplicate transaction");
     }
 
-    block.m_checked_merkle_root = true;
+    block.m_checked_merkle_root.store(true, std::memory_order_relaxed);
     return true;
 }
 
@@ -3902,7 +3911,7 @@ static bool CheckMerkleRoot(const CBlock& block, BlockValidationState& state)
 static bool CheckWitnessMalleation(const CBlock& block, bool expect_witness_commitment, BlockValidationState& state)
 {
     if (expect_witness_commitment) {
-        if (block.m_checked_witness_commitment) return true;
+        if (block.m_checked_witness_commitment.load(std::memory_order_relaxed)) return true;
 
         int commitpos = GetWitnessCommitmentIndex(block);
         if (commitpos != NO_WITNESS_COMMITMENT) {
@@ -3929,7 +3938,7 @@ static bool CheckWitnessMalleation(const CBlock& block, bool expect_witness_comm
                     /*debug_message=*/strprintf("%s : witness merkle commitment mismatch", __func__));
             }
 
-            block.m_checked_witness_commitment = true;
+            block.m_checked_witness_commitment.store(true, std::memory_order_relaxed);
             return true;
         }
     }
@@ -3951,7 +3960,7 @@ bool CheckBlock(const CBlock& block, BlockValidationState& state, const Consensu
 {
     // These are checks that are independent of context.
 
-    if (block.fChecked)
+    if (block.fChecked.load(std::memory_order_relaxed))
         return true;
 
     // Check that the header is valid (particularly PoW).  This is mostly
@@ -4009,7 +4018,7 @@ bool CheckBlock(const CBlock& block, BlockValidationState& state, const Consensu
         return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-blk-sigops", "out-of-bounds SigOpCount");
 
     if (fCheckPOW && fCheckMerkleRoot)
-        block.fChecked = true;
+        block.fChecked.store(true, std::memory_order_relaxed);
 
     return true;
 }
@@ -4427,7 +4436,7 @@ bool ChainstateManager::AcceptBlock(const std::shared_ptr<const CBlock>& pblock,
     return true;
 }
 
-bool ChainstateManager::ProcessNewBlock(const std::shared_ptr<const CBlock>& block, bool force_processing, bool min_pow_checked, bool* new_block)
+bool ChainstateManager::ProcessNewBlock(const std::shared_ptr<const CBlock>& block, bool force_processing, bool min_pow_checked, bool* new_block, bool activate_chain) EXCLUSIVE_LOCKS_REQUIRED(!m_connector_mutex)
 {
     AssertLockNotHeld(cs_main);
 
@@ -4436,43 +4445,71 @@ bool ChainstateManager::ProcessNewBlock(const std::shared_ptr<const CBlock>& blo
         if (new_block) *new_block = false;
         BlockValidationState state;
 
-        // CheckBlock() does not support multi-threaded block validation because CBlock::fChecked can cause data race.
-        // Therefore, the following critical section must include the CheckBlock() call as well.
-        LOCK(cs_main);
-
+        // Context-free validation (no lock needed — cache flags are atomic).
         // Skipping AcceptBlock() for CheckBlock() failures means that we will never mark a block as invalid if
         // CheckBlock() fails.  This is protective against consensus failure if there are any unknown forms of block
         // malleability that cause CheckBlock() to fail; see e.g. CVE-2012-2459 and
         // https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2019-February/016697.html.  Because CheckBlock() is
         // not very expensive, the anti-DoS benefits of caching failure (of a definitely-invalid block) are not substantial.
-        bool ret = CheckBlock(*block, state, GetConsensus());
-        if (ret) {
-            // Store to disk
-            ret = AcceptBlock(block, state, &pindex, force_processing, nullptr, new_block, min_pow_checked);
-        }
-        if (!ret) {
+        if (!CheckBlock(*block, state, GetConsensus())) {
             if (m_options.signals) {
                 m_options.signals->BlockChecked(block, state);
             }
-            LogError("%s: AcceptBlock FAILED (%s)\n", __func__, state.ToString());
+            LogError("%s: CheckBlock FAILED (%s)\n", __func__, state.ToString());
             return false;
+        }
+
+        // During IBD, write the block to disk before acquiring cs_main so
+        // the lock is only held briefly for the index update, not the I/O.
+        const FlatFilePos* dbp_ptr{nullptr};
+        FlatFilePos block_pos{};
+        if (!activate_chain) {
+            const CBlockIndex* parent{WITH_LOCK(::cs_main, return m_blockman.LookupBlockIndex(block->hashPrevBlock))};
+            if (parent) {
+                block_pos = m_blockman.WriteBlock(*block, parent->nHeight + 1);
+                if (!block_pos.IsNull()) {
+                    dbp_ptr = &block_pos;
+                }
+            }
+        }
+
+        {
+            LOCK(cs_main);
+            bool ret = AcceptBlock(block, state, &pindex, force_processing, dbp_ptr, new_block, min_pow_checked);
+            if (!ret) {
+                if (m_options.signals) {
+                    m_options.signals->BlockChecked(block, state);
+                }
+                LogError("%s: AcceptBlock FAILED (%s)\n", __func__, state.ToString());
+                return false;
+            }
         }
     }
 
     NotifyHeaderTip();
 
-    BlockValidationState state; // Only used to report errors, not invalidity - ignore it
-    if (!ActiveChainstate().ActivateBestChain(state, block)) {
-        LogError("%s: ActivateBestChain failed (%s)\n", __func__, state.ToString());
-        return false;
-    }
+    if (!activate_chain) {
+        {
+            LOCK(m_block_cache_mutex);
+            if (m_block_cache.size() < MAX_BLOCK_CACHE_SIZE) {
+                m_block_cache.emplace(block->GetHash(), block);
+            }
+        }
+        WakeConnector();
+    } else {
+        BlockValidationState state;
+        if (!ActiveChainstate().ActivateBestChain(state, block)) {
+            LogError("%s: ActivateBestChain failed (%s)\n", __func__, state.ToString());
+            return false;
+        }
 
-    Chainstate* bg_chain{WITH_LOCK(cs_main, return HistoricalChainstate())};
-    BlockValidationState bg_state;
-    if (bg_chain && !bg_chain->ActivateBestChain(bg_state, block)) {
-        LogError("%s: [background] ActivateBestChain failed (%s)\n", __func__, bg_state.ToString());
-        return false;
-     }
+        Chainstate* bg_chain{WITH_LOCK(cs_main, return HistoricalChainstate())};
+        BlockValidationState bg_state;
+        if (bg_chain && !bg_chain->ActivateBestChain(bg_state, block)) {
+            LogError("%s: [background] ActivateBestChain failed (%s)\n", __func__, bg_state.ToString());
+            return false;
+        }
+    }
 
     return true;
 }
@@ -4498,9 +4535,8 @@ BlockValidationState TestBlockValidity(
     const bool check_pow,
     const bool check_merkle_root)
 {
-    // Lock must be held throughout this function for two reasons:
-    // 1. We don't want the tip to change during several of the validation steps
-    // 2. To prevent a CheckBlock() race condition for fChecked, see ProcessNewBlock()
+    // Lock must be held throughout this function because we don't want the
+    // tip to change during several of the validation steps.
     AssertLockHeld(chainstate.m_chainman.GetMutex());
 
     BlockValidationState state;
@@ -6161,9 +6197,62 @@ ChainstateManager::ChainstateManager(const util::SignalInterrupt& interrupt, Opt
 
 ChainstateManager::~ChainstateManager()
 {
+    InterruptConnectorThread();
+    JoinConnectorThread();
+
     LOCK(::cs_main);
 
     m_versionbitscache.Clear();
+}
+
+void ChainstateManager::ConnectorThreadFunc() EXCLUSIVE_LOCKS_REQUIRED(!m_connector_mutex)
+{
+    while (true) {
+        {
+            WAIT_LOCK(m_connector_mutex, lock);
+            m_connector_cv.wait(lock, [&]() EXCLUSIVE_LOCKS_REQUIRED(m_connector_mutex) {
+                return m_connector_wake || m_connector_shutdown;
+            });
+            if (m_connector_shutdown) return;
+            m_connector_wake = false;
+        }
+
+        BlockValidationState state;
+        ActiveChainstate().ActivateBestChain(state);
+
+        if (auto* bg = WITH_LOCK(::cs_main, return HistoricalChainstate())) {
+            BlockValidationState bg_state;
+            bg->ActivateBestChain(bg_state);
+        }
+    }
+}
+
+void ChainstateManager::WakeConnector() EXCLUSIVE_LOCKS_REQUIRED(!m_connector_mutex)
+{
+    {
+        LOCK(m_connector_mutex);
+        m_connector_wake = true;
+    }
+    m_connector_cv.notify_one();
+}
+
+void ChainstateManager::StartConnectorThread()
+{
+    m_connector_thread = std::thread(&util::TraceThread, "blkconnect", [this] { ConnectorThreadFunc(); });
+}
+
+void ChainstateManager::InterruptConnectorThread() EXCLUSIVE_LOCKS_REQUIRED(!m_connector_mutex)
+{
+    {
+        LOCK(m_connector_mutex);
+        m_connector_shutdown = true;
+    }
+    m_connector_cv.notify_one();
+}
+
+void ChainstateManager::JoinConnectorThread()
+{
+    if (m_connector_thread.joinable()) m_connector_thread.join();
 }
 
 Chainstate* ChainstateManager::LoadAssumeutxoChainstate()

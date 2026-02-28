@@ -1,0 +1,62 @@
+{
+  "results": [
+    {
+      "network": "450-uninstrumented",
+      "command": "pr",
+      "mean": 3723.05395731914,
+      "stddev": 128.75425004088785,
+      "user": 3942.3225108799998,
+      "system": 607.3894782799999
+    },
+    {
+      "network": "450-instrumented",
+      "command": "pr",
+      "mean": 3669.55460403024,
+      "stddev": null,
+      "user": 3963.2899018,
+      "system": 647.51683552
+    },
+    {
+      "network": "32000-uninstrumented",
+      "command": "pr",
+      "mean": 2435.22388851932,
+      "stddev": 0.32006340346545825,
+      "user": 2443.8871602199997,
+      "system": 271.75329058
+    },
+    {
+      "network": "32000-instrumented",
+      "command": "pr",
+      "mean": 2462.0863595239,
+      "stddev": null,
+      "user": 2446.0934912400003,
+      "system": 298.02773334
+    }
+  ],
+  "nightly_comparison": {
+    "450": {
+      "pr_mean": 3723.05395731914,
+      "pr_stddev": 128.75425004088785,
+      "pr_commit": "4f92e4e9d3d55ecb51795e9992aaf50be4feb4db",
+      "nightly_mean": 3800.09982741396,
+      "nightly_stddev": 128.14853380906018,
+      "nightly_date": "2026-02-27",
+      "nightly_commit": "9cad97f6cdf1bd660732cd10e844a6a7e0771ea0",
+      "speedup_percent": 2.0,
+      "series_key": "ryzen777008core|64GB|nvme|6.6|db450|prune1000000|840000-900000",
+      "series_label": "x86_64, Ryzen 7 7700, 62GB RAM, 840000-900000, dbcache 450, prune 1000000"
+    },
+    "32000": {
+      "pr_mean": 2435.22388851932,
+      "pr_stddev": 0.32006340346545825,
+      "pr_commit": "4f92e4e9d3d55ecb51795e9992aaf50be4feb4db",
+      "nightly_mean": 2484.42880844222,
+      "nightly_stddev": 21.92133838893374,
+      "nightly_date": "2026-02-27",
+      "nightly_commit": "9cad97f6cdf1bd660732cd10e844a6a7e0771ea0",
+      "speedup_percent": 2.0,
+      "series_key": "ryzen777008core|64GB|nvme|6.6|db32000|prune1000000|840000-900000",
+      "series_label": "x86_64, Ryzen 7 7700, 62GB RAM, 840000-900000, dbcache 32000, prune 1000000"
+    }
+  }
+}

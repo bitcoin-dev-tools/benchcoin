@@ -232,13 +232,14 @@ void ValidationSignals::MempoolTransactionsRemovedForBlock(const std::vector<Rem
                           txs_removed_for_block.size());
 }
 
-void ValidationSignals::BlockDisconnected(const std::shared_ptr<const CBlock>& pblock, const CBlockIndex* pindex)
+void ValidationSignals::BlockDisconnected(std::shared_ptr<const CBlock> pblock, const CBlockIndex* pindex)
 {
-    auto event = [pblock, pindex, this] {
+    auto block_hash{pblock->GetHash().ToString()};
+    auto event = [pblock = std::move(pblock), pindex, this] {
         m_internals->Iterate([&](CValidationInterface& callbacks) { callbacks.BlockDisconnected(pblock, pindex); });
     };
     ENQUEUE_AND_LOG_EVENT(event, "%s: block hash=%s block height=%d", __func__,
-                          pblock->GetHash().ToString(),
+                          block_hash,
                           pindex->nHeight);
 }
 

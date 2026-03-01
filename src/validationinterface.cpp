@@ -157,12 +157,12 @@ void ValidationSignals::SyncWithValidationInterfaceQueue()
 // Use a macro instead of a function for conditional logging to prevent
 // evaluating arguments when logging is not enabled.
 //
-// NOTE: The lambda captures all local variables by value.
+// NOTE: The lambda captures the event by move and all other variables by value.
 #define ENQUEUE_AND_LOG_EVENT(event, fmt, name, ...)           \
     do {                                                       \
         auto local_name = (name);                              \
         LOG_EVENT("Enqueuing " fmt, local_name, __VA_ARGS__);  \
-        m_internals->m_task_runner->insert([=] { \
+        m_internals->m_task_runner->insert([=, event = std::move(event)] { \
             LOG_EVENT(fmt, local_name, __VA_ARGS__);           \
             event();                                           \
         });                                                    \
@@ -211,13 +211,14 @@ void ValidationSignals::TransactionRemovedFromMempool(const CTransactionRef& tx,
                           RemovalReasonToString(reason));
 }
 
-void ValidationSignals::BlockConnected(const ChainstateRole& role, const std::shared_ptr<const CBlock>& pblock, const CBlockIndex* pindex)
+void ValidationSignals::BlockConnected(const ChainstateRole& role, std::shared_ptr<const CBlock> pblock, const CBlockIndex* pindex)
 {
-    auto event = [role, pblock, pindex, this] {
+    auto block_hash{pblock->GetHash().ToString()};
+    auto event = [role, pblock = std::move(pblock), pindex, this] {
         m_internals->Iterate([&](CValidationInterface& callbacks) { callbacks.BlockConnected(role, pblock, pindex); });
     };
     ENQUEUE_AND_LOG_EVENT(event, "%s: block hash=%s block height=%d", __func__,
-                          pblock->GetHash().ToString(),
+                          block_hash,
                           pindex->nHeight);
 }
 
@@ -231,13 +232,14 @@ void ValidationSignals::MempoolTransactionsRemovedForBlock(const std::vector<Rem
                           txs_removed_for_block.size());
 }
 
-void ValidationSignals::BlockDisconnected(const std::shared_ptr<const CBlock>& pblock, const CBlockIndex* pindex)
+void ValidationSignals::BlockDisconnected(std::shared_ptr<const CBlock> pblock, const CBlockIndex* pindex)
 {
-    auto event = [pblock, pindex, this] {
+    auto block_hash{pblock->GetHash().ToString()};
+    auto event = [pblock = std::move(pblock), pindex, this] {
         m_internals->Iterate([&](CValidationInterface& callbacks) { callbacks.BlockDisconnected(pblock, pindex); });
     };
     ENQUEUE_AND_LOG_EVENT(event, "%s: block hash=%s block height=%d", __func__,
-                          pblock->GetHash().ToString(),
+                          block_hash,
                           pindex->nHeight);
 }
 

@@ -3633,18 +3633,18 @@
     {
       "date": "2026-03-04",
       "commit": "083242aac81d02b6547ca37e0b4e6f37e0e89d87",
-      "mean": 3718.5677775546,
-      "stddev": 118.79051178175591,
+      "mean": 2646.0551346617403,
+      "stddev": 0.6487993945272698,
       "runs": 2,
       "config": {
         "full_ibd": false,
         "start_height": 840000,
         "runs": 2,
-        "command_template": "bitcoind -datadir={datadir} -dbcache={dbcache} -stopatheight=900000 -chain=main -connect=127.0.0.1:38333 -prune=1000000 -daemon=0 -printtoconsole=0",
+        "command_template": "bitcoind -datadir={datadir} -dbcache={dbcache} -stopatheight=900000 -chain=main -connect=148.251.128.115:33333 -prune=1000000 -daemon=0 -printtoconsole=0",
         "bitcoind": {
           "stopatheight": 900000,
           "chain": "main",
-          "connect": "127.0.0.1:38333",
+          "connect": "148.251.128.115:33333",
           "prune": 1000000,
           "daemon": false,
           "printtoconsole": false,
@@ -3666,23 +3666,23 @@
         "os_kernel": "6.6.114",
         "total_ram_gb": 62.0
       },
-      "run_date": "2026-03-05"
+      "run_date": "2026-03-06"
     },
     {
       "date": "2026-03-04",
       "commit": "083242aac81d02b6547ca37e0b4e6f37e0e89d87",
-      "mean": 2474.46809742854,
-      "stddev": 85.11129525092582,
+      "mean": 2340.75046553784,
+      "stddev": 19.878351007203733,
       "runs": 2,
       "config": {
         "full_ibd": false,
         "start_height": 840000,
         "runs": 2,
-        "command_template": "bitcoind -datadir={datadir} -dbcache={dbcache} -stopatheight=900000 -chain=main -connect=127.0.0.1:38333 -prune=1000000 -daemon=0 -printtoconsole=0",
+        "command_template": "bitcoind -datadir={datadir} -dbcache={dbcache} -stopatheight=900000 -chain=main -connect=148.251.128.115:33333 -prune=1000000 -daemon=0 -printtoconsole=0",
         "bitcoind": {
           "stopatheight": 900000,
           "chain": "main",
-          "connect": "127.0.0.1:38333",
+          "connect": "148.251.128.115:33333",
           "prune": 1000000,
           "daemon": false,
           "printtoconsole": false,
@@ -3704,7 +3704,7 @@
         "os_kernel": "6.6.114",
         "total_ram_gb": 62.0
       },
-      "run_date": "2026-03-05"
+      "run_date": "2026-03-06"
     }
   ]
 }

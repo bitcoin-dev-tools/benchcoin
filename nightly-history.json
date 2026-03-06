@@ -3709,8 +3709,8 @@
     {
       "date": "2026-03-05",
       "commit": "ca45461ddb2421b4267dad0b7d7bcec88c07eba4",
-      "mean": 2664.7710690960803,
-      "stddev": 1.570745780624795,
+      "mean": 2674.66628213148,
+      "stddev": 10.343014227960742,
       "runs": 2,
       "config": {
         "full_ibd": false,
@@ -3747,8 +3747,8 @@
     {
       "date": "2026-03-05",
       "commit": "ca45461ddb2421b4267dad0b7d7bcec88c07eba4",
-      "mean": 2328.50156728102,
-      "stddev": 6.640695851651438,
+      "mean": 2292.8834415662996,
+      "stddev": 33.56664665932315,
       "runs": 2,
       "config": {
         "full_ibd": false,

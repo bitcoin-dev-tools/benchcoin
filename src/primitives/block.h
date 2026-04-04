@@ -11,6 +11,7 @@
 #include <uint256.h>
 #include <util/time.h>
 
+#include <atomic>
 #include <cstdint>
 #include <string>
 #include <utility>
@@ -76,10 +77,10 @@ public:
     // network and disk
     std::vector<CTransactionRef> vtx;
 
-    // Memory-only flags for caching expensive checks
-    mutable bool fChecked;                            // CheckBlock()
-    mutable bool m_checked_witness_commitment{false}; // CheckWitnessCommitment()
-    mutable bool m_checked_merkle_root{false};        // CheckMerkleRoot()
+    // Memory-only flags for caching expensive checks (atomic for thread safety)
+    mutable std::atomic<bool> fChecked{false};                    // CheckBlock()
+    mutable std::atomic<bool> m_checked_witness_commitment{false}; // CheckWitnessCommitment()
+    mutable std::atomic<bool> m_checked_merkle_root{false};        // CheckMerkleRoot()
 
     CBlock()
     {
@@ -92,6 +93,40 @@ public:
         *(static_cast<CBlockHeader*>(this)) = header;
     }
 
+    CBlock(const CBlock& other) : CBlockHeader(other), vtx(other.vtx),
+        fChecked(other.fChecked.load(std::memory_order_relaxed)),
+        m_checked_witness_commitment(other.m_checked_witness_commitment.load(std::memory_order_relaxed)),
+        m_checked_merkle_root(other.m_checked_merkle_root.load(std::memory_order_relaxed)) {}
+
+    CBlock(CBlock&& other) noexcept : CBlockHeader(std::move(other)), vtx(std::move(other.vtx)),
+        fChecked(other.fChecked.load(std::memory_order_relaxed)),
+        m_checked_witness_commitment(other.m_checked_witness_commitment.load(std::memory_order_relaxed)),
+        m_checked_merkle_root(other.m_checked_merkle_root.load(std::memory_order_relaxed)) {}
+
+    CBlock& operator=(const CBlock& other)
+    {
+        if (this != &other) {
+            CBlockHeader::operator=(other);
+            vtx = other.vtx;
+            fChecked.store(other.fChecked.load(std::memory_order_relaxed), std::memory_order_relaxed);
+            m_checked_witness_commitment.store(other.m_checked_witness_commitment.load(std::memory_order_relaxed), std::memory_order_relaxed);
+            m_checked_merkle_root.store(other.m_checked_merkle_root.load(std::memory_order_relaxed), std::memory_order_relaxed);
+        }
+        return *this;
+    }
+
+    CBlock& operator=(CBlock&& other) noexcept
+    {
+        if (this != &other) {
+            CBlockHeader::operator=(std::move(other));
+            vtx = std::move(other.vtx);
+            fChecked.store(other.fChecked.load(std::memory_order_relaxed), std::memory_order_relaxed);
+            m_checked_witness_commitment.store(other.m_checked_witness_commitment.load(std::memory_order_relaxed), std::memory_order_relaxed);
+            m_checked_merkle_root.store(other.m_checked_merkle_root.load(std::memory_order_relaxed), std::memory_order_relaxed);
+        }
+        return *this;
+    }
+
     SERIALIZE_METHODS(CBlock, obj)
     {
         READWRITE(AsBase<CBlockHeader>(obj), obj.vtx);
@@ -101,9 +136,9 @@ public:
     {
         CBlockHeader::SetNull();
         vtx.clear();
-        fChecked = false;
-        m_checked_witness_commitment = false;
-        m_checked_merkle_root = false;
+        fChecked.store(false, std::memory_order_relaxed);
+        m_checked_witness_commitment.store(false, std::memory_order_relaxed);
+        m_checked_merkle_root.store(false, std::memory_order_relaxed);
     }
 
     std::string ToString() const;

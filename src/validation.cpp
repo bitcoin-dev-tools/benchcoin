@@ -2546,10 +2546,12 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
             // Check that transaction is BIP68 final
             // BIP68 lock checks (as opposed to nLockTime checks) must
             // be in ConnectBlock because they require the UTXO set
+            // Collect spent outputs regardless of BIP68 to avoid redundant
+            // coin iteration in CheckInputScripts.
+            std::vector<CTxOut> spent_outputs;
+            spent_outputs.reserve(tx.vin.size());
             if (nLockTimeFlags & LOCKTIME_VERIFY_SEQUENCE) {
                 prevheights.resize(tx.vin.size());
-                std::vector<CTxOut> spent_outputs;
-                spent_outputs.reserve(tx.vin.size());
                 for (size_t j = 0; j < tx.vin.size(); j++) {
                     const Coin& coin = view.AccessCoin(tx.vin[j].prevout);
                     prevheights[j] = coin.nHeight;
@@ -2561,10 +2563,13 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
                                   "contains a non-BIP68-final transaction " + tx.GetHash().ToString());
                     break;
                 }
-                // Pre-initialize txdata with spent outputs to avoid redundant
-                // coin iteration in CheckInputScripts.
-                txsdata[i].Init(tx, std::move(spent_outputs));
+            } else {
+                for (size_t j = 0; j < tx.vin.size(); j++) {
+                    spent_outputs.emplace_back(view.AccessCoin(tx.vin[j].prevout).out);
+                }
             }
+
+            txsdata[i].Init(tx, std::move(spent_outputs));
         }
 
         // GetTransactionSigOpCost counts 3 types of sigops:

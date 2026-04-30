@@ -574,7 +574,7 @@ private:
  * It adds an additional StartFetching method to provide the block.
  *
  * When a block is passed to StartFetching, the block txids are first inserted into m_txids (an
- * unordered set keyed by Txid with QuickHasher providing bucket selection). The block inputs are
+ * unordered set keyed by Txid with SaltedTxidHasher providing bucket selection). The block inputs are
  * then iterated in order, and any input whose prevout.hash is already in m_txids (a same-block
  * spend of an earlier transaction) is filtered out; remaining inputs are appended to m_inputs as
  * InputToFetch objects. m_txids is cleared after the loop. m_inputs is reserved up front to
@@ -673,11 +673,11 @@ private:
     /**
      * Set of block txids used in StartFetching to filter out inputs spending earlier transactions
      * in the same block. Stored as a member so the bucket array is reused across blocks; cleared
-     * after each StartFetching loop. QuickHasher provides quick bucket selection; equality uses
-     * the full Txid, so we never have to defend against quick-hash collisions.
+     * after each StartFetching loop. SaltedTxidHasher (SipHash-2-4) provides bucket selection
+     * with cryptographic-PRF properties; equality uses the full Txid.
      * Must only be mutated when m_futures is empty.
      */
-    std::unordered_set<Txid, QuickHasher> m_txids;
+    std::unordered_set<Txid, SaltedTxidHasher> m_txids;
 
     /**
      * Claim and fetch the next input in the queue. Safe to call from any thread.
@@ -764,7 +764,6 @@ public:
     explicit CoinsViewOverlay(CCoinsView* in_base, std::shared_ptr<ThreadPool> thread_pool,
                               bool deterministic = false) noexcept
         : CCoinsViewCache{in_base, deterministic},
-          m_txids{0, QuickHasher{deterministic}},
           m_thread_pool{std::move(thread_pool)}
     {
         Assume(m_thread_pool);

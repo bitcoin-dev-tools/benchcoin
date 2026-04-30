@@ -37,19 +37,9 @@ CBlock CreateBlock() noexcept
 
     for (const auto i : std::views::iota(1, NUM_TXS)) {
         CMutableTransaction tx;
-        Txid txid;
-        if (i % 3 == 0) {
-            // External input
-            txid = Txid::FromUint256(uint256(i));
-        } else if (i % 3 == 1) {
-            // Internal spend (prev tx)
-            txid = prevhash;
-        } else {
-            // Test quick hash collisions (looks internal, but is external)
-            uint256 u{prevhash.ToUint256()};
-            std::swap_ranges(u.begin(), u.begin() + 8, u.begin() + 8);
-            txid = Txid::FromUint256(u);
-        }
+        // Alternate between external inputs (fetched by workers) and same-block spends of the
+        // previous tx (filtered out of m_inputs by StartFetching).
+        const Txid txid{i % 2 == 0 ? Txid::FromUint256(uint256(i)) : prevhash};
         tx.vin.emplace_back(txid, 0);
         prevhash = tx.GetHash();
         block.vtx.push_back(MakeTransactionRef(tx));
@@ -78,6 +68,17 @@ void PopulateView(const CBlock& block, CCoinsView& view, bool spent = false)
     cache.Flush();
 }
 
+//! Returns a started thread pool shared across tests, mirroring how production reuses pools.
+std::shared_ptr<ThreadPool> StartedThreadPool()
+{
+    static const auto thread_pool{[] {
+        auto pool{std::make_shared<ThreadPool>("fetch_test")};
+        pool->Start(DEFAULT_INPUTFETCH_THREADS);
+        return pool;
+    }()};
+    return thread_pool;
+}
+
 void CheckCache(const CBlock& block, const CCoinsViewCache& cache)
 {
     uint32_t counter{0};
@@ -96,7 +97,7 @@ void CheckCache(const CBlock& block, const CCoinsViewCache& cache)
                 const auto should_have{!txids.contains(outpoint.hash)};
                 if (should_have) ++counter;
                 const auto have{cache.HaveCoinInCache(outpoint)};
-                BOOST_CHECK_EQUAL(should_have, !!have);
+                BOOST_CHECK_EQUAL(should_have, have);
             }
             txids.emplace(tx->GetHash());
         }
@@ -112,9 +113,10 @@ BOOST_AUTO_TEST_CASE(fetch_inputs_from_db)
     CCoinsViewDB db{{.path = "", .cache_bytes = 1_MiB, .memory_only = true}, {}};
     PopulateView(block, db);
     CCoinsViewCache main_cache{&db};
-    auto thread_pool{std::make_shared<ThreadPool>("inputfetch_test")};
-    thread_pool->Start(DEFAULT_INPUTFETCH_THREADS);
-    CoinsViewOverlay view{&main_cache, thread_pool, /*deterministic=*/true};
+    // Non-deterministic so the QuickHasher in m_txids uses a random key, exercising the bucket
+    // distribution path. Same-block spends are pre-filtered out of m_inputs in StartFetching;
+    // every other input (including the swap_ranges case) is fetched by workers.
+    CoinsViewOverlay view{&main_cache, StartedThreadPool(), /*deterministic=*/false};
     const auto reset_guard{view.StartFetching(block)};
     const auto& outpoint{block.vtx[1]->vin[0].prevout};
 
@@ -142,9 +144,7 @@ BOOST_AUTO_TEST_CASE(fetch_inputs_from_cache)
     CCoinsViewDB db{{.path = "", .cache_bytes = 1_MiB, .memory_only = true}, {}};
     CCoinsViewCache main_cache{&db};
     PopulateView(block, main_cache);
-    auto thread_pool{std::make_shared<ThreadPool>("inputfetch_test")};
-    thread_pool->Start(DEFAULT_INPUTFETCH_THREADS);
-    CoinsViewOverlay view{&main_cache, thread_pool, /*deterministic=*/true};
+    CoinsViewOverlay view{&main_cache, StartedThreadPool(), /*deterministic=*/true};
     const auto reset_guard{view.StartFetching(block)};
     CheckCache(block, view);
 
@@ -165,9 +165,7 @@ BOOST_AUTO_TEST_CASE(fetch_no_double_spend)
     CCoinsViewCache main_cache{&db};
     // Add all inputs as spent already in cache
     PopulateView(block, main_cache, /*spent=*/true);
-    auto thread_pool{std::make_shared<ThreadPool>("inputfetch_test")};
-    thread_pool->Start(DEFAULT_INPUTFETCH_THREADS);
-    CoinsViewOverlay view{&main_cache, thread_pool, /*deterministic=*/true};
+    CoinsViewOverlay view{&main_cache, StartedThreadPool(), /*deterministic=*/true};
     const auto reset_guard{view.StartFetching(block)};
     for (const auto& tx : block.vtx) {
         for (const auto& in : tx->vin) {
@@ -186,9 +184,7 @@ BOOST_AUTO_TEST_CASE(fetch_no_inputs)
     const auto block{CreateBlock()};
     CCoinsViewDB db{{.path = "", .cache_bytes = 1_MiB, .memory_only = true}, {}};
     CCoinsViewCache main_cache{&db};
-    auto thread_pool{std::make_shared<ThreadPool>("inputfetch_test")};
-    thread_pool->Start(DEFAULT_INPUTFETCH_THREADS);
-    CoinsViewOverlay view{&main_cache, thread_pool, /*deterministic=*/true};
+    CoinsViewOverlay view{&main_cache, StartedThreadPool(), /*deterministic=*/true};
     const auto reset_guard{view.StartFetching(block)};
     for (const auto& tx : block.vtx) {
         for (const auto& in : tx->vin) {
@@ -201,32 +197,40 @@ BOOST_AUTO_TEST_CASE(fetch_no_inputs)
     BOOST_CHECK_EQUAL(view.GetCacheSize(), 0);
 }
 
-// Access coin that is not a block's input
-BOOST_AUTO_TEST_CASE(access_non_input_coin)
+// Access coins that are not block inputs
+BOOST_AUTO_TEST_CASE(access_non_input_coins)
 {
     const auto block{CreateBlock()};
     CCoinsViewDB db{{.path = "", .cache_bytes = 1_MiB, .memory_only = true}, {}};
     CCoinsViewCache main_cache{&db};
+
     Coin coin{};
     coin.out.nValue = 1;
     const COutPoint outpoint{Txid::FromUint256(uint256::ZERO), 0};
-    main_cache.EmplaceCoinInternalDANGER(COutPoint{Txid::FromUint256(uint256::ZERO), 0}, std::move(coin));
-    auto thread_pool{std::make_shared<ThreadPool>("inputfetch_test")};
-    thread_pool->Start(DEFAULT_INPUTFETCH_THREADS);
-    CoinsViewOverlay view{&main_cache, thread_pool, /*deterministic=*/true};
+    main_cache.EmplaceCoinInternalDANGER(COutPoint{outpoint}, std::move(coin));
+    const COutPoint missing_outpoint{Txid::FromUint256(uint256::ONE), 0};
+
+    CoinsViewOverlay view{&main_cache, StartedThreadPool(), /*deterministic=*/true};
     const auto reset_guard{view.StartFetching(block)};
+
+    // Non-input fallback hit.
     const auto& accessed_coin{view.AccessCoin(outpoint)};
     BOOST_CHECK(!accessed_coin.IsSpent());
+
+    // Non-input fallback miss.
+    const auto& missing_coin{view.AccessCoin(missing_outpoint)};
+    BOOST_CHECK(missing_coin.IsSpent());
+    BOOST_CHECK(!view.HaveCoinInCache(missing_outpoint));
 }
 
-// Test that the main thread can make progress with no workers
-BOOST_AUTO_TEST_CASE(fetch_main_thread)
+// Test that disabled input fetching leaves normal cache lookups available.
+BOOST_AUTO_TEST_CASE(fetch_disabled_uses_normal_lookup)
 {
     const auto block{CreateBlock()};
     CCoinsViewDB db{{.path = "", .cache_bytes = 1_MiB, .memory_only = true}, {}};
     CCoinsViewCache main_cache{&db};
     PopulateView(block, main_cache);
-    auto thread_pool{std::make_shared<ThreadPool>("inputfetch_test_no_workers")};
+    auto thread_pool{std::make_shared<ThreadPool>("fetch_none")};
     CoinsViewOverlay view{&main_cache, thread_pool, /*deterministic=*/false};
     const auto reset_guard{view.StartFetching(block)};
     CheckCache(block, view);

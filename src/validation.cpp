@@ -1855,8 +1855,8 @@ void CoinsViews::InitCache(int32_t inputfetch_threads)
     AssertLockHeld(::cs_main);
     m_cacheview = std::make_unique<CCoinsViewCache>(&m_catcherview);
     auto thread_pool{std::make_shared<ThreadPool>("inputfetch")};
-    if (const auto n{std::clamp<int32_t>(inputfetch_threads, 0, MAX_INPUTFETCH_THREADS)}; n > 0) {
-        thread_pool->Start(n);
+    if (inputfetch_threads > 0) {
+        thread_pool->Start(std::min(inputfetch_threads, MAX_INPUTFETCH_THREADS));
     }
     m_connect_block_view = std::make_unique<CoinsViewOverlay>(&*m_cacheview, std::move(thread_pool));
 }

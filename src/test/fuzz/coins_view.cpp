@@ -21,7 +21,6 @@
 #include <util/threadpool.h>
 
 #include <cassert>
-#include <algorithm>
 #include <cstdint>
 #include <functional>
 #include <limits>
@@ -87,7 +86,7 @@ public:
     using CCoinsViewCache::CCoinsViewCache;
 };
 
-std::shared_ptr<ThreadPool> g_thread_pool{std::make_shared<ThreadPool>("fuzz_coins_view_async")};
+std::shared_ptr<ThreadPool> g_thread_pool{std::make_shared<ThreadPool>("view_fuzz")};
 Mutex g_thread_pool_mutex;
 
 void StartPoolIfNeeded() EXCLUSIVE_LOCKS_REQUIRED(!g_thread_pool_mutex)
@@ -101,22 +100,24 @@ void StartPoolIfNeeded() EXCLUSIVE_LOCKS_REQUIRED(!g_thread_pool_mutex)
 CBlock BuildRandomBlock(FuzzedDataProvider& fuzzed_data_provider)
 {
     CBlock block;
+    // StartFetching unconditionally skips block.vtx[0] as the coinbase, so the harness must mirror
+    // production block framing for the input-fetch path to actually be exercised.
+    CMutableTransaction coinbase;
+    coinbase.vin.emplace_back();
+    block.vtx.push_back(MakeTransactionRef(coinbase));
+
     Txid prevhash{Txid::FromUint256(ConsumeUInt256(fuzzed_data_provider))};
     LIMITED_WHILE(fuzzed_data_provider.ConsumeBool(), 100)
     {
         CMutableTransaction tx;
         LIMITED_WHILE(fuzzed_data_provider.ConsumeBool(), 100)
         {
-            Txid txid;
-            CallOneOf(
-                fuzzed_data_provider,
-                [&] { txid = Txid::FromUint256(ConsumeUInt256(fuzzed_data_provider)); },
-                [&] { txid = prevhash; },
-                [&] {
-                    uint256 u{prevhash.ToUint256()};
-                    std::swap_ranges(u.begin(), u.begin() + 8, u.begin() + 8);
-                    txid = Txid::FromUint256(u);
-                });
+            // Either an external txid or a same-block spend of the previous tx, so the
+            // pre-filter in StartFetching exercises both the "added to m_inputs" and the
+            // "filtered out as same-block spend" paths.
+            const Txid txid{fuzzed_data_provider.ConsumeBool()
+                                ? Txid::FromUint256(ConsumeUInt256(fuzzed_data_provider))
+                                : prevhash};
             tx.vin.emplace_back(COutPoint{txid, fuzzed_data_provider.ConsumeIntegral<uint32_t>()});
         }
         prevhash = tx.GetHash();
@@ -364,16 +365,24 @@ void TestCoinsView(FuzzedDataProvider& fuzzed_data_provider, CCoinsViewCache& co
     }
 
     {
-        const Coin& coin_using_access_coin = coins_view_cache.AccessCoin(random_out_point);
-        const bool exists_using_access_coin = !(coin_using_access_coin == EMPTY_COIN);
-        const bool is_spent_using_access_coin{coin_using_access_coin.IsSpent()};
-        const bool exists_using_have_coin = coins_view_cache.HaveCoin(random_out_point);
-        const bool exists_using_have_coin_in_cache = coins_view_cache.HaveCoinInCache(random_out_point);
-        if (auto coin{coins_view_cache.GetCoin(random_out_point)}) {
-            assert(*coin == coin_using_access_coin);
-            assert(exists_using_access_coin && exists_using_have_coin_in_cache && exists_using_have_coin);
-        } else {
-            assert(!exists_using_access_coin && !exists_using_have_coin_in_cache && !exists_using_have_coin);
+        bool exists_using_access_coin;
+        bool is_spent_using_access_coin;
+        bool exists_using_have_coin;
+        bool exists_using_have_coin_in_cache;
+        // Scope coin_using_access_coin so the reference cannot outlive the cache state it points to.
+        // CreateResetGuard() below clears cache and prefetched coins, which would invalidate it.
+        {
+            const Coin& coin_using_access_coin = coins_view_cache.AccessCoin(random_out_point);
+            exists_using_access_coin = !(coin_using_access_coin == EMPTY_COIN);
+            is_spent_using_access_coin = coin_using_access_coin.IsSpent();
+            exists_using_have_coin = coins_view_cache.HaveCoin(random_out_point);
+            exists_using_have_coin_in_cache = coins_view_cache.HaveCoinInCache(random_out_point);
+            if (auto coin{coins_view_cache.GetCoin(random_out_point)}) {
+                assert(*coin == coin_using_access_coin);
+                assert(exists_using_access_coin && exists_using_have_coin_in_cache && exists_using_have_coin);
+            } else {
+                assert(!exists_using_access_coin && !exists_using_have_coin_in_cache && !exists_using_have_coin);
+            }
         }
 
         // Stop async workers before accessing backend_coins_view to avoid data race

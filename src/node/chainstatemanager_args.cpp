@@ -61,7 +61,10 @@ util::Result<void> ApplyArgsManOptions(const ArgsManager& args, ChainstateManage
     opts.worker_threads_num = script_threads - 1;
 
     if (auto value{args.GetIntArg("-inputfetchthreads")}) {
-        opts.inputfetch_threads_num = std::clamp<int64_t>(*value, 0, MAX_INPUTFETCH_THREADS);
+        if (*value < 0) {
+            return util::Error{Untranslated(strprintf("-inputfetchthreads must be non-negative (got %d). Use 0 to disable input fetching.", *value))};
+        }
+        opts.inputfetch_threads_num = int32_t(std::min<int64_t>(*value, MAX_INPUTFETCH_THREADS));
     }
 
     if (auto max_size = args.GetIntArg("-maxsigcachesize")) {

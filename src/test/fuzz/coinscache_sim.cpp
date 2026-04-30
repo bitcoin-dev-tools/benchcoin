@@ -47,6 +47,12 @@ struct PrecomputedData
         static const uint8_t PREFIX_S[1] = {'s'}; /** Hash prefix for coins scriptPubKeys. */
         static const uint8_t PREFIX_M[1] = {'m'}; /** Hash prefix for coins nValue/fCoinBase. */
 
+        // StartFetching unconditionally skips block.vtx[0] as the coinbase, so the harness must mirror
+        // production block framing for the input-fetch path to actually be exercised.
+        CMutableTransaction coinbase;
+        coinbase.vin.emplace_back();
+        block.vtx.push_back(MakeTransactionRef(coinbase));
+
         CMutableTransaction tx;
         for (uint32_t i = 0; i < NUM_OUTPOINTS; ++i) {
             uint32_t idx = (i * 1200U) >> 12; /* Map 3 or 4 entries to same txid. */
@@ -200,7 +206,7 @@ struct OverlayFetchScope
     OverlayFetchScope(CoinsViewOverlay& view, const CBlock& block) : guard(view.StartFetching(block)) {}
 };
 
-std::shared_ptr<ThreadPool> g_thread_pool{std::make_shared<ThreadPool>("fuzz_coinscache_sim_async")};
+std::shared_ptr<ThreadPool> g_thread_pool{std::make_shared<ThreadPool>("cache_fuzz")};
 Mutex g_thread_pool_mutex;
 
 void StartPoolIfNeeded() EXCLUSIVE_LOCKS_REQUIRED(!g_thread_pool_mutex)

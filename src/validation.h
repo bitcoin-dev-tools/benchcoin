@@ -90,7 +90,7 @@ static const uint64_t MIN_DISK_SPACE_FOR_BLOCK_FILES{550_MiB};
 static constexpr int MAX_SCRIPTCHECK_THREADS{15};
 
 /** Maximum number of dedicated input-fetch threads allowed */
-static constexpr int32_t MAX_INPUTFETCH_THREADS{15};
+static constexpr int32_t MAX_INPUTFETCH_THREADS{16};
 
 /** Current sync state passed to tip changed callbacks. */
 enum class SynchronizationState {

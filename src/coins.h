@@ -8,21 +8,33 @@
 
 #include <attributes.h>
 #include <compressor.h>
+#include <consensus/consensus.h>
 #include <core_memusage.h>
 #include <memusage.h>
+#include <primitives/block.h>
 #include <primitives/transaction.h>
+#include <primitives/transaction_identifier.h>
 #include <serialize.h>
 #include <support/allocators/pool.h>
 #include <uint256.h>
 #include <util/check.h>
 #include <util/overflow.h>
 #include <util/hasher.h>
+#include <util/threadpool.h>
 
 #include <cassert>
 #include <cstdint>
 
+#include <atomic>
 #include <functional>
+#include <future>
+#include <memory>
+#include <optional>
+#include <ranges>
 #include <unordered_map>
+#include <unordered_set>
+#include <utility>
+#include <vector>
 
 /**
  * A UTXO entry.
@@ -376,7 +388,7 @@ protected:
 public:
     explicit CCoinsViewBacked(CCoinsView* in_view) : base{Assert(in_view)} {}
 
-    void SetBackend(CCoinsView& in_view) { base = &in_view; }
+    virtual void SetBackend(CCoinsView& in_view) { base = &in_view; }
 
     std::optional<Coin> GetCoin(const COutPoint& outpoint) const override { return base->GetCoin(outpoint); }
     std::optional<Coin> PeekCoin(const COutPoint& outpoint) const override { return base->PeekCoin(outpoint); }
@@ -415,7 +427,7 @@ protected:
      * Discard all modifications made to this cache without flushing to the base view.
      * This can be used to efficiently reuse a cache instance across multiple operations.
      */
-    void Reset() noexcept;
+    virtual void Reset() noexcept;
 
     /* Fetch the coin from base. Used for cache misses in FetchCoin. */
     virtual std::optional<Coin> FetchCoinFromBase(const COutPoint& outpoint) const;
@@ -487,7 +499,7 @@ public:
      * If reallocate_cache is false, the cache will retain the same memory footprint
      * after flushing and should be destroyed to deallocate.
      */
-    void Flush(bool reallocate_cache = true);
+    virtual void Flush(bool reallocate_cache = true);
 
     /**
      * Push the modifications applied to this cache to its base while retaining
@@ -495,7 +507,7 @@ public:
      * Failure to call this method or Flush() before destruction will cause the changes
      * to be forgotten.
      */
-    void Sync();
+    virtual void Sync();
 
     /**
      * Removes the UTXO with the given outpoint from the cache, if it is
@@ -553,24 +565,227 @@ private:
 };
 
 /**
- * CCoinsViewCache overlay that avoids populating/mutating parent cache layers on cache misses.
+ * CCoinsViewCache subclass that asynchronously fetches all block inputs in parallel during ConnectBlock without
+ * mutating the base cache.
  *
- * This is achieved by fetching coins from the base view using PeekCoin() instead of GetCoin(),
- * so intermediate CCoinsViewCache layers are not filled.
+ * Only used in ConnectBlock to pass as an ephemeral view that can be reset if the block is invalid.
+ * It provides the same interface as CCoinsViewCache. It overrides all methods that mutate base,
+ * stopping threads before calling superclass.
+ * It adds an additional StartFetching method to provide the block.
  *
- * Used during ConnectBlock() as an ephemeral, resettable top-level view that is flushed only
- * on success, so invalid blocks don't pollute the underlying cache.
+ * When a block is passed to StartFetching, the inputs of the block are flattened into a vector of InputToFetch
+ * objects. StartFetching then submits worker tasks to a ThreadPool and keeps the returned futures alive until fetching
+ * is stopped.
+ *
+ * ProcessInput() atomically fetches and increments m_input_head, so each thread can only access a single element of the
+ * m_inputs vector at a time. Workers race to claim inputs, so they may fetch elements in any order. If the fetched
+ * index is greater than the size of m_inputs, no more inputs can be fetched and false is returned.
+ *
+ * The worker claims the InputToFetch at this index, fetches the coin from the base cache and moves it into the
+ * InputToFetch object. The ready flag is then set with a release memory order. This allows the ready flag to be
+ * used as a memory fence, guaranteeing the coin being written to the object will have happened before another
+ * thread tests the flag with an acquire memory order.
+ * This assumes all base->PeekCoin() paths are safe for concurrent readers and do not mutate lower cache layers.
+ *
+ * When a coin is requested from the cache on the main thread and is not already in cacheCoins map, FetchCoinFromBase
+ * checks whether the next unconsumed entry in m_inputs has the requested outpoint. On a match, m_input_tail is advanced
+ * and the entry's ready flag is tested with an acquire memory order. If the worker has already completed, the coin is
+ * moved out and returned. Otherwise the main thread calls ProcessInput() to make progress (by fetching other inputs)
+ * rather than blocking on a specific worker.
+ *
+ * StopFetching() is called before mutating operations (Flush/Sync/Reset/SetBackend). It stops fetching by moving
+ * m_input_head to the end of m_inputs (so workers quickly exit), then waits for all futures to complete and clears
+ * the per-block state (m_inputs and the head/tail counters).
+ *
+ *       Workers advance m_input_head to fetch inputs. Main thread advances m_input_tail to consume.
+ *
+ *       Before workers start:
+ *
+ *                 m_input_head
+ *                 m_input_tail
+ *                      │
+ *                      ▼
+ *                 ┌─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┐
+ *       m_inputs: │ waiting │ waiting │ waiting │ waiting │ waiting │ waiting │ waiting │ waiting │ waiting │
+ *                 │         │         │         │         │         │         │         │         │         │
+ *                 └─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┘
+ *
+ *       After workers start:
+ *
+ *                                       Worker 2            Worker 0  Worker 3  Worker 1  m_input_head
+ *                                          │                   │         │         │         │
+ *                                          ▼                   ▼         ▼         ▼         ▼
+ *                 ┌─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┐
+ *       m_inputs: │  ready  │  ready  │fetching │  ready  │fetching │fetching │fetching │ waiting │ waiting │
+ *                 │consumed │    ✓    │    ●    │    ✓    │    ●    │    ●    │    ●    │         │         │
+ *                 └─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┘
+ *                                ▲
+ *                                │
+ *                           m_input_tail
  */
 class CoinsViewOverlay : public CCoinsViewCache
 {
 private:
+    //! The latest input not yet being fetched. Workers atomically increment this when fetching.
+    mutable std::atomic_uint32_t m_input_head{0};
+    //! The latest input not yet accessed by a consumer. Only the main thread increments this.
+    mutable uint32_t m_input_tail{0};
+
+    //! The inputs of the block which is being fetched.
+    struct InputToFetch {
+        //! Workers set this after setting the coin. The main thread tests this before reading the coin.
+        std::atomic_flag ready{};
+        //! The outpoint of the input to fetch.
+        const COutPoint& outpoint;
+        //! The coin that workers will fetch and main thread will insert into cache.
+        std::optional<Coin> coin{std::nullopt};
+
+        //! The move constructor will never be used, since m_inputs will never need to reallocate.
+        InputToFetch(InputToFetch&& other) noexcept : outpoint{other.outpoint} { Assert(false); }
+        explicit InputToFetch(const COutPoint& o LIFETIMEBOUND) noexcept : outpoint{o} {}
+    };
+    //! Must only be mutated when m_futures is empty. Elements may be mutated when m_futures is not empty.
+    mutable std::vector<InputToFetch> m_inputs{};
+
+    /**
+     * Set of block txids used in StartFetching to filter out inputs spending earlier transactions
+     * in the same block. Stored as a member to avoid reallocating each block.
+     */
+    std::unordered_set<Txid, SaltedTxidHasher> m_txids;
+
+    /**
+     * Claim and fetch the next input in the queue. Safe to call from any thread.
+     *
+     * @return true if there are more inputs in the queue to fetch
+     * @return false if there are no more inputs in the queue to fetch
+     */
+    bool ProcessInput() const noexcept
+    {
+        const auto i{m_input_head.fetch_add(1, std::memory_order_relaxed)};
+        if (i >= m_inputs.size()) return false;
+
+        auto& input{m_inputs[i]};
+        input.coin = base->PeekCoin(input.outpoint);
+        // Use release so writing coin above happens before the main thread acquires.
+        input.ready.test_and_set(std::memory_order_release);
+        input.ready.notify_one();
+        return true;
+    }
+
+    //! Stop all worker threads and clear fetching data.
+    void StopFetching() noexcept
+    {
+        if (m_futures.empty()) {
+            Assume(m_inputs.empty());
+            Assume(m_input_head.load(std::memory_order_relaxed) == 0);
+            Assume(m_input_tail == 0);
+            return;
+        }
+        // Skip fetching the rest of the inputs by moving the head to the end.
+        m_input_head.store(m_inputs.size(), std::memory_order_relaxed);
+        // Wait for all threads to stop.
+        for (auto& future : m_futures) future.wait();
+        m_futures.clear();
+        m_inputs.clear();
+        m_input_head.store(0, std::memory_order_relaxed);
+        m_input_tail = 0;
+    }
+
     std::optional<Coin> FetchCoinFromBase(const COutPoint& outpoint) const override
     {
+        // This assumes ConnectBlock accesses all inputs in the same order as
+        // they are added to m_inputs in StartFetching.
+        if (m_input_tail < m_inputs.size() && m_inputs[m_input_tail].outpoint == outpoint) {
+            // We advance the tail since the input is cached and not accessed through this method again.
+            auto& input{m_inputs[m_input_tail++]};
+            // Check if the coin is ready to be read. We need acquire so we match the worker thread's release.
+            while (!input.ready.test(std::memory_order_acquire)) {
+                // Work instead of waiting if the coin is not ready
+                if (!ProcessInput()) {
+                    // No more work, just wait
+                    input.ready.wait(/*old=*/false, std::memory_order_acquire);
+                    break;
+                }
+            }
+            // We can move the coin since we won't access this input again.
+            return std::move(input.coin);
+        }
+
+        // We will only get here for BIP30 checks or when parallel fetching is disabled.
         return base->PeekCoin(outpoint);
     }
 
+    //! Non-null. May have zero workers when input fetching is disabled.
+    std::shared_ptr<ThreadPool> m_thread_pool;
+    std::vector<std::future<void>> m_futures{};
+
+protected:
+    void Reset() noexcept override
+    {
+        StopFetching();
+        CCoinsViewCache::Reset();
+    }
+
 public:
-    using CCoinsViewCache::CCoinsViewCache;
+    explicit CoinsViewOverlay(CCoinsView* in_base, std::shared_ptr<ThreadPool> thread_pool,
+                              bool deterministic = false) noexcept
+        : CCoinsViewCache{in_base, deterministic}, m_thread_pool{std::move(thread_pool)}
+    {
+        Assert(m_thread_pool);
+        // Reserve to maximum theoretical number so emplace_back in StartFetching never reallocates m_inputs.
+        m_inputs.reserve(MAX_INPUTS_PER_BLOCK);
+    }
+
+    //! Start fetching inputs from block in background.
+    [[nodiscard]] ResetGuard StartFetching(const CBlock& block LIFETIMEBOUND) noexcept
+    {
+        Assume(m_futures.empty());
+        Assume(m_inputs.empty());
+        Assume(m_input_head.load(std::memory_order_relaxed) == 0);
+        Assume(m_input_tail == 0);
+        if (const auto workers_count{m_thread_pool->WorkersCount()}; workers_count > 0) {
+            // Loop through the inputs of the block and set them in the queue.
+            // Filter txs that are spending inputs created earlier in the same block.
+            m_txids.reserve(block.vtx.size());
+            for (const auto& tx : block.vtx | std::views::drop(1)) {
+                for (const auto& input : tx->vin) {
+                    if (!m_txids.contains(input.prevout.hash)) m_inputs.emplace_back(input.prevout);
+                }
+                m_txids.emplace(tx->GetHash());
+            }
+            m_txids.clear();
+            // Only start threads if we have something to fetch.
+            if (!m_inputs.empty()) {
+                std::vector<std::function<void()>> tasks(workers_count, [this] {
+                    while (ProcessInput()) {}
+                });
+                if (auto futures{m_thread_pool->Submit(std::move(tasks))}; futures.has_value()) {
+                    m_futures = std::move(*futures);
+                } else {
+                    m_inputs.clear();
+                }
+            }
+        }
+        return CreateResetGuard();
+    }
+
+    void SetBackend(CCoinsView& view) override
+    {
+        StopFetching();
+        CCoinsViewCache::SetBackend(view);
+    }
+
+    void Flush(bool reallocate_cache = true) override
+    {
+        StopFetching();
+        CCoinsViewCache::Flush(reallocate_cache);
+    }
+
+    void Sync() override
+    {
+        StopFetching();
+        CCoinsViewCache::Sync();
+    }
 };
 
 //! Utility function to add all of a transaction's outputs to a cache.

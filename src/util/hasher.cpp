@@ -36,3 +36,13 @@ size_t SaltedSipHasher::operator()(const std::span<const unsigned char>& script)
 {
     return CSipHasher(m_k0, m_k1).Write(script).Finalize();
 }
+
+QuickHasher::QuickHasher(bool deterministic) noexcept
+{
+    if (deterministic) {
+        for (auto& k : m_key) k = 0;
+    } else {
+        FastRandomContext rng;
+        for (auto& k : m_key) k = rng.rand64();
+    }
+}

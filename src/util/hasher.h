@@ -8,10 +8,12 @@
 #include <crypto/common.h>
 #include <crypto/siphash.h>
 #include <primitives/transaction.h>
+#include <primitives/transaction_identifier.h>
 #include <uint256.h>
 
 #include <cstdint>
 #include <cstring>
+#include <ranges>
 #include <span>
 
 class SaltedUint256Hasher
@@ -114,6 +116,37 @@ public:
     SaltedSipHasher();
 
     size_t operator()(const std::span<const unsigned char>& script) const;
+};
+
+/**
+ * Reduces a secure transaction ID to a quick 64-bit hash, suitable as the Hash
+ * parameter of an unordered associative container keyed by Txid.
+ *
+ * Equality on the container is still done via the full 32-byte Txid, so callers
+ * never have to defend against quick-hash collisions.
+ */
+class QuickHasher
+{
+    uint64_t m_key[4];
+
+public:
+    explicit QuickHasher(bool deterministic = false) noexcept;
+
+    /**
+     * Wrapping addition is intentional and well-defined for unsigned integers; the
+     * function is on a hot block-validation path, so suppress UBSan's optional
+     * unsigned-integer-overflow check rather than add masking on every iteration.
+     */
+#if defined(__clang__)
+    __attribute__((no_sanitize("unsigned-integer-overflow")))
+#endif
+    uint64_t operator()(const Txid& txid) const noexcept
+    {
+        const auto& hash_input{txid.ToUint256()};
+        uint64_t out{0};
+        for (const auto i : std::views::iota(0, 4)) out += hash_input.GetUint64(i) ^ m_key[i];
+        return out;
+    }
 };
 
 #endif // BITCOIN_UTIL_HASHER_H

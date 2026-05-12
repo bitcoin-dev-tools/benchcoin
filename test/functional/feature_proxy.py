@@ -135,6 +135,9 @@ class ProxyTest(BitcoinTestFramework):
         if self.have_unix_sockets:
             args[5] = ['-listen', f'-proxy=unix:{socket_path}']
             args[6] = ['-listen', f'-onion=unix:{socket_path}']
+        # This test exercises proxy routing only; opt out of input-fetch worker
+        # threads to avoid creating num_nodes * inputfetchthreads idle threads.
+        args = [a + ['-inputfetchthreads=0'] for a in args]
         self.add_nodes(self.num_nodes, extra_args=args)
         self.start_nodes()
 

@@ -4,25 +4,28 @@
 //
 #include <chainparams.h>
 #include <consensus/amount.h>
+#include <consensus/merkle.h>
 #include <consensus/validation.h>
 #include <node/kernel_notifications.h>
+#include <pow.h>
 #include <random.h>
 #include <rpc/blockchain.h>
 #include <script/script.h>
 #include <sync.h>
 #include <test/util/chainstate.h>
-#include <test/util/common.h>
 #include <test/util/coins.h>
+#include <test/util/common.h>
 #include <test/util/random.h>
 #include <test/util/setup_common.h>
 #include <uint256.h>
+#include <undo.h>
 #include <util/byte_units.h>
 #include <util/check.h>
 #include <validation.h>
 
-#include <vector>
-
 #include <boost/test/unit_test.hpp>
+
+#include <vector>
 
 BOOST_FIXTURE_TEST_SUITE(validation_chainstate_tests, ChainTestingSetup)
 
@@ -164,6 +167,66 @@ BOOST_FIXTURE_TEST_CASE(chainstate_update_tip, TestChain100Setup)
     // validation chain.
     BOOST_CHECK(block_added);
     BOOST_CHECK_EQUAL(curr_tip, get_notify_tip());
+}
+
+BOOST_FIXTURE_TEST_CASE(activate_best_chain_does_not_invalidate_mutated_spendblock_failure, TestChain100Setup)
+{
+    Chainstate& chainstate = Assert(m_node.chainman)->ActiveChainstate();
+
+    auto block = std::make_shared<CBlock>(CreateBlock({}, CScript{} << OP_TRUE, chainstate));
+    block->hashMerkleRoot = uint256{1};
+    BOOST_REQUIRE(block->hashMerkleRoot != BlockMerkleRoot(*block));
+    block->nNonce = 0;
+    while (!CheckProofOfWork(block->GetHash(), block->nBits, Params().GetConsensus())) ++block->nNonce;
+
+    CBlockIndex index_dummy{*block};
+    const uint256 block_hash{block->GetHash()};
+
+    {
+        LOCK(cs_main);
+        CBlockIndex* tip = Assert(chainstate.m_chain.Tip());
+        index_dummy.pprev = tip;
+        index_dummy.nHeight = tip->nHeight + 1;
+        index_dummy.phashBlock = &block_hash;
+        index_dummy.nChainWork = tip->nChainWork + GetBlockProof(index_dummy);
+        index_dummy.nTx = block->vtx.size();
+        index_dummy.m_chain_tx_count = tip->m_chain_tx_count + index_dummy.nTx;
+        index_dummy.nStatus = BlockStatus(BLOCK_VALID_TRANSACTIONS | BLOCK_HAVE_DATA);
+        chainstate.setBlockIndexCandidates.insert(&index_dummy);
+    }
+
+    BlockValidationState state;
+    BOOST_CHECK(!chainstate.ActivateBestChain(state, block));
+    BOOST_CHECK(state.IsError());
+    BOOST_CHECK_EQUAL(state.GetResult(), BlockValidationResult::BLOCK_MUTATED);
+    LOCK(cs_main);
+    BOOST_CHECK(!(index_dummy.nStatus & BLOCK_FAILED_VALID));
+}
+
+BOOST_FIXTURE_TEST_CASE(spendblock_rejects_empty_block, TestChain100Setup)
+{
+    Chainstate& chainstate = Assert(m_node.chainman)->ActiveChainstate();
+
+    LOCK(cs_main);
+    CBlockIndex* tip = Assert(chainstate.m_chain.Tip());
+
+    CBlock block;
+    // CheckBlock() rejects empty blocks, ensure it gets run in SpendBlock
+    block.hashPrevBlock = tip->GetBlockHash();
+
+    CBlockIndex index_dummy{block};
+    const uint256 block_hash{block.GetHash()};
+    index_dummy.pprev = tip;
+    index_dummy.nHeight = tip->nHeight + 1;
+    index_dummy.phashBlock = &block_hash;
+
+    CCoinsViewCache view_dummy(&chainstate.CoinsTip());
+    BlockValidationState state;
+    CBlockUndo blockundo;
+
+    BOOST_CHECK(!chainstate.SpendBlock(block, &index_dummy, view_dummy, state, blockundo));
+    BOOST_CHECK(state.IsInvalid());
+    BOOST_CHECK_EQUAL(state.GetRejectReason(), "high-hash");
 }
 
 BOOST_AUTO_TEST_SUITE_END()

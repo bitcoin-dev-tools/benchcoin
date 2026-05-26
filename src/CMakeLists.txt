@@ -213,6 +213,10 @@ add_library(bitcoin_node STATIC EXCLUDE_FROM_ALL
   net.cpp
   net_processing.cpp
   netgroup.cpp
+  node/blockdownloadpipeline.cpp
+  node/blockdownloadpipeline_impl.cpp
+  node/validationpipeline.cpp
+  node/validationpipeline_impl.cpp
   node/abort.cpp
   node/blockmanager_args.cpp
   node/blockstorage.cpp

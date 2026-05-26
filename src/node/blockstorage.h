@@ -29,8 +29,10 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
+#include <deque>
 #include <functional>
 #include <iosfwd>
 #include <limits>
@@ -40,6 +42,7 @@
 #include <set>
 #include <span>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -198,6 +201,11 @@ class BlockManager
     friend ChainstateManager;
 
 private:
+    struct BlockFileFinalizationTask {
+        FlatFilePos block_pos;
+        std::optional<FlatFilePos> undo_pos;
+    };
+
     const CChainParams& GetParams() const { return m_opts.chainparams; }
     const Consensus::Params& GetConsensus() const { return m_opts.chainparams.GetConsensus(); }
     /**
@@ -223,9 +231,18 @@ private:
      * The nAddSize argument passed to this function should include not just the size of the serialized CBlock, but also the size of
      * separator fields (STORAGE_HEADER_BYTES).
      */
-    [[nodiscard]] FlatFilePos FindNextBlockPos(unsigned int nAddSize, unsigned int nHeight, uint64_t nTime);
-    [[nodiscard]] bool FlushChainstateBlockFile(int tip_height);
+    [[nodiscard]] FlatFilePos FindNextBlockPos(unsigned int nAddSize, unsigned int nHeight, uint64_t nTime)
+        EXCLUSIVE_LOCKS_REQUIRED(!m_blockfile_finalization_mutex);
+    [[nodiscard]] bool FlushChainstateBlockFile(int tip_height)
+        EXCLUSIVE_LOCKS_REQUIRED(!m_blockfile_finalization_mutex);
     bool FindUndoPos(BlockValidationState& state, int nFile, FlatFilePos& pos, unsigned int nAddSize);
+    void ScheduleBlockFileFinalization(int blockfile_num, bool finalize_undo)
+        EXCLUSIVE_LOCKS_REQUIRED(cs_LastBlockFile, !m_blockfile_finalization_mutex);
+    void StartBlockFileFinalizationWorker() EXCLUSIVE_LOCKS_REQUIRED(!m_blockfile_finalization_mutex);
+    void StopBlockFileFinalizationWorker() EXCLUSIVE_LOCKS_REQUIRED(!m_blockfile_finalization_mutex);
+    void BlockFileFinalizationWorker() EXCLUSIVE_LOCKS_REQUIRED(!m_blockfile_finalization_mutex);
+    [[nodiscard]] bool FinalizeBlockFile(const BlockFileFinalizationTask& task);
+    [[nodiscard]] bool DrainBlockFileFinalizations() EXCLUSIVE_LOCKS_REQUIRED(!m_blockfile_finalization_mutex);
 
     AutoFile OpenUndoFile(const FlatFilePos& pos, bool fReadOnly = false) const;
 
@@ -307,6 +324,14 @@ private:
     const FlatFileSeq m_block_file_seq;
     const FlatFileSeq m_undo_file_seq;
 
+    Mutex m_blockfile_finalization_mutex;
+    std::condition_variable m_blockfile_finalization_cv;
+    std::deque<BlockFileFinalizationTask> m_blockfile_finalization_queue GUARDED_BY(m_blockfile_finalization_mutex);
+    bool m_blockfile_finalization_stop GUARDED_BY(m_blockfile_finalization_mutex){false};
+    bool m_blockfile_finalization_running GUARDED_BY(m_blockfile_finalization_mutex){false};
+    bool m_blockfile_finalization_failed GUARDED_BY(m_blockfile_finalization_mutex){false};
+    std::thread m_blockfile_finalization_thread;
+
 protected:
     std::vector<CBlockFileInfo> m_blockfile_info;
 
@@ -321,6 +346,7 @@ public:
     using ReadRawBlockResult = util::Expected<std::vector<std::byte>, ReadRawError>;
 
     explicit BlockManager(const util::SignalInterrupt& interrupt, Options opts);
+    ~BlockManager();
 
     const util::SignalInterrupt& m_interrupt;
     std::atomic<bool> m_importing{false};
@@ -394,7 +420,7 @@ public:
      * @returns in case of success, the position to which the block was written to
      *          in case of an error, an empty FlatFilePos
      */
-    FlatFilePos WriteBlock(const CBlock& block, int nHeight);
+    FlatFilePos WriteBlock(const CBlock& block, int nHeight) EXCLUSIVE_LOCKS_REQUIRED(!m_blockfile_finalization_mutex);
 
     /** Update blockfile info while processing a block during reindex. The block must be available on disk.
      *

@@ -8,7 +8,7 @@
 
 [benchmark]
 start_height = 840000
-runs = 2
+runs = 1
 
 [bitcoind]
 stopatheight = 900000
@@ -22,7 +22,7 @@ printtoconsole = false
 # Matrix expands to: 450-uninstrumented, 450-instrumented, 32000-uninstrumented, 32000-instrumented
 [bitcoind.matrix]
 dbcache = [450, 32000]
-instrumentation = ["uninstrumented", "instrumented"]
+instrumentation = ["uninstrumented"]
 
 # Debug flags enabled when instrumentation = "instrumented"
 [bitcoind.instrumented]

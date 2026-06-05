@@ -108,7 +108,6 @@ class DifferentialFlamegraphPhase:
         diff_cmd = [
             "difffolded.pl",
             "-n",
-            "-x",
             str(first_folded),
             str(second_folded),
         ]

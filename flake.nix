@@ -109,43 +109,12 @@
 
     formatter = forAllSystems (system: (pkgsFor system).nixfmt-tree);
 
-    devShells = forAllSystems (
-      system: let
-        pkgs = pkgsFor system;
-        inherit (pkgs) stdenv;
-
-        # Override the default cargo-flamegraph with a custom fork including bitcoin highlighting
-        cargo-flamegraph = pkgs.rustPlatform.buildRustPackage rec {
-          pname = "flamegraph";
-          version = "bitcoin-core";
-
-          src = pkgs.fetchFromGitHub {
-            owner = "willcl-ark";
-            repo = "flamegraph";
-            rev = "bitcoin-core";
-            sha256 = "sha256-+IMEkDhObvgsTS+bJlqvUenNVB+ojxXtiYR8bp0QbYs=";
-          };
-
-          doCheck = false;
-          cargoHash = "sha256-WRzxUrImIxv67x/JTjhgi0Vw3SX9tsnoIsvgtm7p6gc=";
-
-          nativeBuildInputs = pkgs.lib.optionals stdenv.hostPlatform.isLinux [pkgs.makeWrapper];
-          buildInputs = pkgs.lib.optionals stdenv.hostPlatform.isDarwin [
-            pkgs.darwin.apple_sdk.frameworks.Security
-          ];
-
-          postFixup = pkgs.lib.optionalString stdenv.hostPlatform.isLinux ''
-            wrapProgram $out/bin/cargo-flamegraph \
-              --set-default PERF ${pkgs.perf}/bin/perf
-            wrapProgram $out/bin/flamegraph \
-              --set-default PERF ${pkgs.perf}/bin/perf
-          '';
-        };
-      in {
+    devShells = forAllSystems (system: let
+      pkgs = pkgsFor system;
+    in {
         default = pkgs.mkShell {
           buildInputs = [
             # Benchmarking
-            cargo-flamegraph
             pkgs.flamegraph
             pkgs.hyperfine
             pkgs.jq
@@ -163,7 +132,6 @@
             pkgs.patchelf
           ];
         };
-      }
-    );
+      });
   };
 }

@@ -221,6 +221,36 @@ def cmd_analyze(args: argparse.Namespace) -> int:
         return 1
 
 
+def cmd_diff_flamegraph(args: argparse.Namespace) -> int:
+    """Generate differential flamegraphs from two perf.data files."""
+    from bench.flamegraph import DifferentialFlamegraphPhase
+
+    if args.verbose:
+        logging.getLogger().setLevel(logging.DEBUG)
+
+    capabilities = detect_capabilities()
+    phase = DifferentialFlamegraphPhase(capabilities)
+
+    try:
+        result = phase.run(
+            before_perf=Path(args.before_perf),
+            after_perf=Path(args.after_perf),
+            output_dir=Path(args.output_dir),
+            before_name=args.before_name,
+            after_name=args.after_name,
+        )
+        logger.info(f"Before-widths diff saved to: {result.before_svg}")
+        logger.info(f"After-widths diff saved to: {result.after_svg}")
+        return 0
+    except Exception as e:
+        logger.error(f"Differential flamegraph generation failed: {e}")
+        if args.verbose:
+            import traceback
+
+            traceback.print_exc()
+        return 1
+
+
 def cmd_report(args: argparse.Namespace) -> int:
     """Generate HTML report from benchmark results."""
     from bench.report import ReportPhase
@@ -460,6 +490,37 @@ def main() -> int:
         help="Output directory for plots",
     )
     analyze_parser.set_defaults(func=cmd_analyze)
+
+    # diff-flamegraph command
+    diff_flamegraph_parser = subparsers.add_parser(
+        "diff-flamegraph",
+        help="Generate differential flamegraphs from two perf.data files",
+    )
+    diff_flamegraph_parser.add_argument(
+        "before_perf",
+        help="Path to the before perf.data file",
+    )
+    diff_flamegraph_parser.add_argument(
+        "after_perf",
+        help="Path to the after perf.data file",
+    )
+    diff_flamegraph_parser.add_argument(
+        "--output-dir",
+        default="./diff-flamegraphs",
+        metavar="PATH",
+        help="Output directory for differential flamegraphs",
+    )
+    diff_flamegraph_parser.add_argument(
+        "--before-name",
+        default="before",
+        help="Label for the first profile",
+    )
+    diff_flamegraph_parser.add_argument(
+        "--after-name",
+        default="after",
+        help="Label for the second profile",
+    )
+    diff_flamegraph_parser.set_defaults(func=cmd_diff_flamegraph)
 
     # Report command
     report_parser = subparsers.add_parser(

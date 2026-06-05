@@ -4,22 +4,30 @@ on:
     branches:
       - master
 
+env:
+  BEFORE_COMMIT: f1ce2ab37348374bd185e3b18fab160c51c6db05
+  AFTER_COMMIT: d89b877f04bb28e37c9844dd30c83003e253e300
+
 jobs:
-  build-binary:
+  build-binaries:
     runs-on: [self-hosted, linux, x64]
     steps:
       - name: Checkout repo
         uses: actions/checkout@v6
         with:
-          fetch-depth: 1
+          fetch-depth: 0
 
-      - name: Build PR binary
+      - name: Build before binary
         run: |
-          HEAD_SHA=$(git rev-parse HEAD)
-          echo "HEAD_SHA=${HEAD_SHA}" >> "$GITHUB_ENV"
           nix develop --command python3 bench.py build \
             -o ${{ runner.temp }}/binaries \
-            ${HEAD_SHA}:pr
+            ${BEFORE_COMMIT}:before
+
+      - name: Build after binary
+        run: |
+          nix develop --command python3 bench.py build \
+            -o ${{ runner.temp }}/binaries \
+            ${AFTER_COMMIT}:after
 
       - name: Upload binaries
         uses: actions/upload-artifact@v7
@@ -28,11 +36,10 @@ jobs:
           path: ${{ runner.temp }}/binaries/
 
   benchmark:
-    needs: build-binary
+    needs: build-binaries
     strategy:
       matrix:
-        # Matrix entries from configs/pr.toml: dbcache=[450,32000] x instrumentation=[uninstrumented,instrumented]
-        name: [450-uninstrumented, 450-instrumented, 32000-uninstrumented, 32000-instrumented]
+        name: [450-instrumented, 32000-instrumented]
     runs-on: [self-hosted, linux, x64]
     timeout-minutes: 600
     env:
@@ -51,36 +58,73 @@ jobs:
 
       - name: Set binary permissions
         run: |
-          chmod +x ${{ runner.temp }}/binaries/pr/bitcoind
+          chmod +x ${{ runner.temp }}/binaries/before/bitcoind
+          chmod +x ${{ runner.temp }}/binaries/after/bitcoind
 
-      - name: Run benchmark
+      - name: Run before benchmark
         run: |
           nix develop --command python3 bench.py run \
             --benchmark-config bench/configs/pr.toml \
             --matrix-entry ${{ matrix.name }} \
             --datadir $ORIGINAL_DATADIR \
             --tmp-datadir ${{ runner.temp }}/datadir \
-            --output-dir ${{ runner.temp }}/output \
-            pr:${{ runner.temp }}/binaries/pr/bitcoind
+            --output-dir ${{ runner.temp }}/output/before \
+            before-${{ matrix.name }}:${{ runner.temp }}/binaries/before/bitcoind
+
+      - name: Run after benchmark
+        run: |
+          nix develop --command python3 bench.py run \
+            --benchmark-config bench/configs/pr.toml \
+            --matrix-entry ${{ matrix.name }} \
+            --datadir $ORIGINAL_DATADIR \
+            --tmp-datadir ${{ runner.temp }}/datadir \
+            --output-dir ${{ runner.temp }}/output/after \
+            after-${{ matrix.name }}:${{ runner.temp }}/binaries/after/bitcoind
+
+      - name: Generate differential flamegraphs
+        run: |
+          nix develop --command python3 bench.py diff-flamegraph \
+            ${{ runner.temp }}/output/before/before-${{ matrix.name }}.perf.data \
+            ${{ runner.temp }}/output/after/after-${{ matrix.name }}.perf.data \
+            --output-dir ${{ runner.temp }}/output/diff-${{ matrix.name }} \
+            --before-name before-${{ matrix.name }} \
+            --after-name after-${{ matrix.name }}
+
+      - name: Upload perf data
+        uses: actions/upload-artifact@v7
+        with:
+          name: perf-data-${{ matrix.name }}
+          path: |
+            ${{ runner.temp }}/output/before/*.perf.data
+            ${{ runner.temp }}/output/after/*.perf.data
 
       - name: Upload results
         uses: actions/upload-artifact@v7
         with:
           name: result-${{ matrix.name }}
-          path: ${{ runner.temp }}/output/results.json
+          path: ${{ runner.temp }}/output/after/results.json
 
       - name: Upload flamegraphs
         uses: actions/upload-artifact@v7
         with:
           name: flamegraph-${{ matrix.name }}
-          path: ${{ runner.temp }}/output/*-flamegraph.svg
-          if-no-files-found: ignore
+          path: |
+            ${{ runner.temp }}/output/before/*-flamegraph.svg
+            ${{ runner.temp }}/output/after/*-flamegraph.svg
+
+      - name: Upload differential flamegraphs
+        uses: actions/upload-artifact@v7
+        with:
+          name: differential-flamegraphs-${{ matrix.name }}
+          path: ${{ runner.temp }}/output/diff-${{ matrix.name }}/*.svg
 
       - name: Upload debug logs
         uses: actions/upload-artifact@v7
         with:
           name: debug-logs-${{ matrix.name }}
-          path: ${{ runner.temp }}/output/*-debug.log
+          path: |
+            ${{ runner.temp }}/output/before/*-debug.log
+            ${{ runner.temp }}/output/after/*-debug.log
           if-no-files-found: ignore
 
       - name: Write context metadata
@@ -96,74 +140,4 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: run-metadata-${{ matrix.name }}
-          path: ${{ runner.temp }}/contexts/
-
-  benchmark-noav:
-    needs: build-binary
-    strategy:
-      matrix:
-        name: [450-uninstrumented, 32000-uninstrumented]
-    runs-on: [self-hosted, linux, x64]
-    timeout-minutes: 600
-    env:
-      ORIGINAL_DATADIR: /data/pruned-840k
-    steps:
-      - name: Checkout repo
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 1
-
-      - name: Download binaries
-        uses: actions/download-artifact@v7
-        with:
-          name: bitcoind-binaries
-          path: ${{ runner.temp }}/binaries
-
-      - name: Set binary permissions
-        run: |
-          chmod +x ${{ runner.temp }}/binaries/pr/bitcoind
-
-      - name: Run benchmark
-        run: |
-          nix develop --command python3 bench.py run \
-            --benchmark-config bench/configs/pr-noassumevalid.toml \
-            --matrix-entry ${{ matrix.name }} \
-            --datadir $ORIGINAL_DATADIR \
-            --tmp-datadir ${{ runner.temp }}/datadir \
-            --output-dir ${{ runner.temp }}/output \
-            pr:${{ runner.temp }}/binaries/pr/bitcoind
-
-      - name: Upload results
-        uses: actions/upload-artifact@v7
-        with:
-          name: result-noav-${{ matrix.name }}
-          path: ${{ runner.temp }}/output/results.json
-
-      - name: Upload flamegraphs
-        uses: actions/upload-artifact@v7
-        with:
-          name: flamegraph-noav-${{ matrix.name }}
-          path: ${{ runner.temp }}/output/*-flamegraph.svg
-          if-no-files-found: ignore
-
-      - name: Upload debug logs
-        uses: actions/upload-artifact@v7
-        with:
-          name: debug-logs-noav-${{ matrix.name }}
-          path: ${{ runner.temp }}/output/*-debug.log
-          if-no-files-found: ignore
-
-      - name: Write context metadata
-        env:
-          GITHUB_CONTEXT: ${{ toJSON(github) }}
-          RUNNER_CONTEXT: ${{ toJSON(runner) }}
-        run: |
-          mkdir -p ${{ runner.temp }}/contexts
-          echo "$GITHUB_CONTEXT" | nix develop --command jq "del(.token)" > ${{ runner.temp }}/contexts/github.json
-          echo "$RUNNER_CONTEXT" > ${{ runner.temp }}/contexts/runner.json
-
-      - name: Upload context metadata
-        uses: actions/upload-artifact@v7
-        with:
-          name: run-metadata-noav-${{ matrix.name }}
           path: ${{ runner.temp }}/contexts/

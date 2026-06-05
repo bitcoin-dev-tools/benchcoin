@@ -1,0 +1,20 @@
+{
+  "results": [
+    {
+      "network": "450-instrumented",
+      "command": "after-450-instrumented",
+      "mean": 2675.78340551878,
+      "stddev": null,
+      "user": 4450.24151518,
+      "system": 916.10354318
+    },
+    {
+      "network": "32000-instrumented",
+      "command": "after-32000-instrumented",
+      "mean": 2359.92218841906,
+      "stddev": null,
+      "user": 2528.60065198,
+      "system": 305.10406372
+    }
+  ]
+}

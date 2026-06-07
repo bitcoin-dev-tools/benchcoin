@@ -37,6 +37,7 @@
 #include <util/signalinterrupt.h>
 #include <util/strencodings.h>
 #include <util/syserror.h>
+#include <util/thread.h>
 #include <util/time.h>
 #include <util/translation.h>
 #include <validation.h>
@@ -52,6 +53,7 @@
 #include <span>
 #include <stdexcept>
 #include <system_error>
+#include <utility>
 #include <unordered_map>
 
 namespace kernel {
@@ -745,6 +747,93 @@ bool BlockManager::FlushUndoFile(int block_file, bool finalize)
     return true;
 }
 
+bool BlockManager::FinalizeBlockFile(const BlockFileFinalizationTask& task)
+{
+    bool success = true;
+    if (!m_block_file_seq.Flush(task.block_pos, /*finalize=*/true)) {
+        m_opts.notifications.flushError(_("Flushing block file to disk failed. This is likely the result of an I/O error."));
+        success = false;
+    }
+    if (task.undo_pos && !m_undo_file_seq.Flush(*task.undo_pos, /*finalize=*/true)) {
+        m_opts.notifications.flushError(_("Flushing undo file to disk failed. This is likely the result of an I/O error."));
+        success = false;
+    }
+    return success;
+}
+
+void BlockManager::BlockFileFinalizationWorker()
+{
+    WAIT_LOCK(m_blockfile_finalization_mutex, lock);
+    while (true) {
+        if (!m_blockfile_finalization_stop && m_blockfile_finalization_queue.empty()) {
+            m_blockfile_finalization_cv.wait(lock, [&]() EXCLUSIVE_LOCKS_REQUIRED(m_blockfile_finalization_mutex) {
+                return m_blockfile_finalization_stop || !m_blockfile_finalization_queue.empty();
+            });
+        }
+
+        if (m_blockfile_finalization_stop && m_blockfile_finalization_queue.empty()) {
+            return;
+        }
+
+        BlockFileFinalizationTask task{std::move(m_blockfile_finalization_queue.front())};
+        m_blockfile_finalization_queue.pop_front();
+        m_blockfile_finalization_running = true;
+        {
+            REVERSE_LOCK(lock, m_blockfile_finalization_mutex);
+            if (!FinalizeBlockFile(task)) {
+                WITH_LOCK(m_blockfile_finalization_mutex, m_blockfile_finalization_failed = true);
+            }
+        }
+        m_blockfile_finalization_running = false;
+        m_blockfile_finalization_cv.notify_all();
+    }
+}
+
+void BlockManager::StartBlockFileFinalizationWorker()
+{
+    m_blockfile_finalization_thread = std::thread(&util::TraceThread, "blkfilefinalize", [this] {
+        BlockFileFinalizationWorker();
+    });
+}
+
+void BlockManager::StopBlockFileFinalizationWorker()
+{
+    {
+        LOCK(m_blockfile_finalization_mutex);
+        m_blockfile_finalization_stop = true;
+    }
+    m_blockfile_finalization_cv.notify_all();
+    if (m_blockfile_finalization_thread.joinable()) {
+        m_blockfile_finalization_thread.join();
+    }
+}
+
+bool BlockManager::DrainBlockFileFinalizations()
+{
+    WAIT_LOCK(m_blockfile_finalization_mutex, lock);
+    m_blockfile_finalization_cv.wait(lock, [&]() EXCLUSIVE_LOCKS_REQUIRED(m_blockfile_finalization_mutex) {
+        return m_blockfile_finalization_queue.empty() && !m_blockfile_finalization_running;
+    });
+    return !m_blockfile_finalization_failed;
+}
+
+void BlockManager::ScheduleBlockFileFinalization(int blockfile_num, bool finalize_undo)
+{
+    AssertLockHeld(cs_LastBlockFile);
+    BlockFileFinalizationTask task{
+        .block_pos = FlatFilePos{blockfile_num, m_blockfile_info[blockfile_num].nSize},
+        .undo_pos = std::nullopt,
+    };
+    if (finalize_undo) {
+        task.undo_pos = FlatFilePos{blockfile_num, m_blockfile_info[blockfile_num].nUndoSize};
+    }
+    {
+        LOCK(m_blockfile_finalization_mutex);
+        m_blockfile_finalization_queue.push_back(std::move(task));
+    }
+    m_blockfile_finalization_cv.notify_one();
+}
+
 bool BlockManager::FlushBlockFile(int blockfile_num, bool fFinalize, bool finalize_undo)
 {
     bool success = true;
@@ -784,14 +873,19 @@ BlockfileType BlockManager::BlockfileTypeForHeight(int height)
 
 bool BlockManager::FlushChainstateBlockFile(int tip_height)
 {
-    LOCK(cs_LastBlockFile);
-    auto& cursor = m_blockfile_cursors[BlockfileTypeForHeight(tip_height)];
-    // If the cursor does not exist, it means an assumeutxo snapshot is loaded,
-    // but no blocks past the snapshot height have been written yet, so there
-    // is no data associated with the chainstate, and it is safe not to flush.
-    if (cursor) {
-        return FlushBlockFile(cursor->file_num, /*fFinalize=*/false, /*finalize_undo=*/false);
+    std::optional<int> blockfile_num;
+    {
+        LOCK(cs_LastBlockFile);
+        auto& cursor = m_blockfile_cursors[BlockfileTypeForHeight(tip_height)];
+        // If the cursor does not exist, it means an assumeutxo snapshot is loaded,
+        // but no blocks past the snapshot height have been written yet, so there
+        // is no data associated with the chainstate, and it is safe not to flush.
+        if (cursor) {
+            blockfile_num = cursor->file_num;
+        }
     }
+    if (!DrainBlockFileFinalizations()) return false;
+    if (blockfile_num) return FlushBlockFile(*blockfile_num, /*fFinalize=*/false, /*finalize_undo=*/false);
     // No need to log warnings in this case.
     return true;
 }
@@ -893,18 +987,9 @@ FlatFilePos BlockManager::FindNextBlockPos(unsigned int nAddSize, unsigned int n
         LogDebug(BCLog::BLOCKSTORAGE, "Leaving block file %i: %s (onto %i) (height %i)\n",
                  last_blockfile, m_blockfile_info[last_blockfile].ToString(), nFile, nHeight);
 
-        // Do not propagate the return code. The flush concerns a previous block
-        // and undo file that has already been written to. If a flush fails
-        // here, and we crash, there is no expected additional block data
-        // inconsistency arising from the flush failure here. However, the undo
-        // data may be inconsistent after a crash if the flush is called during
-        // a reindex. A flush error might also leave some of the data files
-        // untrimmed.
-        if (!FlushBlockFile(last_blockfile, /*fFinalize=*/true, finalize_undo)) {
-            LogWarning(
-                          "Failed to flush previous block file %05i (finalize=1, finalize_undo=%i) before opening new block file %05i\n",
-                          last_blockfile, finalize_undo, nFile);
-        }
+        // Finalize the sealed block file in the background. A later chainstate
+        // flush drains the queue before writing block index metadata.
+        ScheduleBlockFileFinalization(last_blockfile, finalize_undo);
         // No undo data yet in the new file, so reset our undo-height tracking.
         m_blockfile_cursors[chain_type] = BlockfileCursor{nFile};
     }
@@ -1245,6 +1330,12 @@ BlockManager::BlockManager(const util::SignalInterrupt& interrupt, Options opts)
             CleanupBlockRevFiles();
         }
     }
+    StartBlockFileFinalizationWorker();
+}
+
+BlockManager::~BlockManager()
+{
+    StopBlockFileFinalizationWorker();
 }
 
 class ImportingNow

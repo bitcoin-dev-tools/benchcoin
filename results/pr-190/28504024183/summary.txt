@@ -1,0 +1,2 @@
+32000 MB: 42 min (nightly median of 7: 65 min, 2026-06-14 to 2026-06-22) -> +35.7% faster
+- 450 MB: 30 min (nightly median of 7: 49 min, 2026-06-14 to 2026-06-22) -> +38.7% faster

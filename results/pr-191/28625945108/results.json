@@ -1,0 +1,192 @@
+{
+  "results": [
+    {
+      "profile": "450-uninstrumented",
+      "config": {
+        "full_ibd": false,
+        "start_height": 840000,
+        "runs": 1,
+        "instrumentation": "uninstrumented",
+        "bitcoind": {
+          "stopatheight": 900000,
+          "chain": "main",
+          "connect": "148.251.128.115:33333",
+          "prune": 1000000,
+          "daemon": false,
+          "printtoconsole": false,
+          "forcecompactdb": 1,
+          "dbcache": 450
+        },
+        "instrumented_debug": [
+          "coindb",
+          "leveldb",
+          "bench",
+          "validation"
+        ]
+      },
+      "command": "head-450-uninstrumented",
+      "mean": 2815.8818665351196,
+      "stddev": null,
+      "user": 3568.8301525,
+      "system": 359.39320652
+    },
+    {
+      "profile": "450-instrumented",
+      "config": {
+        "full_ibd": false,
+        "start_height": 840000,
+        "runs": 1,
+        "instrumentation": "instrumented",
+        "bitcoind": {
+          "stopatheight": 900000,
+          "chain": "main",
+          "connect": "148.251.128.115:33333",
+          "prune": 1000000,
+          "daemon": false,
+          "printtoconsole": false,
+          "forcecompactdb": 1,
+          "dbcache": 450
+        },
+        "instrumented_debug": [
+          "coindb",
+          "leveldb",
+          "bench",
+          "validation"
+        ]
+      },
+      "command": "head-450-instrumented",
+      "mean": 2824.36483951208,
+      "stddev": null,
+      "user": 3581.1791427,
+      "system": 379.64163602
+    },
+    {
+      "profile": "32000-uninstrumented",
+      "config": {
+        "full_ibd": false,
+        "start_height": 840000,
+        "runs": 1,
+        "instrumentation": "uninstrumented",
+        "bitcoind": {
+          "stopatheight": 900000,
+          "chain": "main",
+          "connect": "148.251.128.115:33333",
+          "prune": 1000000,
+          "daemon": false,
+          "printtoconsole": false,
+          "forcecompactdb": 1,
+          "dbcache": 32000
+        },
+        "instrumented_debug": [
+          "coindb",
+          "leveldb",
+          "bench",
+          "validation"
+        ]
+      },
+      "command": "head-32000-uninstrumented",
+      "mean": 2316.86172640582,
+      "stddev": null,
+      "user": 2461.23547332,
+      "system": 273.75038352
+    },
+    {
+      "profile": "32000-instrumented",
+      "config": {
+        "full_ibd": false,
+        "start_height": 840000,
+        "runs": 1,
+        "instrumentation": "instrumented",
+        "bitcoind": {
+          "stopatheight": 900000,
+          "chain": "main",
+          "connect": "148.251.128.115:33333",
+          "prune": 1000000,
+          "daemon": false,
+          "printtoconsole": false,
+          "forcecompactdb": 1,
+          "dbcache": 32000
+        },
+        "instrumented_debug": [
+          "coindb",
+          "leveldb",
+          "bench",
+          "validation"
+        ]
+      },
+      "command": "head-32000-instrumented",
+      "mean": 2346.1617821394602,
+      "stddev": null,
+      "user": 2500.88524976,
+      "system": 280.45778376
+    }
+  ],
+  "nightly_comparison": {
+    "450": {
+      "config": {
+        "full_ibd": false,
+        "start_height": 840000,
+        "runs": 1,
+        "instrumentation": "uninstrumented",
+        "bitcoind": {
+          "stopatheight": 900000,
+          "chain": "main",
+          "connect": "148.251.128.115:33333",
+          "prune": 1000000,
+          "daemon": false,
+          "printtoconsole": false,
+          "forcecompactdb": 1,
+          "dbcache": 450
+        },
+        "instrumented_debug": [
+          "coindb",
+          "leveldb",
+          "bench",
+          "validation"
+        ]
+      },
+      "pr_mean": 2815.8818665351196,
+      "pr_stddev": null,
+      "pr_commit": "6c4d71efd8e4a31be656215c0c91760dbb4ce788",
+      "nightly_mean": 2972.37399603262,
+      "nightly_count": 7,
+      "nightly_date_range": "2026-06-14 to 2026-06-22",
+      "speedup_percent": 5.3,
+      "series_key": "ryzen777008core|64GB|nvme|6.6|db450|prune1000000|840000-900000",
+      "series_label": "x86_64, Ryzen 7 7700, 62GB RAM, 840000-900000, dbcache 450, prune 1000000"
+    },
+    "32000": {
+      "config": {
+        "full_ibd": false,
+        "start_height": 840000,
+        "runs": 1,
+        "instrumentation": "uninstrumented",
+        "bitcoind": {
+          "stopatheight": 900000,
+          "chain": "main",
+          "connect": "148.251.128.115:33333",
+          "prune": 1000000,
+          "daemon": false,
+          "printtoconsole": false,
+          "forcecompactdb": 1,
+          "dbcache": 32000
+        },
+        "instrumented_debug": [
+          "coindb",
+          "leveldb",
+          "bench",
+          "validation"
+        ]
+      },
+      "pr_mean": 2316.86172640582,
+      "pr_stddev": null,
+      "pr_commit": "6c4d71efd8e4a31be656215c0c91760dbb4ce788",
+      "nightly_mean": 3949.7774835457794,
+      "nightly_count": 7,
+      "nightly_date_range": "2026-06-14 to 2026-06-22",
+      "speedup_percent": 41.3,
+      "series_key": "ryzen777008core|64GB|nvme|6.6|db32000|prune1000000|840000-900000",
+      "series_label": "x86_64, Ryzen 7 7700, 62GB RAM, 840000-900000, dbcache 32000, prune 1000000"
+    }
+  }
+}

@@ -1,4 +1,4 @@
-# Default PR-style experiment.
+# dbcache/maxsigcachesize sweep.
 #
 # Usage:
 #   bench.py experiment run bench/experiments/pr.toml \
@@ -6,7 +6,7 @@
 
 [experiment]
 name = "pr"
-outputs = ["results", "debug-plots"]
+outputs = ["results"]
 
 [benchmark]
 start_height = 840000
@@ -20,29 +20,69 @@ prune = 1000000
 daemon = false
 printtoconsole = false
 
-[bitcoind.instrumented]
-debug = ["coindb", "leveldb", "bench", "validation"]
-
 [[subjects]]
 name = "head"
 commit = "HEAD"
 
 [[profiles]]
-name = "450-uninstrumented"
+name = "db450-sig8"
 dbcache = 450
 instrumentation = false
+[profiles.bitcoind]
+maxsigcachesize = 8
 
 [[profiles]]
-name = "450-instrumented"
+name = "db450-sig32"
 dbcache = 450
-instrumentation = true
+instrumentation = false
+[profiles.bitcoind]
+maxsigcachesize = 32
 
 [[profiles]]
-name = "32000-uninstrumented"
+name = "db450-sig128"
+dbcache = 450
+instrumentation = false
+[profiles.bitcoind]
+maxsigcachesize = 128
+
+[[profiles]]
+name = "db4096-sig32"
+dbcache = 4096
+instrumentation = false
+[profiles.bitcoind]
+maxsigcachesize = 32
+
+[[profiles]]
+name = "db4096-sig128"
+dbcache = 4096
+instrumentation = false
+[profiles.bitcoind]
+maxsigcachesize = 128
+
+[[profiles]]
+name = "db4096-sig256"
+dbcache = 4096
+instrumentation = false
+[profiles.bitcoind]
+maxsigcachesize = 256
+
+[[profiles]]
+name = "db32000-sig32"
 dbcache = 32000
 instrumentation = false
+[profiles.bitcoind]
+maxsigcachesize = 32
 
 [[profiles]]
-name = "32000-instrumented"
+name = "db32000-sig256"
 dbcache = 32000
-instrumentation = true
+instrumentation = false
+[profiles.bitcoind]
+maxsigcachesize = 256
+
+[[profiles]]
+name = "db32000-sig512"
+dbcache = 32000
+instrumentation = false
+[profiles.bitcoind]
+maxsigcachesize = 512

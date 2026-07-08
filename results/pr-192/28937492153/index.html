@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Benchmark Results</title>
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+  
+</head>
+<body class="bg-gray-100 p-8">
+  
+<div class="w-9/10 mx-auto">
+  <h1 class="text-3xl font-bold mb-8">Benchmark Results</h1>
+  <div class="bg-white rounded-lg shadow p-6 mb-8">
+    <h2 class="text-xl font-semibold mb-4">PR #192 - Run 28937492153</h2>
+
+    <h3 class="text-lg font-semibold mb-4">Run Data</h3>
+    <div class="overflow-x-auto mb-8">
+      <table class="min-w-full table-auto">
+        <thead>
+          <tr class="bg-gray-50">
+            <th class="px-4 py-2 text-left">Config</th>
+            <th class="px-4 py-2">Mean (s)</th>
+            <th class="px-4 py-2">Std Dev</th>
+            <th class="px-4 py-2">User (s)</th>
+            <th class="px-4 py-2">System (s)</th>
+          </tr>
+        </thead>
+        <tbody>
+          
+          <tr class="border-t">
+            <td class="px-4 py-2 font-mono text-sm">dbcache=32GB, maxsigcachesize=256</td>
+            <td class="px-4 py-2 text-center">3994.578</td>
+            <td class="px-4 py-2 text-center">N/A</td>
+            <td class="px-4 py-2 text-center">3090.857</td>
+            <td class="px-4 py-2 text-center">1312.066</td>
+          </tr>
+          
+          <tr class="border-t">
+            <td class="px-4 py-2 font-mono text-sm">dbcache=32GB, maxsigcachesize=32</td>
+            <td class="px-4 py-2 text-center">3890.045</td>
+            <td class="px-4 py-2 text-center">N/A</td>
+            <td class="px-4 py-2 text-center">3184.108</td>
+            <td class="px-4 py-2 text-center">1239.583</td>
+          </tr>
+          
+          <tr class="border-t">
+            <td class="px-4 py-2 font-mono text-sm">dbcache=32GB, maxsigcachesize=512</td>
+            <td class="px-4 py-2 text-center">3950.282</td>
+            <td class="px-4 py-2 text-center">N/A</td>
+            <td class="px-4 py-2 text-center">3197.413</td>
+            <td class="px-4 py-2 text-center">1300.319</td>
+          </tr>
+          
+          <tr class="border-t">
+            <td class="px-4 py-2 font-mono text-sm">dbcache=4GB, maxsigcachesize=128</td>
+            <td class="px-4 py-2 text-center">3045.609</td>
+            <td class="px-4 py-2 text-center">N/A</td>
+            <td class="px-4 py-2 text-center">3106.752</td>
+            <td class="px-4 py-2 text-center">617.670</td>
+          </tr>
+          
+          <tr class="border-t">
+            <td class="px-4 py-2 font-mono text-sm">dbcache=4GB, maxsigcachesize=256</td>
+            <td class="px-4 py-2 text-center">3046.448</td>
+            <td class="px-4 py-2 text-center">N/A</td>
+            <td class="px-4 py-2 text-center">3106.504</td>
+            <td class="px-4 py-2 text-center">616.891</td>
+          </tr>
+          
+          <tr class="border-t">
+            <td class="px-4 py-2 font-mono text-sm">dbcache=4GB, maxsigcachesize=32</td>
+            <td class="px-4 py-2 text-center">3042.111</td>
+            <td class="px-4 py-2 text-center">N/A</td>
+            <td class="px-4 py-2 text-center">3127.835</td>
+            <td class="px-4 py-2 text-center">610.068</td>
+          </tr>
+          
+          <tr class="border-t">
+            <td class="px-4 py-2 font-mono text-sm">dbcache=450MB, maxsigcachesize=128</td>
+            <td class="px-4 py-2 text-center">3015.825</td>
+            <td class="px-4 py-2 text-center">N/A</td>
+            <td class="px-4 py-2 text-center">3671.003</td>
+            <td class="px-4 py-2 text-center">579.761</td>
+          </tr>
+          
+          <tr class="border-t">
+            <td class="px-4 py-2 font-mono text-sm">dbcache=450MB, maxsigcachesize=32</td>
+            <td class="px-4 py-2 text-center">2961.420</td>
+            <td class="px-4 py-2 text-center">N/A</td>
+            <td class="px-4 py-2 text-center">3676.255</td>
+            <td class="px-4 py-2 text-center">540.387</td>
+          </tr>
+          
+          <tr class="border-t">
+            <td class="px-4 py-2 font-mono text-sm">dbcache=450MB, maxsigcachesize=8</td>
+            <td class="px-4 py-2 text-center">2932.451</td>
+            <td class="px-4 py-2 text-center">N/A</td>
+            <td class="px-4 py-2 text-center">3661.693</td>
+            <td class="px-4 py-2 text-center">544.310</td>
+          </tr>
+          
+        </tbody>
+      </table>
+    </div>
+
+    
+    <div class="bg-yellow-50 border border-yellow-200 rounded p-4 mb-8">
+      <p class="text-yellow-800">No nightly baseline data available for comparison.</p>
+    </div>
+    
+
+    
+    <h3 class="text-lg font-semibold mb-4">Flamegraphs and Charts</h3>
+    
+    <p class="text-sm text-gray-600 mb-4">
+      <a href="https://github.com/bitcoin-dev-tools/benchcoin/actions/runs/28937492153" target="_blank" class="text-blue-600 hover:underline">Debug logs available as CI artifacts</a>
+      (expires after 90 days)
+    </p>
+    
+    
+    <div class="mb-8">
+      <h4 class="text-md font-medium mb-2">db450-sig8 - head-db450-sig8</h4>
+      
+      
+      
+      <img src="plots/db450-sig8-head-db450-sig8-cache_vs_height.png" alt="db450-sig8 - head-db450-sig8" loading="lazy" class="w-full mb-4">
+      
+      <img src="plots/db450-sig8-head-db450-sig8-cache_vs_time.png" alt="db450-sig8 - head-db450-sig8" loading="lazy" class="w-full mb-4">
+      
+      <img src="plots/db450-sig8-head-db450-sig8-coins_cache_vs_height.png" alt="db450-sig8 - head-db450-sig8" loading="lazy" class="w-full mb-4">
+      
+      <img src="plots/db450-sig8-head-db450-sig8-height_vs_time.png" alt="db450-sig8 - head-db450-sig8" loading="lazy" class="w-full mb-4">
+      
+      <img src="plots/db450-sig8-head-db450-sig8-tx_vs_height.png" alt="db450-sig8 - head-db450-sig8" loading="lazy" class="w-full mb-4">
+      
+      
+    </div>
+    
+    <div class="mb-8">
+      <h4 class="text-md font-medium mb-2">db450-sig32 - head-db450-sig32</h4>
+      
+      
+      
+      <img src="plots/db450-sig32-head-db450-sig32-cache_vs_height.png" alt="db450-sig32 - head-db450-sig32" loading="lazy" class="w-full mb-4">
+      
+      <img src="plots/db450-sig32-head-db450-sig32-cache_vs_time.png" alt="db450-sig32 - head-db450-sig32" loading="lazy" class="w-full mb-4">
+      
+      <img src="plots/db450-sig32-head-db450-sig32-coins_cache_vs_height.png" alt="db450-sig32 - head-db450-sig32" loading="lazy" class="w-full mb-4">
+      
+      <img src="plots/db450-sig32-head-db450-sig32-height_vs_time.png" alt="db450-sig32 - head-db450-sig32" loading="lazy" class="w-full mb-4">
+      
+      <img src="plots/db450-sig32-head-db450-sig32-tx_vs_height.png" alt="db450-sig32 - head-db450-sig32" loading="lazy" class="w-full mb-4">
+      
+      
+    </div>
+    
+    <div class="mb-8">
+      <h4 class="text-md font-medium mb-2">db450-sig128 - head-db450-sig128</h4>
+      
+      
+      
+      <img src="plots/db450-sig128-head-db450-sig128-cache_vs_height.png" alt="db450-sig128 - head-db450-sig128" loading="lazy" class="w-full mb-4">
+      
+      <img src="plots/db450-sig128-head-db450-sig128-cache_vs_time.png" alt="db450-sig128 - head-db450-sig128" loading="lazy" class="w-full mb-4">
+      
+      <img src="plots/db450-sig128-head-db450-sig128-coins_cache_vs_height.png" alt="db450-sig128 - head-db450-sig128" loading="lazy" class="w-full mb-4">
+      
+      <img src="plots/db450-sig128-head-db450-sig128-height_vs_time.png" alt="db450-sig128 - head-db450-sig128" loading="lazy" class="w-full mb-4">
+      
+      <img src="plots/db450-sig128-head-db450-sig128-tx_vs_height.png" alt="db450-sig128 - head-db450-sig128" loading="lazy" class="w-full mb-4">
+      
+      
+    </div>
+    
+    <div class="mb-8">
+      <h4 class="text-md font-medium mb-2">db4096-sig32 - head-db4096-sig32</h4>
+      
+      
+      
+      <img src="plots/db4096-sig32-head-db4096-sig32-cache_vs_height.png" alt="db4096-sig32 - head-db4096-sig32" loading="lazy" class="w-full mb-4">
+      
+      <img src="plots/db4096-sig32-head-db4096-sig32-cache_vs_time.png" alt="db4096-sig32 - head-db4096-sig32" loading="lazy" class="w-full mb-4">
+      
+      <img src="plots/db4096-sig32-head-db4096-sig32-coins_cache_vs_height.png" alt="db4096-sig32 - head-db4096-sig32" loading="lazy" class="w-full mb-4">
+      
+      <img src="plots/db4096-sig32-head-db4096-sig32-height_vs_time.png" alt="db4096-sig32 - head-db4096-sig32" loading="lazy" class="w-full mb-4">
+      
+      <img src="plots/db4096-sig32-head-db4096-sig32-tx_vs_height.png" alt="db4096-sig32 - head-db4096-sig32" loading="lazy" class="w-full mb-4">
+      
+      
+    </div>
+    
+    <div class="mb-8">
+      <h4 class="text-md font-medium mb-2">db4096-sig128 - head-db4096-sig128</h4>
+      
+      
+      
+      <img src="plots/db4096-sig128-head-db4096-sig128-cache_vs_height.png" alt="db4096-sig128 - head-db4096-sig128" loading="lazy" class="w-full mb-4">
+      
+      <img src="plots/db4096-sig128-head-db4096-sig128-cache_vs_time.png" alt="db4096-sig128 - head-db4096-sig128" loading="lazy" class="w-full mb-4">
+      
+      <img src="plots/db4096-sig128-head-db4096-sig128-coins_cache_vs_height.png" alt="db4096-sig128 - head-db4096-sig128" loading="lazy" class="w-full mb-4">
+      
+      <img src="plots/db4096-sig128-head-db4096-sig128-height_vs_time.png" alt="db4096-sig128 - head-db4096-sig128" loading="lazy" class="w-full mb-4">
+      
+      <img src="plots/db4096-sig128-head-db4096-sig128-tx_vs_height.png" alt="db4096-sig128 - head-db4096-sig128" loading="lazy" class="w-full mb-4">
+      
+      
+    </div>
+    
+    <div class="mb-8">
+      <h4 class="text-md font-medium mb-2">db4096-sig256 - head-db4096-sig256</h4>
+      
+      
+      
+      <img src="plots/db4096-sig256-head-db4096-sig256-cache_vs_height.png" alt="db4096-sig256 - head-db4096-sig256" loading="lazy" class="w-full mb-4">
+      
+      <img src="plots/db4096-sig256-head-db4096-sig256-cache_vs_time.png" alt="db4096-sig256 - head-db4096-sig256" loading="lazy" class="w-full mb-4">
+      
+      <img src="plots/db4096-sig256-head-db4096-sig256-coins_cache_vs_height.png" alt="db4096-sig256 - head-db4096-sig256" loading="lazy" class="w-full mb-4">
+      
+      <img src="plots/db4096-sig256-head-db4096-sig256-height_vs_time.png" alt="db4096-sig256 - head-db4096-sig256" loading="lazy" class="w-full mb-4">
+      
+      <img src="plots/db4096-sig256-head-db4096-sig256-tx_vs_height.png" alt="db4096-sig256 - head-db4096-sig256" loading="lazy" class="w-full mb-4">
+      
+      
+    </div>
+    
+    <div class="mb-8">
+      <h4 class="text-md font-medium mb-2">db32000-sig32 - head-db32000-sig32</h4>
+      
+      
+      
+      <img src="plots/db32000-sig32-head-db32000-sig32-cache_vs_height.png" alt="db32000-sig32 - head-db32000-sig32" loading="lazy" class="w-full mb-4">
+      
+      <img src="plots/db32000-sig32-head-db32000-sig32-cache_vs_time.png" alt="db32000-sig32 - head-db32000-sig32" loading="lazy" class="w-full mb-4">
+      
+      <img src="plots/db32000-sig32-head-db32000-sig32-coins_cache_vs_height.png" alt="db32000-sig32 - head-db32000-sig32" loading="lazy" class="w-full mb-4">
+      
+      <img src="plots/db32000-sig32-head-db32000-sig32-height_vs_time.png" alt="db32000-sig32 - head-db32000-sig32" loading="lazy" class="w-full mb-4">
+      
+      <img src="plots/db32000-sig32-head-db32000-sig32-tx_vs_height.png" alt="db32000-sig32 - head-db32000-sig32" loading="lazy" class="w-full mb-4">
+      
+      
+    </div>
+    
+    <div class="mb-8">
+      <h4 class="text-md font-medium mb-2">db32000-sig256 - head-db32000-sig256</h4>
+      
+      
+      
+      <img src="plots/db32000-sig256-head-db32000-sig256-cache_vs_height.png" alt="db32000-sig256 - head-db32000-sig256" loading="lazy" class="w-full mb-4">
+      
+      <img src="plots/db32000-sig256-head-db32000-sig256-cache_vs_time.png" alt="db32000-sig256 - head-db32000-sig256" loading="lazy" class="w-full mb-4">
+      
+      <img src="plots/db32000-sig256-head-db32000-sig256-coins_cache_vs_height.png" alt="db32000-sig256 - head-db32000-sig256" loading="lazy" class="w-full mb-4">
+      
+      <img src="plots/db32000-sig256-head-db32000-sig256-height_vs_time.png" alt="db32000-sig256 - head-db32000-sig256" loading="lazy" class="w-full mb-4">
+      
+      <img src="plots/db32000-sig256-head-db32000-sig256-tx_vs_height.png" alt="db32000-sig256 - head-db32000-sig256" loading="lazy" class="w-full mb-4">
+      
+      
+    </div>
+    
+    <div class="mb-8">
+      <h4 class="text-md font-medium mb-2">db32000-sig512 - head-db32000-sig512</h4>
+      
+      
+      
+      <img src="plots/db32000-sig512-head-db32000-sig512-cache_vs_height.png" alt="db32000-sig512 - head-db32000-sig512" loading="lazy" class="w-full mb-4">
+      
+      <img src="plots/db32000-sig512-head-db32000-sig512-cache_vs_time.png" alt="db32000-sig512 - head-db32000-sig512" loading="lazy" class="w-full mb-4">
+      
+      <img src="plots/db32000-sig512-head-db32000-sig512-coins_cache_vs_height.png" alt="db32000-sig512 - head-db32000-sig512" loading="lazy" class="w-full mb-4">
+      
+      <img src="plots/db32000-sig512-head-db32000-sig512-height_vs_time.png" alt="db32000-sig512 - head-db32000-sig512" loading="lazy" class="w-full mb-4">
+      
+      <img src="plots/db32000-sig512-head-db32000-sig512-tx_vs_height.png" alt="db32000-sig512 - head-db32000-sig512" loading="lazy" class="w-full mb-4">
+      
+      
+    </div>
+    
+    
+
+  </div>
+</div>
+
+  
+</body>
+</html>

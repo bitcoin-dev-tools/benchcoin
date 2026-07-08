@@ -1,0 +1,220 @@
+{
+  "results": [
+    {
+      "profile": "db450-sig8",
+      "config": {
+        "full_ibd": false,
+        "start_height": 840000,
+        "runs": 1,
+        "instrumentation": "uninstrumented",
+        "bitcoind": {
+          "stopatheight": 900000,
+          "chain": "main",
+          "connect": "148.251.128.115:33333",
+          "prune": 1000000,
+          "daemon": false,
+          "printtoconsole": false,
+          "maxsigcachesize": 8,
+          "dbcache": 450
+        }
+      },
+      "command": "head-db450-sig8",
+      "mean": 2932.45133069096,
+      "stddev": null,
+      "user": 3661.6933274999997,
+      "system": 544.3100854
+    },
+    {
+      "profile": "db450-sig32",
+      "config": {
+        "full_ibd": false,
+        "start_height": 840000,
+        "runs": 1,
+        "instrumentation": "uninstrumented",
+        "bitcoind": {
+          "stopatheight": 900000,
+          "chain": "main",
+          "connect": "148.251.128.115:33333",
+          "prune": 1000000,
+          "daemon": false,
+          "printtoconsole": false,
+          "maxsigcachesize": 32,
+          "dbcache": 450
+        }
+      },
+      "command": "head-db450-sig32",
+      "mean": 2961.4198077882197,
+      "stddev": null,
+      "user": 3676.2552191199998,
+      "system": 540.3867363200001
+    },
+    {
+      "profile": "db450-sig128",
+      "config": {
+        "full_ibd": false,
+        "start_height": 840000,
+        "runs": 1,
+        "instrumentation": "uninstrumented",
+        "bitcoind": {
+          "stopatheight": 900000,
+          "chain": "main",
+          "connect": "148.251.128.115:33333",
+          "prune": 1000000,
+          "daemon": false,
+          "printtoconsole": false,
+          "maxsigcachesize": 128,
+          "dbcache": 450
+        }
+      },
+      "command": "head-db450-sig128",
+      "mean": 3015.82488380318,
+      "stddev": null,
+      "user": 3671.0025953799995,
+      "system": 579.76105548
+    },
+    {
+      "profile": "db4096-sig32",
+      "config": {
+        "full_ibd": false,
+        "start_height": 840000,
+        "runs": 1,
+        "instrumentation": "uninstrumented",
+        "bitcoind": {
+          "stopatheight": 900000,
+          "chain": "main",
+          "connect": "148.251.128.115:33333",
+          "prune": 1000000,
+          "daemon": false,
+          "printtoconsole": false,
+          "maxsigcachesize": 32,
+          "dbcache": 4096
+        }
+      },
+      "command": "head-db4096-sig32",
+      "mean": 3042.11057787364,
+      "stddev": null,
+      "user": 3127.83502672,
+      "system": 610.06843398
+    },
+    {
+      "profile": "db4096-sig128",
+      "config": {
+        "full_ibd": false,
+        "start_height": 840000,
+        "runs": 1,
+        "instrumentation": "uninstrumented",
+        "bitcoind": {
+          "stopatheight": 900000,
+          "chain": "main",
+          "connect": "148.251.128.115:33333",
+          "prune": 1000000,
+          "daemon": false,
+          "printtoconsole": false,
+          "maxsigcachesize": 128,
+          "dbcache": 4096
+        }
+      },
+      "command": "head-db4096-sig128",
+      "mean": 3045.60855208926,
+      "stddev": null,
+      "user": 3106.7522246599997,
+      "system": 617.66990962
+    },
+    {
+      "profile": "db4096-sig256",
+      "config": {
+        "full_ibd": false,
+        "start_height": 840000,
+        "runs": 1,
+        "instrumentation": "uninstrumented",
+        "bitcoind": {
+          "stopatheight": 900000,
+          "chain": "main",
+          "connect": "148.251.128.115:33333",
+          "prune": 1000000,
+          "daemon": false,
+          "printtoconsole": false,
+          "maxsigcachesize": 256,
+          "dbcache": 4096
+        }
+      },
+      "command": "head-db4096-sig256",
+      "mean": 3046.44755308428,
+      "stddev": null,
+      "user": 3106.50429334,
+      "system": 616.8906686
+    },
+    {
+      "profile": "db32000-sig32",
+      "config": {
+        "full_ibd": false,
+        "start_height": 840000,
+        "runs": 1,
+        "instrumentation": "uninstrumented",
+        "bitcoind": {
+          "stopatheight": 900000,
+          "chain": "main",
+          "connect": "148.251.128.115:33333",
+          "prune": 1000000,
+          "daemon": false,
+          "printtoconsole": false,
+          "maxsigcachesize": 32,
+          "dbcache": 32000
+        }
+      },
+      "command": "head-db32000-sig32",
+      "mean": 3890.0446454792,
+      "stddev": null,
+      "user": 3184.10756994,
+      "system": 1239.58272574
+    },
+    {
+      "profile": "db32000-sig256",
+      "config": {
+        "full_ibd": false,
+        "start_height": 840000,
+        "runs": 1,
+        "instrumentation": "uninstrumented",
+        "bitcoind": {
+          "stopatheight": 900000,
+          "chain": "main",
+          "connect": "148.251.128.115:33333",
+          "prune": 1000000,
+          "daemon": false,
+          "printtoconsole": false,
+          "maxsigcachesize": 256,
+          "dbcache": 32000
+        }
+      },
+      "command": "head-db32000-sig256",
+      "mean": 3994.57752521338,
+      "stddev": null,
+      "user": 3090.8570672399997,
+      "system": 1312.0658202999998
+    },
+    {
+      "profile": "db32000-sig512",
+      "config": {
+        "full_ibd": false,
+        "start_height": 840000,
+        "runs": 1,
+        "instrumentation": "uninstrumented",
+        "bitcoind": {
+          "stopatheight": 900000,
+          "chain": "main",
+          "connect": "148.251.128.115:33333",
+          "prune": 1000000,
+          "daemon": false,
+          "printtoconsole": false,
+          "maxsigcachesize": 512,
+          "dbcache": 32000
+        }
+      },
+      "command": "head-db32000-sig512",
+      "mean": 3950.2818152301998,
+      "stddev": null,
+      "user": 3197.41311672,
+      "system": 1300.3189054199997
+    }
+  ]
+}

@@ -224,7 +224,7 @@ CDBWrapper::CDBWrapper(const DBParams& params)
     DBContext().readoptions.verify_checksums = true;
     DBContext().iteroptions.verify_checksums = true;
     DBContext().iteroptions.fill_cache = false;
-    DBContext().syncoptions.sync = true;
+    DBContext().syncoptions.sync = false; // TODO false for IBD?
     DBContext().options = GetOptions(params.cache_bytes);
     DBContext().options.create_if_missing = true;
     DBContext().options.max_file_size = params.max_file_size;

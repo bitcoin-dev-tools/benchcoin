@@ -9,7 +9,9 @@
 #include <cassert>
 #include <span>
 
+using siphash_detail::Finalize13UJ;
 using siphash_detail::Finalize24;
+using siphash_detail::Process13UJ;
 using siphash_detail::Process24;
 
 CSipHasher::CSipHasher(uint64_t k0, uint64_t k1) : m_state{k0, k1} {}
@@ -54,6 +56,23 @@ CSipHasher& CSipHasher::Write(std::span<const unsigned char> data)
 uint64_t CSipHasher::Finalize() const
 {
     return Finalize24(m_state.v[0], m_state.v[1], m_state.v[2], m_state.v[3], m_tmp | (uint64_t{m_count} << 56));
+}
+
+SipHasher13UJ& SipHasher13UJ::Write(uint64_t data) noexcept
+{
+    Process13UJ(m_state.v[0], m_state.v[1], m_state.v[2], m_state.v[3], data);
+    return *this;
+}
+
+SipHasher13UJ& SipHasher13UJ::WriteJumbo(const uint256& hash) noexcept
+{
+    Process13UJ(m_state.v[0], m_state.v[1], m_state.v[2], m_state.v[3], hash);
+    return *this;
+}
+
+uint64_t SipHasher13UJ::Finalize() const noexcept
+{
+    return Finalize13UJ(m_state.v[0], m_state.v[1], m_state.v[2], m_state.v[3]);
 }
 
 uint64_t PresaltedSipHasher::operator()(const uint256& val) const noexcept

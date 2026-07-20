@@ -9,14 +9,13 @@ name = "pr"
 outputs = ["results", "debug-plots"]
 
 [benchmark]
-start_height = 840000
+full_ibd = true
 runs = 1
 
 [bitcoind]
-stopatheight = 900000
+stopatheight = 940000
 chain = "main"
 connect = "148.251.128.115:33333"
-prune = 1000000
 daemon = false
 printtoconsole = false
 
@@ -28,21 +27,6 @@ name = "head"
 commit = "HEAD"
 
 [[profiles]]
-name = "450-uninstrumented"
-dbcache = 450
+name = "5000-uninstrumented"
+dbcache = 5000
 instrumentation = false
-
-[[profiles]]
-name = "450-instrumented"
-dbcache = 450
-instrumentation = true
-
-[[profiles]]
-name = "32000-uninstrumented"
-dbcache = 32000
-instrumentation = false
-
-[[profiles]]
-name = "32000-instrumented"
-dbcache = 32000
-instrumentation = true

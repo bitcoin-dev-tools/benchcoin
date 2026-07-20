@@ -8,8 +8,6 @@ jobs:
   benchmark:
     runs-on: [self-hosted, linux, x64]
     timeout-minutes: 1000
-    env:
-      ORIGINAL_DATADIR: /data/pruned-840k
     steps:
       - name: Checkout repo
         uses: actions/checkout@v6
@@ -20,7 +18,6 @@ jobs:
         run: |
           nix develop --command python3 bench.py experiment run \
             bench/experiments/pr.toml \
-            --datadir $ORIGINAL_DATADIR \
             --tmp-dir ${{ runner.temp }}/datadirs \
             --binaries-dir ${{ runner.temp }}/binaries \
             --output-dir ${{ runner.temp }}/experiment-output \

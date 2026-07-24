@@ -11283,6 +11283,68 @@
         "total_ram_gb": 62.0
       },
       "run_date": "2026-07-23"
+    },
+    {
+      "date": "2026-07-23",
+      "commit": "afa5e46bbc6dd750bd71920b659162a945abf0ae",
+      "mean": 1768.45246119184,
+      "stddev": 35.82289180425403,
+      "runs": 2,
+      "config": {
+        "full_ibd": false,
+        "start_height": 840000,
+        "runs": 2,
+        "instrumentation": "uninstrumented",
+        "bitcoind": {
+          "stopatheight": 900000,
+          "chain": "main",
+          "connect": "148.251.128.115:33333",
+          "prune": 1000000,
+          "daemon": false,
+          "printtoconsole": false,
+          "dbcache": 450
+        }
+      },
+      "machine": {
+        "cpu_model": "AMD Ryzen 7 7700 8-Core Processor",
+        "architecture": "x86_64",
+        "cpu_cores": 16,
+        "disk_type": "NVMe SSD",
+        "os_kernel": "6.6.114",
+        "total_ram_gb": 62.0
+      },
+      "run_date": "2026-07-24"
+    },
+    {
+      "date": "2026-07-23",
+      "commit": "afa5e46bbc6dd750bd71920b659162a945abf0ae",
+      "mean": 1852.31268125416,
+      "stddev": 7.609498517283222,
+      "runs": 2,
+      "config": {
+        "full_ibd": false,
+        "start_height": 840000,
+        "runs": 2,
+        "instrumentation": "uninstrumented",
+        "bitcoind": {
+          "stopatheight": 900000,
+          "chain": "main",
+          "connect": "148.251.128.115:33333",
+          "prune": 1000000,
+          "daemon": false,
+          "printtoconsole": false,
+          "dbcache": 32000
+        }
+      },
+      "machine": {
+        "cpu_model": "AMD Ryzen 7 7700 8-Core Processor",
+        "architecture": "x86_64",
+        "cpu_cores": 16,
+        "disk_type": "NVMe SSD",
+        "os_kernel": "6.6.114",
+        "total_ram_gb": 62.0
+      },
+      "run_date": "2026-07-24"
     }
   ]
 }

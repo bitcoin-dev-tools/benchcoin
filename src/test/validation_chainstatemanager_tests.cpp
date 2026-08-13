@@ -1006,6 +1006,18 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager_args, BasicTestingSetup)
     BOOST_CHECK_EQUAL(get_valid_opts({"-prevoutfetchthreads=3"}).prevoutfetch_threads_num, 3);
     BOOST_CHECK_EQUAL(get_valid_opts({"-prevoutfetchthreads=100"}).prevoutfetch_threads_num, MAX_PREVOUTFETCH_THREADS);
     BOOST_CHECK(!get_opts({"-prevoutfetchthreads=-1"}));
+
+    BOOST_CHECK_EQUAL(get_valid_opts({}).block_readahead_depth, DEFAULT_BLOCK_READAHEAD);
+    BOOST_CHECK_EQUAL(get_valid_opts({"-blockreadahead=0"}).block_readahead_depth, 0);
+    BOOST_CHECK_EQUAL(get_valid_opts({"-blockreadahead=3"}).block_readahead_depth, 3);
+    BOOST_CHECK_EQUAL(get_valid_opts({"-blockreadahead=100"}).block_readahead_depth, MAX_BLOCK_READAHEAD);
+    BOOST_CHECK(!get_opts({"-blockreadahead=-1"}));
+
+    BOOST_CHECK_EQUAL(get_valid_opts({}).block_readahead_threads, DEFAULT_BLOCK_READAHEAD_THREADS);
+    BOOST_CHECK_EQUAL(get_valid_opts({"-blockreadaheadthreads=0"}).block_readahead_threads, 0);
+    BOOST_CHECK_EQUAL(get_valid_opts({"-blockreadaheadthreads=3"}).block_readahead_threads, 3);
+    BOOST_CHECK_EQUAL(get_valid_opts({"-blockreadaheadthreads=100"}).block_readahead_threads, MAX_BLOCK_READAHEAD_THREADS);
+    BOOST_CHECK(!get_opts({"-blockreadaheadthreads=-1"}));
 }
 
 BOOST_AUTO_TEST_SUITE_END()

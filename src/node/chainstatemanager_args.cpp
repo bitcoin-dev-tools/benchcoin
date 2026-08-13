@@ -67,6 +67,20 @@ util::Result<void> ApplyArgsManOptions(const ArgsManager& args, ChainstateManage
         opts.prevoutfetch_threads_num = std::min(*value, MAX_PREVOUTFETCH_THREADS);
     }
 
+    if (auto value{args.GetArg<int32_t>("-blockreadahead")}) {
+        if (*value < 0) {
+            return util::Error{Untranslated(strprintf("-blockreadahead must be non-negative (got %d). Use 0 to disable block read-ahead.", *value))};
+        }
+        opts.block_readahead_depth = std::min(*value, MAX_BLOCK_READAHEAD);
+    }
+
+    if (auto value{args.GetArg<int32_t>("-blockreadaheadthreads")}) {
+        if (*value < 0) {
+            return util::Error{Untranslated(strprintf("-blockreadaheadthreads must be non-negative (got %d). Use 0 to disable block read-ahead.", *value))};
+        }
+        opts.block_readahead_threads = std::min(*value, MAX_BLOCK_READAHEAD_THREADS);
+    }
+
     if (auto max_size = args.GetIntArg("-maxsigcachesize")) {
         // 1. When supplied with a max_size of 0, both the signature cache and
         //    script execution cache create the minimum possible cache (2

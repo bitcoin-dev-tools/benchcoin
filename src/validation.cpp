@@ -69,7 +69,13 @@
 #include <algorithm>
 #include <cassert>
 #include <chrono>
+#include <cstddef>
+#include <cstdint>
 #include <deque>
+#include <exception>
+#include <future>
+#include <iterator>
+#include <memory>
 #include <numeric>
 #include <optional>
 #include <ranges>
@@ -3036,9 +3042,13 @@ bool Chainstate::ConnectTip(
     if (!block_to_connect) {
         std::shared_ptr<CBlock> pblockNew = std::make_shared<CBlock>();
         if (!m_blockman.ReadBlock(*pblockNew, *pindexNew)) {
+            LogDebug(BCLog::BENCH, "  - Synchronous block load: %.2fms success=0\n",
+                     Ticks<MillisecondsDouble>(SteadyClock::now() - time_1));
             return FatalError(m_chainman.GetNotifications(), state, _("Failed to read block."));
         }
         block_to_connect = std::move(pblockNew);
+        LogDebug(BCLog::BENCH, "  - Synchronous block load: %.2fms success=1\n",
+                 Ticks<MillisecondsDouble>(SteadyClock::now() - time_1));
     } else {
         LogDebug(BCLog::BENCH, "  - Using cached block\n");
     }
@@ -3196,13 +3206,178 @@ void Chainstate::PruneBlockIndexCandidates() {
     assert(!setBlockIndexCandidates.empty());
 }
 
+class Chainstate::BlockPrefetcher
+{
+    struct ReadResult {
+        std::shared_ptr<const CBlock> block;
+        SteadyClock::duration read_time{};
+    };
+
+    struct PendingRead {
+        uint256 hash;
+        std::future<ReadResult> future;
+    };
+
+    const BlockManager& m_blockman;
+    ThreadPool m_thread_pool{"blkload"};
+    std::deque<PendingRead> m_pending;
+    size_t m_depth{0};
+    int32_t m_num_threads{0};
+    bool m_started{false};
+    bool m_disabled{false};
+
+    bool Start()
+    {
+        if (m_started) return true;
+        try {
+            m_thread_pool.Start(m_num_threads);
+            m_started = true;
+            LogDebug(BCLog::BENCH, "Block read-ahead started: depth=%d threads=%d\n", static_cast<int>(m_depth), m_num_threads);
+        } catch (const std::exception& e) {
+            m_disabled = true;
+            LogDebug(BCLog::BENCH, "  - Failed to start block read-ahead workers: %s\n", e.what());
+        }
+        return m_started;
+    }
+
+    ReadResult Wait(PendingRead& pending, SteadyClock::duration& wait_time) noexcept
+    {
+        const auto wait_start{SteadyClock::now()};
+        ReadResult result;
+        try {
+            result = pending.future.get();
+        } catch (const std::exception& e) {
+            LogDebug(BCLog::BENCH, "  - Block read-ahead task failed: %s\n", e.what());
+        } catch (...) {
+            LogDebug(BCLog::BENCH, "  - Block read-ahead task failed with an unknown exception\n");
+        }
+        wait_time = SteadyClock::now() - wait_start;
+        return result;
+    }
+
+    void Discard(PendingRead& pending)
+    {
+        SteadyClock::duration wait_time;
+        const ReadResult result{Wait(pending, wait_time)};
+        if (!result.block) {
+            LogDebug(BCLog::BENCH, "  - Failed speculative block read: read=%.2fms wait=%.2fms\n",
+                     Ticks<MillisecondsDouble>(result.read_time), Ticks<MillisecondsDouble>(wait_time));
+        }
+        LogDebug(BCLog::BENCH, "  - Discarded stale block read-ahead: read=%.2fms wait=%.2fms\n",
+                 Ticks<MillisecondsDouble>(result.read_time), Ticks<MillisecondsDouble>(wait_time));
+    }
+
+public:
+    struct ReadRequest {
+        uint256 hash;
+        FlatFilePos pos;
+    };
+
+    BlockPrefetcher(const BlockManager& blockman, int32_t depth, int32_t threads)
+        : m_blockman{blockman}
+    {
+        const int32_t clamped_depth{std::clamp(depth, int32_t{0}, MAX_BLOCK_READAHEAD)};
+        const int32_t clamped_threads{std::clamp(threads, int32_t{0}, MAX_BLOCK_READAHEAD_THREADS)};
+        if (clamped_depth > 0 && clamped_threads > 0) {
+            m_depth = static_cast<size_t>(clamped_depth);
+            m_num_threads = std::min(clamped_depth, clamped_threads);
+        }
+    }
+
+    ~BlockPrefetcher() LOCKS_EXCLUDED(::cs_main)
+    {
+        AssertLockNotHeld(::cs_main);
+        Clear();
+    }
+
+    BlockPrefetcher(const BlockPrefetcher&) = delete;
+    BlockPrefetcher& operator=(const BlockPrefetcher&) = delete;
+
+    size_t Depth() const noexcept { return m_depth; }
+
+    void Prime(std::vector<ReadRequest> desired) EXCLUSIVE_LOCKS_REQUIRED(::cs_main)
+    {
+        AssertLockHeld(::cs_main);
+        if (m_depth == 0 || m_disabled) return;
+        if (desired.size() > m_depth) desired.resize(m_depth);
+
+        bool pending_matches{m_pending.size() <= desired.size()};
+        for (size_t i{0}; pending_matches && i < m_pending.size(); ++i) {
+            pending_matches = m_pending[i].hash == desired[i].hash;
+        }
+        if (!pending_matches) Clear();
+
+        if (m_pending.size() == desired.size() || !Start()) return;
+        for (size_t i{m_pending.size()}; i < desired.size(); ++i) {
+            const ReadRequest request{desired[i]};
+            const BlockManager* const blockman{&m_blockman};
+            // Prime() runs under cs_main, so the worker receives only the copied
+            // position and hash. It must not use ReadBlock(CBlockIndex), because
+            // validation can wait for this future while holding cs_main.
+            auto future{m_thread_pool.Submit([blockman, request] {
+                const auto read_start{SteadyClock::now()};
+                try {
+                    auto block{std::make_shared<CBlock>()};
+                    if (!blockman->ReadBlock(*block, request.pos, request.hash)) block.reset();
+                    return ReadResult{std::move(block), SteadyClock::now() - read_start};
+                } catch (const std::exception& e) {
+                    LogDebug(BCLog::BENCH, "  - Block read-ahead read failed: %s\n", e.what());
+                } catch (...) {
+                    LogDebug(BCLog::BENCH, "  - Block read-ahead read failed with an unknown exception\n");
+                }
+                return ReadResult{nullptr, SteadyClock::now() - read_start};
+            })};
+            if (!future) {
+                m_disabled = true;
+                LogDebug(BCLog::BENCH, "  - Failed to submit block read-ahead: %s\n", SubmitErrorString(future.error()));
+                return;
+            }
+            m_pending.push_back({request.hash, std::move(*future)});
+        }
+    }
+
+    std::shared_ptr<const CBlock> Take(const uint256& expected_hash) EXCLUSIVE_LOCKS_REQUIRED(::cs_main)
+    {
+        AssertLockHeld(::cs_main);
+        const auto match{std::ranges::find(m_pending, expected_hash, &PendingRead::hash)};
+        if (match == m_pending.end()) return nullptr;
+
+        const size_t stale_count{static_cast<size_t>(std::distance(m_pending.begin(), match))};
+        for (size_t i{0}; i < stale_count; ++i) {
+            Discard(m_pending[0]);
+            m_pending.pop_front();
+        }
+
+        PendingRead pending{std::move(m_pending[0])};
+        m_pending.pop_front();
+        SteadyClock::duration wait_time;
+        const ReadResult result{Wait(pending, wait_time)};
+        if (!result.block) {
+            LogDebug(BCLog::BENCH, "  - Failed speculative block read: read=%.2fms wait=%.2fms\n",
+                     Ticks<MillisecondsDouble>(result.read_time), Ticks<MillisecondsDouble>(wait_time));
+            return nullptr;
+        }
+        LogDebug(BCLog::BENCH, "  - Block read-ahead hit: read=%.2fms wait=%.2fms\n",
+                 Ticks<MillisecondsDouble>(result.read_time), Ticks<MillisecondsDouble>(wait_time));
+        return result.block;
+    }
+
+    void Clear()
+    {
+        while (!m_pending.empty()) {
+            Discard(m_pending[0]);
+            m_pending.pop_front();
+        }
+    }
+};
+
 /**
  * Try to make some progress towards making index_most_work the active block.
  * pblock is either nullptr or a pointer to a CBlock corresponding to index_most_work.
  *
  * @returns true unless a system error occurred
  */
-bool Chainstate::ActivateBestChainStep(BlockValidationState& state, CBlockIndex& index_most_work, const std::shared_ptr<const CBlock>& pblock, bool& fInvalidFound, std::vector<ConnectedBlock>& connected_blocks)
+bool Chainstate::ActivateBestChainStep(BlockValidationState& state, CBlockIndex& index_most_work, BlockPrefetcher& block_prefetcher, const std::shared_ptr<const CBlock>& pblock, bool& fInvalidFound, std::vector<ConnectedBlock>& connected_blocks)
 {
     AssertLockHeld(cs_main);
     if (m_mempool) AssertLockHeld(m_mempool->cs);
@@ -3228,6 +3403,8 @@ bool Chainstate::ActivateBestChainStep(BlockValidationState& state, CBlockIndex&
         fBlocksDisconnected = true;
     }
 
+    if (fBlocksDisconnected) block_prefetcher.Clear();
+
     // Build list of new blocks to connect (in descending height order).
     std::vector<CBlockIndex*> vpindexToConnect;
     bool fContinue = true;
@@ -3247,7 +3424,26 @@ bool Chainstate::ActivateBestChainStep(BlockValidationState& state, CBlockIndex&
 
         // Connect new blocks.
         for (CBlockIndex* pindexConnect : vpindexToConnect | std::views::reverse) {
-            if (!ConnectTip(state, pindexConnect, pindexConnect == &index_most_work ? pblock : std::shared_ptr<const CBlock>(), connected_blocks, disconnectpool)) {
+            const uint256 connect_hash{pindexConnect->GetBlockHash()};
+            std::shared_ptr<const CBlock> block_to_connect{pblock && pblock->GetHash() == connect_hash ? pblock : nullptr};
+            if (!block_to_connect) block_to_connect = block_prefetcher.Take(connect_hash);
+            if (pindexConnect != &index_most_work) {
+                std::vector<BlockPrefetcher::ReadRequest> read_ahead;
+                read_ahead.reserve(block_prefetcher.Depth());
+                const CBlockIndex* previous{pindexConnect};
+                for (int height{pindexConnect->nHeight + 1}; height <= index_most_work.nHeight && read_ahead.size() < block_prefetcher.Depth(); ++height) {
+                    const CBlockIndex* next{index_most_work.GetAncestor(height)};
+                    if (!next || next->pprev != previous || !(next->nStatus & BLOCK_HAVE_DATA)) break;
+                    previous = next;
+                    const uint256 hash{next->GetBlockHash()};
+                    if (pblock && pblock->GetHash() == hash) continue;
+                    const FlatFilePos pos{next->GetBlockPos()};
+                    if (pos.IsNull()) break;
+                    read_ahead.push_back({hash, pos});
+                }
+                block_prefetcher.Prime(std::move(read_ahead));
+            }
+            if (!ConnectTip(state, pindexConnect, std::move(block_to_connect), connected_blocks, disconnectpool)) {
                 if (state.IsInvalid()) {
                     // The block violates a consensus rule.
                     if (state.GetResult() != BlockValidationResult::BLOCK_MUTATED) {
@@ -3357,6 +3553,10 @@ bool Chainstate::ActivateBestChain(BlockValidationState& state, std::shared_ptr<
         return Assume(false);
     }
 
+    const int32_t readahead_depth{m_chainman.m_options.block_readahead_depth};
+    const int32_t readahead_threads{m_chainman.m_options.block_readahead_threads};
+    BlockPrefetcher block_prefetcher{m_blockman, readahead_depth, readahead_threads};
+
     CBlockIndex *pindexMostWork = nullptr;
     CBlockIndex *pindexNewTip = nullptr;
     bool exited_ibd{false};
@@ -3396,8 +3596,8 @@ bool Chainstate::ActivateBestChain(BlockValidationState& state, std::shared_ptr<
                 // BlockConnected signals must be sent for the original role;
                 // in case snapshot validation is completed during ActivateBestChainStep, the
                 // result of GetRole() changes from BACKGROUND to NORMAL.
-               const ChainstateRole chainstate_role{this->GetRole()};
-                if (!ActivateBestChainStep(state, *pindexMostWork, pblock && pblock->GetHash() == pindexMostWork->GetBlockHash() ? pblock : nullBlockPtr, fInvalidFound, connected_blocks)) {
+                const ChainstateRole chainstate_role{this->GetRole()};
+                if (!ActivateBestChainStep(state, *pindexMostWork, block_prefetcher, pblock && pblock->GetHash() == pindexMostWork->GetBlockHash() ? pblock : nullBlockPtr, fInvalidFound, connected_blocks)) {
                     // A system error occurred
                     return false;
                 }

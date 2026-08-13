@@ -92,6 +92,9 @@ static constexpr int MAX_SCRIPTCHECK_THREADS{15};
 /** Maximum number of dedicated threads allowed for prefetching block input prevouts */
 static constexpr int32_t MAX_PREVOUTFETCH_THREADS{16};
 
+static constexpr int32_t MAX_BLOCK_READAHEAD{64};
+static constexpr int32_t MAX_BLOCK_READAHEAD_THREADS{16};
+
 /** Current sync state passed to tip changed callbacks. */
 enum class SynchronizationState {
     INIT_REINDEX,
@@ -855,7 +858,8 @@ public:
     std::pair<int, int> GetPruneRange(int last_height_can_prune) const EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
 
 protected:
-    bool ActivateBestChainStep(BlockValidationState& state, CBlockIndex& index_most_work, const std::shared_ptr<const CBlock>& pblock, bool& fInvalidFound, std::vector<ConnectedBlock>& connected_blocks) EXCLUSIVE_LOCKS_REQUIRED(cs_main, m_mempool->cs);
+    class BlockPrefetcher;
+    bool ActivateBestChainStep(BlockValidationState& state, CBlockIndex& index_most_work, BlockPrefetcher& block_prefetcher, const std::shared_ptr<const CBlock>& pblock, bool& fInvalidFound, std::vector<ConnectedBlock>& connected_blocks) EXCLUSIVE_LOCKS_REQUIRED(cs_main, m_mempool->cs);
     bool ConnectTip(
         BlockValidationState& state,
         CBlockIndex* pindexNew,

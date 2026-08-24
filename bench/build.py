@@ -129,6 +129,12 @@ class BuildPhase:
     def _remove_build_overlays(self) -> None:
         """Remove build files overlaid onto a historical source checkout."""
         for path in self._build_overlays:
+            subprocess.run(
+                ["git", "reset", "--", path.name],
+                check=True,
+                cwd=self.repo_path,
+                stdout=subprocess.DEVNULL,
+            )
             if path.exists() or path.is_symlink():
                 path.unlink()
         self._build_overlays.clear()
@@ -159,6 +165,11 @@ class BuildPhase:
             for saved_file, build_file in saved_build_files:
                 shutil.copy2(saved_file, build_file)
                 self._build_overlays.add(build_file)
+                subprocess.run(
+                    ["git", "add", "--force", build_file.name],
+                    check=True,
+                    cwd=self.repo_path,
+                )
 
             # Build with the current Benchcoin flake and historical source.
             cmd = ["nix", "build", "-L"]

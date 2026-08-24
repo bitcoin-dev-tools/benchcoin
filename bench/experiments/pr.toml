@@ -5,8 +5,8 @@
 #     --datadir /data/pruned-840k --output-dir ./output
 
 [experiment]
-name = "pr"
-outputs = ["results", "debug-plots"]
+name = "direct-ab-7dcb7f09ed6"
+outputs = ["results", "differential-flamegraph", "debug-plots"]
 
 [benchmark]
 start_height = 840000
@@ -24,25 +24,21 @@ printtoconsole = false
 debug = ["coindb", "leveldb", "bench", "validation"]
 
 [[subjects]]
-name = "head"
-commit = "HEAD"
-
-[[profiles]]
-name = "450-uninstrumented"
-dbcache = 450
-instrumentation = false
+name = "parent"
+commit = "5e8586ec5b01abaa6289eee1b551245425e8fffb"
 
 [[profiles]]
 name = "450-instrumented"
 dbcache = 450
 instrumentation = true
 
-[[profiles]]
-name = "32000-uninstrumented"
-dbcache = 32000
-instrumentation = false
+[[subjects]]
+name = "change"
+commit = "7dcb7f09ed64f9815a533e97cf9d42bc5c0186ad"
 
-[[profiles]]
-name = "32000-instrumented"
-dbcache = 32000
-instrumentation = true
+[[comparisons]]
+name = "parent-vs-change"
+before = "parent"
+after = "change"
+profiles = ["450-instrumented"]
+outputs = ["differential-flamegraph"]

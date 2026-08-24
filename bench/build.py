@@ -58,6 +58,7 @@ class BuildPhase:
         self.environment = environment
         self.capabilities = capabilities
         self.repo_path = repo_path or Path.cwd()
+        self._build_overlays: set[Path] = set()
 
     def run(
         self,
@@ -118,11 +119,19 @@ class BuildPhase:
             self._build_commit(name, commit_hash, binary_path)
         finally:
             # Always restore git state
+            self._remove_build_overlays()
             git_state.restore()
 
         return BuildResult(
             binary=BuiltBinary(name=name, path=binary_path, commit=commit_hash)
         )
+
+    def _remove_build_overlays(self) -> None:
+        """Remove build files overlaid onto a historical source checkout."""
+        for path in self._build_overlays:
+            if path.exists() or path.is_symlink():
+                path.unlink()
+        self._build_overlays.clear()
 
     def _build_commit(self, name: str, commit: str, output_path: Path) -> None:
         """Build bitcoind for a commit."""
@@ -149,6 +158,7 @@ class BuildPhase:
 
             for saved_file, build_file in saved_build_files:
                 shutil.copy2(saved_file, build_file)
+                self._build_overlays.add(build_file)
 
             # Build with the current Benchcoin flake and historical source.
             cmd = ["nix", "build", "-L"]

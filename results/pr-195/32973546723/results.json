@@ -24,10 +24,10 @@
         ]
       },
       "command": "parent-450-instrumented",
-      "mean": 2319.04991163602,
+      "mean": 2303.77262882472,
       "stddev": null,
-      "user": 3643.6357189,
-      "system": 395.56032568
+      "user": 3634.7957928,
+      "system": 391.60875389999995
     },
     {
       "profile": "450-instrumented",
@@ -53,10 +53,10 @@
         ]
       },
       "command": "change-450-instrumented",
-      "mean": 2186.0607743646,
+      "mean": 2228.7075351634403,
       "stddev": null,
-      "user": 3651.32608988,
-      "system": 401.17680565999996
+      "user": 3636.14635952,
+      "system": 393.08040804
     }
   ]
 }

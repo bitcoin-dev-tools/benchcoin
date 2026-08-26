@@ -1,2 +1,2 @@
-dbcache=450MiB: 38.7 min
-- dbcache=450MiB: 36.4 min
+dbcache=450MiB: 38.4 min
+- dbcache=450MiB: 37.1 min

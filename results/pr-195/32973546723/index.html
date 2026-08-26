@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Benchmark Results</title>
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+  
+</head>
+<body class="bg-gray-100 p-8">
+  
+<div class="w-9/10 mx-auto">
+  <h1 class="text-3xl font-bold mb-8">Benchmark Results</h1>
+  <div class="bg-white rounded-lg shadow p-6 mb-8">
+    <h2 class="text-xl font-semibold mb-4">PR #195 - Run 32973546723</h2>
+
+    <h3 class="text-lg font-semibold mb-4">Run Data</h3>
+    <div class="overflow-x-auto mb-8">
+      <table class="min-w-full table-auto">
+        <thead>
+          <tr class="bg-gray-50">
+            <th class="px-4 py-2 text-left">Config</th>
+            <th class="px-4 py-2">Mean (s)</th>
+            <th class="px-4 py-2">Std Dev</th>
+            <th class="px-4 py-2">User (s)</th>
+            <th class="px-4 py-2">System (s)</th>
+          </tr>
+        </thead>
+        <tbody>
+          
+          <tr class="border-t">
+            <td class="px-4 py-2 font-mono text-sm">dbcache=450MB (instrumented)</td>
+            <td class="px-4 py-2 text-center">2319.050</td>
+            <td class="px-4 py-2 text-center">N/A</td>
+            <td class="px-4 py-2 text-center">3643.636</td>
+            <td class="px-4 py-2 text-center">395.560</td>
+          </tr>
+          
+          <tr class="border-t">
+            <td class="px-4 py-2 font-mono text-sm">dbcache=450MB (instrumented)</td>
+            <td class="px-4 py-2 text-center">2186.061</td>
+            <td class="px-4 py-2 text-center">N/A</td>
+            <td class="px-4 py-2 text-center">3651.326</td>
+            <td class="px-4 py-2 text-center">401.177</td>
+          </tr>
+          
+        </tbody>
+      </table>
+    </div>
+
+    
+    <div class="bg-yellow-50 border border-yellow-200 rounded p-4 mb-8">
+      <p class="text-yellow-800">No nightly baseline data available for comparison.</p>
+    </div>
+    
+
+    
+    <h3 class="text-lg font-semibold mb-4">Flamegraphs and Charts</h3>
+    
+    <p class="text-sm text-gray-600 mb-4">
+      <a href="https://github.com/bitcoin-dev-tools/benchcoin/actions/runs/32973546723" target="_blank" class="text-blue-600 hover:underline">Debug logs available as CI artifacts</a>
+      (expires after 90 days)
+    </p>
+    
+    
+    <div class="mb-8">
+      <h4 class="text-md font-medium mb-2">450-instrumented - parent-450-instrumented</h4>
+      
+      <object data="450-instrumented-parent-450-instrumented-flamegraph.svg" type="image/svg+xml" width="100%" class="mb-4"></object>
+      
+      
+      
+      <img src="plots/450-instrumented-parent-450-instrumented-cache_vs_height.png" alt="450-instrumented - parent-450-instrumented" loading="lazy" class="w-full mb-4">
+      
+      <img src="plots/450-instrumented-parent-450-instrumented-cache_vs_time.png" alt="450-instrumented - parent-450-instrumented" loading="lazy" class="w-full mb-4">
+      
+      <img src="plots/450-instrumented-parent-450-instrumented-coindb_commit_txout_vs_time.png" alt="450-instrumented - parent-450-instrumented" loading="lazy" class="w-full mb-4">
+      
+      <img src="plots/450-instrumented-parent-450-instrumented-coindb_write_batch_size_vs_time.png" alt="450-instrumented - parent-450-instrumented" loading="lazy" class="w-full mb-4">
+      
+      <img src="plots/450-instrumented-parent-450-instrumented-coins_cache_vs_height.png" alt="450-instrumented - parent-450-instrumented" loading="lazy" class="w-full mb-4">
+      
+      <img src="plots/450-instrumented-parent-450-instrumented-height_vs_time.png" alt="450-instrumented - parent-450-instrumented" loading="lazy" class="w-full mb-4">
+      
+      <img src="plots/450-instrumented-parent-450-instrumented-leveldb_compact_vs_time.png" alt="450-instrumented - parent-450-instrumented" loading="lazy" class="w-full mb-4">
+      
+      <img src="plots/450-instrumented-parent-450-instrumented-leveldb_gen_bytes_vs_time.png" alt="450-instrumented - parent-450-instrumented" loading="lazy" class="w-full mb-4">
+      
+      <img src="plots/450-instrumented-parent-450-instrumented-leveldb_gen_keys_vs_time.png" alt="450-instrumented - parent-450-instrumented" loading="lazy" class="w-full mb-4">
+      
+      <img src="plots/450-instrumented-parent-450-instrumented-tx_vs_height.png" alt="450-instrumented - parent-450-instrumented" loading="lazy" class="w-full mb-4">
+      
+      
+    </div>
+    
+    <div class="mb-8">
+      <h4 class="text-md font-medium mb-2">450-instrumented - change-450-instrumented</h4>
+      
+      <object data="450-instrumented-change-450-instrumented-flamegraph.svg" type="image/svg+xml" width="100%" class="mb-4"></object>
+      
+      
+      
+      <img src="plots/450-instrumented-change-450-instrumented-cache_vs_height.png" alt="450-instrumented - change-450-instrumented" loading="lazy" class="w-full mb-4">
+      
+      <img src="plots/450-instrumented-change-450-instrumented-cache_vs_time.png" alt="450-instrumented - change-450-instrumented" loading="lazy" class="w-full mb-4">
+      
+      <img src="plots/450-instrumented-change-450-instrumented-coindb_commit_txout_vs_time.png" alt="450-instrumented - change-450-instrumented" loading="lazy" class="w-full mb-4">
+      
+      <img src="plots/450-instrumented-change-450-instrumented-coindb_write_batch_size_vs_time.png" alt="450-instrumented - change-450-instrumented" loading="lazy" class="w-full mb-4">
+      
+      <img src="plots/450-instrumented-change-450-instrumented-coins_cache_vs_height.png" alt="450-instrumented - change-450-instrumented" loading="lazy" class="w-full mb-4">
+      
+      <img src="plots/450-instrumented-change-450-instrumented-height_vs_time.png" alt="450-instrumented - change-450-instrumented" loading="lazy" class="w-full mb-4">
+      
+      <img src="plots/450-instrumented-change-450-instrumented-leveldb_compact_vs_time.png" alt="450-instrumented - change-450-instrumented" loading="lazy" class="w-full mb-4">
+      
+      <img src="plots/450-instrumented-change-450-instrumented-leveldb_gen_bytes_vs_time.png" alt="450-instrumented - change-450-instrumented" loading="lazy" class="w-full mb-4">
+      
+      <img src="plots/450-instrumented-change-450-instrumented-leveldb_gen_keys_vs_time.png" alt="450-instrumented - change-450-instrumented" loading="lazy" class="w-full mb-4">
+      
+      <img src="plots/450-instrumented-change-450-instrumented-tx_vs_height.png" alt="450-instrumented - change-450-instrumented" loading="lazy" class="w-full mb-4">
+      
+      
+    </div>
+    
+    
+
+  </div>
+</div>
+
+  
+</body>
+</html>

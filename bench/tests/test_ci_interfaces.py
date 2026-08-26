@@ -133,7 +133,9 @@ class CiInterfaceTests(unittest.TestCase):
                             "results_file": "runs/renamed-profile/head/results.json",
                         }
                     ],
-                    "comparisons": [],
+                    "comparisons": [
+                        "comparisons/parent-vs-change/450-instrumented/diff-after.svg"
+                    ],
                 },
             )
             _write_json(
@@ -166,6 +168,12 @@ class CiInterfaceTests(unittest.TestCase):
                     ]
                 },
             )
+            comparison = (
+                experiment_dir
+                / "comparisons/parent-vs-change/450-instrumented/diff-after.svg"
+            )
+            comparison.parent.mkdir(parents=True, exist_ok=True)
+            comparison.write_text("<svg></svg>\n")
 
             result = ReportGenerator(
                 nightly_history=NightlyHistory(history_file)
@@ -178,6 +186,16 @@ class CiInterfaceTests(unittest.TestCase):
 
             self.assertEqual(result.summary_file, output_dir / "summary.txt")
             self.assertIn("dbcache=450MB", result.index_file.read_text())
+            self.assertIn(
+                "comparison-parent-vs-change-450-instrumented-diff-after.svg",
+                result.index_file.read_text(),
+            )
+            self.assertTrue(
+                (
+                    output_dir
+                    / "comparison-parent-vs-change-450-instrumented-diff-after.svg"
+                ).exists()
+            )
             self.assertNotIn("dbcache=0MB", result.index_file.read_text())
             self.assertEqual(
                 (output_dir / "summary.txt").read_text().strip(),

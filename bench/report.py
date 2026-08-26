@@ -280,6 +280,12 @@ class ReportGenerator:
 
             self._copy_manifest_artifacts(run_artifact, output_dir)
 
+        comparison_graphs = self._copy_comparison_artifacts(
+            artifact_store.load_comparisons(),
+            experiment_dir,
+            output_dir,
+        )
+
         if not all_runs:
             raise ValueError("No benchmark results found in experiment manifest")
 
@@ -296,6 +302,7 @@ class ReportGenerator:
             output_dir,
             commit,
             run_id,
+            comparison_graphs,
         )
 
         index_file = output_dir / "index.html"
@@ -570,6 +577,7 @@ class ReportGenerator:
         output_dir: Path,
         commit: str | None = None,
         run_id: str | None = None,
+        comparison_graphs: list[dict] | None = None,
     ) -> str:
         """Generate the HTML report."""
         sorted_runs = sorted(runs, key=lambda r: r.profile)
@@ -591,6 +599,8 @@ class ReportGenerator:
         )
 
         graphs = self._prepare_graphs_data(runs, input_dir, output_dir)
+        if comparison_graphs:
+            graphs.extend(comparison_graphs)
 
         nightly_chart_data = None
         if pr_chart_data and self.nightly_history:
@@ -692,6 +702,34 @@ class ReportGenerator:
                     "plots": plots,
                 }
             )
+
+        return graphs
+
+    def _copy_comparison_artifacts(
+        self,
+        paths: list[Path],
+        input_dir: Path,
+        output_dir: Path,
+    ) -> list[dict]:
+        """Copy comparison SVGs and return template graph entries."""
+        graphs = []
+        for path in paths:
+            if path.suffix != ".svg" or not path.exists():
+                continue
+
+            relative = path.relative_to(input_dir)
+            name = "comparison-" + "-".join(relative.parts[1:])
+            shutil.copy2(path, output_dir / name)
+            comparison_name = relative.parts[-3]
+            profile_name = relative.parts[-2]
+            graphs.append(
+                {
+                    "label": f"{comparison_name} - {profile_name}",
+                    "flamegraph": name,
+                    "plots": [],
+                }
+            )
+            logger.debug("Copied comparison artifact %s as %s", path, name)
 
         return graphs
 

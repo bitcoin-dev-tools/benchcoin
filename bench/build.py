@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import shutil
 import subprocess
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -57,6 +58,7 @@ class BuildPhase:
         self.environment = environment
         self.capabilities = capabilities
         self.repo_path = repo_path or Path.cwd()
+        self._build_overlays: set[Path] = set()
 
     def run(
         self,
@@ -117,11 +119,25 @@ class BuildPhase:
             self._build_commit(name, commit_hash, binary_path)
         finally:
             # Always restore git state
+            self._remove_build_overlays()
             git_state.restore()
 
         return BuildResult(
             binary=BuiltBinary(name=name, path=binary_path, commit=commit_hash)
         )
+
+    def _remove_build_overlays(self) -> None:
+        """Remove build files overlaid onto a historical source checkout."""
+        for path in self._build_overlays:
+            subprocess.run(
+                ["git", "reset", "--", path.name],
+                check=True,
+                cwd=self.repo_path,
+                stdout=subprocess.DEVNULL,
+            )
+            if path.exists() or path.is_symlink():
+                path.unlink()
+        self._build_overlays.clear()
 
     def _build_commit(self, name: str, commit: str, output_path: Path) -> None:
         """Build bitcoind for a commit."""
@@ -131,41 +147,61 @@ class BuildPhase:
             logger.info(f"  [DRY RUN] Would build {commit[:12]} -> {output_path}")
             return
 
-        # Checkout the commit
-        logger.info(f"  Checking out {commit[:12]}...")
-        git_checkout(commit, self.repo_path)
+        # Keep the build recipe at the current Benchcoin revision while
+        # replacing the source tree with the historical subject. Historical
+        # Bitcoin commits do not contain Benchcoin's flake.nix.
+        build_files = [self.repo_path / "flake.nix", self.repo_path / "flake.lock"]
+        with tempfile.TemporaryDirectory(prefix="benchcoin-build-") as temp_dir:
+            saved_build_files = []
+            for build_file in build_files:
+                if build_file.exists():
+                    saved_file = Path(temp_dir) / build_file.name
+                    shutil.copy2(build_file, saved_file)
+                    saved_build_files.append((saved_file, build_file))
 
-        # Build with nix
-        cmd = ["nix", "build", "-L"]
+            logger.info(f"  Checking out {commit[:12]}...")
+            git_checkout(commit, self.repo_path)
 
-        logger.info(f"  Running: {' '.join(cmd)}")
-        logger.info(f"  Working directory: {self.repo_path}")
-        result = subprocess.run(
-            cmd,
-            cwd=self.repo_path,
-        )
+            for saved_file, build_file in saved_build_files:
+                shutil.copy2(saved_file, build_file)
+                self._build_overlays.add(build_file)
+                subprocess.run(
+                    ["git", "add", "--force", build_file.name],
+                    check=True,
+                    cwd=self.repo_path,
+                )
 
-        if result.returncode != 0:
-            raise RuntimeError(f"Build failed for {name} ({commit[:12]})")
+            # Build with the current Benchcoin flake and historical source.
+            cmd = ["nix", "build", "-L"]
 
-        # Copy binary to output location
-        nix_binary = self.repo_path / "result" / "bin" / "bitcoind"
-        if not nix_binary.exists():
-            raise RuntimeError(f"Built binary not found at {nix_binary}")
+            logger.info(f"  Running: {' '.join(cmd)}")
+            logger.info(f"  Working directory: {self.repo_path}")
+            result = subprocess.run(
+                cmd,
+                cwd=self.repo_path,
+            )
 
-        logger.info(f"  Copying {nix_binary} -> {output_path}")
+            if result.returncode != 0:
+                raise RuntimeError(f"Build failed for {name} ({commit[:12]})")
 
-        # Remove existing binary if present (may be read-only from nix)
-        if output_path.exists():
-            output_path.chmod(0o755)
-            output_path.unlink()
+            # Copy binary to output location
+            nix_binary = self.repo_path / "result" / "bin" / "bitcoind"
+            if not nix_binary.exists():
+                raise RuntimeError(f"Built binary not found at {nix_binary}")
 
-        shutil.copy2(nix_binary, output_path)
-        output_path.chmod(0o755)  # Ensure it's executable and writable
-        logger.info(f"  Built {name} binary: {output_path}")
+            logger.info(f"  Copying {nix_binary} -> {output_path}")
 
-        # Clean up nix result symlink
-        result_link = self.repo_path / "result"
-        if result_link.is_symlink():
-            logger.debug(f"  Removing nix result symlink: {result_link}")
-            result_link.unlink()
+            # Remove existing binary if present (may be read-only from nix)
+            if output_path.exists():
+                output_path.chmod(0o755)
+                output_path.unlink()
+
+            shutil.copy2(nix_binary, output_path)
+            output_path.chmod(0o755)  # Ensure it's executable and writable
+            logger.info(f"  Built {name} binary: {output_path}")
+
+            # Clean up nix result symlink
+            result_link = self.repo_path / "result"
+            if result_link.is_symlink():
+                logger.debug(f"  Removing nix result symlink: {result_link}")
+                result_link.unlink()

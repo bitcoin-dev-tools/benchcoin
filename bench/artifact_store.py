@@ -89,6 +89,11 @@ class ArtifactStore:
         manifest = self.load_manifest()
         return [self._run_from_dict(record) for record in manifest.get("runs", [])]
 
+    def load_comparisons(self) -> list[Path]:
+        """Load comparison artifact paths resolved against the root."""
+        manifest = self.load_manifest()
+        return [self._resolve_path(path) for path in manifest.get("comparisons", [])]
+
     def _record_to_dict(self, record: RunArtifactRecord) -> dict[str, Any]:
         """Convert a run record to relative-path JSON."""
         result: dict[str, Any] = {

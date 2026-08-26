@@ -14,7 +14,9 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v6
         with:
-          fetch-depth: 1
+          # Experiments may build historical commit subjects. A shallow
+          # checkout can contain the commit object without its tree.
+          fetch-depth: 0
 
       - name: Run experiment
         run: |

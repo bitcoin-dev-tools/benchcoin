@@ -12465,8 +12465,8 @@
     {
       "date": "2026-08-15",
       "commit": "c90c23d388f66b7eef67f4c6f69184c088727d6a",
-      "mean": 1755.4128552214597,
-      "stddev": 15.795242519465239,
+      "mean": 2147.6402943641997,
+      "stddev": 3.8549082592956765,
       "runs": 2,
       "config": {
         "full_ibd": false,
@@ -12488,16 +12488,16 @@
         "architecture": "x86_64",
         "cpu_cores": 16,
         "disk_type": "NVMe SSD",
-        "os_kernel": "6.6.114",
+        "os_kernel": "6.6.119",
         "total_ram_gb": 62.0
       },
-      "run_date": "2026-08-17"
+      "run_date": "2026-09-15"
     },
     {
       "date": "2026-08-15",
       "commit": "c90c23d388f66b7eef67f4c6f69184c088727d6a",
-      "mean": 1850.78981459046,
-      "stddev": 7.8173687059319965,
+      "mean": 2090.4016054556996,
+      "stddev": 5.007622775952366,
       "runs": 2,
       "config": {
         "full_ibd": false,
@@ -12519,10 +12519,10 @@
         "architecture": "x86_64",
         "cpu_cores": 16,
         "disk_type": "NVMe SSD",
-        "os_kernel": "6.6.114",
+        "os_kernel": "6.6.119",
         "total_ram_gb": 62.0
       },
-      "run_date": "2026-08-17"
+      "run_date": "2026-09-15"
     },
     {
       "date": "2026-08-17",

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +18,7 @@ class RunArtifactRecord:
     output_dir: Path
     results_file: Path
     debug_log: Path | None = None
+    debug_logs: list[Path] = field(default_factory=list)
     flamegraph: Path | None = None
     perf_data: Path | None = None
     folded_stacks: Path | None = None
@@ -33,6 +34,7 @@ class ArtifactRun:
     output_dir: Path
     results_file: Path
     debug_log: Path | None = None
+    debug_logs: list[Path] = field(default_factory=list)
     flamegraph: Path | None = None
     perf_data: Path | None = None
     folded_stacks: Path | None = None
@@ -102,6 +104,7 @@ class ArtifactStore:
             value = getattr(record, key)
             if value:
                 result[key] = self._relative(value)
+        result["debug_logs"] = [self._relative(path) for path in record.debug_logs]
         return result
 
     def _relative(self, path: Path) -> str:
@@ -117,6 +120,9 @@ class ArtifactStore:
             output_dir=self._resolve_path(record["output_dir"]),
             results_file=self._resolve_path(record["results_file"]),
             debug_log=self._resolve_optional_path(record.get("debug_log")),
+            debug_logs=[
+                self._resolve_path(path) for path in record.get("debug_logs", [])
+            ],
             flamegraph=self._resolve_optional_path(record.get("flamegraph")),
             perf_data=self._resolve_optional_path(record.get("perf_data")),
             folded_stacks=self._resolve_optional_path(record.get("folded_stacks")),

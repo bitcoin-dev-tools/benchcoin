@@ -47,6 +47,8 @@ class BenchmarkArtifactTests(unittest.TestCase):
             self.assertEqual(len(result.telemetry_metrics), 2)
             self.assertTrue(all(path.exists() for path in result.debug_logs))
             self.assertTrue(all(path.exists() for path in result.telemetry_metrics))
+            assert result.environment_manifest is not None
+            self.assertTrue(result.environment_manifest.exists())
 
     def test_manifest_lists_repetition_logs(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -54,6 +56,7 @@ class BenchmarkArtifactTests(unittest.TestCase):
             store = ArtifactStore(root)
             logs = [root / f"run-{index}-debug.log" for index in (1, 2)]
             metrics = [root / f"run-{index}-metrics.jsonl" for index in (1, 2)]
+            environment = root / "environment.json"
             store.write_manifest(
                 runs=[
                     RunArtifactRecord(
@@ -65,6 +68,7 @@ class BenchmarkArtifactTests(unittest.TestCase):
                         debug_log=logs[-1],
                         debug_logs=logs,
                         telemetry_metrics=metrics,
+                        environment_manifest=environment,
                     )
                 ],
                 comparisons=[],
@@ -72,6 +76,7 @@ class BenchmarkArtifactTests(unittest.TestCase):
 
             self.assertEqual(store.load_runs()[0].debug_logs, logs)
             self.assertEqual(store.load_runs()[0].telemetry_metrics, metrics)
+            self.assertEqual(store.load_runs()[0].environment_manifest, environment)
 
     def test_cleanup_preserves_each_repetition_log(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

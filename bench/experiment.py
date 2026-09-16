@@ -638,6 +638,7 @@ class ExperimentRunner:
             results_file=artifact.result.results_file,
             debug_log=artifact.result.debug_log,
             debug_logs=artifact.result.debug_logs,
+            telemetry_metrics=artifact.result.telemetry_metrics,
             flamegraph=artifact.result.flamegraph,
             perf_data=artifact.result.perf_data,
             folded_stacks=artifact.result.folded_stacks,

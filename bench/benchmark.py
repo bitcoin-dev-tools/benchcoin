@@ -39,6 +39,7 @@ class BenchmarkResult:
     instrumented: str  # "uninstrumented" or "instrumented"
     name: str
     debug_logs: list[Path] = field(default_factory=list)
+    telemetry_metrics: list[Path] = field(default_factory=list)
     flamegraph: Path | None = None
     perf_data: Path | None = None
     folded_stacks: Path | None = None
@@ -156,6 +157,7 @@ class BenchmarkPhase:
                 prepare_script=prepare_script,
                 cleanup_script=cleanup_script,
                 output_dir=output_dir,
+                run_index_file=run_index_file,
             )
 
             # Log the command being benchmarked
@@ -166,7 +168,6 @@ class BenchmarkPhase:
                 name,
             )
             logger.info(f"Command to benchmark: {bitcoind_cmd}")
-
             if self.environment.dry_run:
                 logger.info(f"[DRY RUN] Would run: {' '.join(cmd)}")
                 return BenchmarkResult(
@@ -196,6 +197,16 @@ class BenchmarkPhase:
             if result.debug_logs:
                 result.debug_log = result.debug_logs[-1]
                 logger.info(f"Collected {len(result.debug_logs)} debug logs")
+
+            result.telemetry_metrics = [
+                path
+                for index in range(1, self.run_spec.runs + 1)
+                if (path := output_dir / f"{name}-run-{index}-metrics.jsonl").exists()
+            ]
+            if result.telemetry_metrics:
+                logger.info(
+                    f"Collected {len(result.telemetry_metrics)} telemetry metrics"
+                )
 
             # For instrumented runs, also collect profile artifacts.
             if self.is_instrumented:
@@ -269,7 +280,9 @@ class BenchmarkPhase:
     ) -> Path:
         """Create prepare script (runs before each timing run)."""
         commands = [
-            self._copy_debug_log_command(name, tmp_datadir, output_dir, run_index_file),
+            self._copy_debug_log_command(
+                name, tmp_datadir, output_dir, run_index_file
+            ),
             f'rm -rf "{tmp_datadir}"/*',
         ]
 
@@ -357,6 +370,7 @@ class BenchmarkPhase:
         prepare_script: Path,
         cleanup_script: Path,
         output_dir: Path,
+        run_index_file: Path,
     ) -> list[str]:
         """Build the hyperfine command."""
         cmd = [
@@ -379,7 +393,24 @@ class BenchmarkPhase:
             name,
         )
 
-        cmd.append(bitcoind_cmd)
+        telemetry_cmd = [
+            "python3",
+            "-m",
+            "bench.telemetry",
+            "--output-dir",
+            str(output_dir),
+            "--name",
+            name,
+            "--run-index-file",
+            str(run_index_file),
+            "--datadir",
+            str(tmp_datadir),
+            "--",
+            "bash",
+            "-c",
+            bitcoind_cmd,
+        ]
+        cmd.append(" ".join(shlex.quote(part) for part in telemetry_cmd))
 
         return cmd
 

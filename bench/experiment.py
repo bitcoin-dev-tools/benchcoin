@@ -564,6 +564,7 @@ class ExperimentRunner:
             binary=(run_name, binary.path),
             datadir=benchmark_datadir,
             output_dir=run_output_dir,
+            binary_commit=binary.commit,
         )
 
         if (
@@ -639,6 +640,7 @@ class ExperimentRunner:
             debug_log=artifact.result.debug_log,
             debug_logs=artifact.result.debug_logs,
             telemetry_metrics=artifact.result.telemetry_metrics,
+            environment_manifest=artifact.result.environment_manifest,
             flamegraph=artifact.result.flamegraph,
             perf_data=artifact.result.perf_data,
             folded_stacks=artifact.result.folded_stacks,

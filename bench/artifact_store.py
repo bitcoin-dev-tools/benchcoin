@@ -19,6 +19,7 @@ class RunArtifactRecord:
     results_file: Path
     debug_log: Path | None = None
     debug_logs: list[Path] = field(default_factory=list)
+    telemetry_metrics: list[Path] = field(default_factory=list)
     flamegraph: Path | None = None
     perf_data: Path | None = None
     folded_stacks: Path | None = None
@@ -35,6 +36,7 @@ class ArtifactRun:
     results_file: Path
     debug_log: Path | None = None
     debug_logs: list[Path] = field(default_factory=list)
+    telemetry_metrics: list[Path] = field(default_factory=list)
     flamegraph: Path | None = None
     perf_data: Path | None = None
     folded_stacks: Path | None = None
@@ -105,6 +107,9 @@ class ArtifactStore:
             if value:
                 result[key] = self._relative(value)
         result["debug_logs"] = [self._relative(path) for path in record.debug_logs]
+        result["telemetry_metrics"] = [
+            self._relative(path) for path in record.telemetry_metrics
+        ]
         return result
 
     def _relative(self, path: Path) -> str:
@@ -122,6 +127,10 @@ class ArtifactStore:
             debug_log=self._resolve_optional_path(record.get("debug_log")),
             debug_logs=[
                 self._resolve_path(path) for path in record.get("debug_logs", [])
+            ],
+            telemetry_metrics=[
+                self._resolve_path(path)
+                for path in record.get("telemetry_metrics", [])
             ],
             flamegraph=self._resolve_optional_path(record.get("flamegraph")),
             perf_data=self._resolve_optional_path(record.get("perf_data")),

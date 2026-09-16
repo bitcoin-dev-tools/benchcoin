@@ -156,6 +156,7 @@
             pkgs.python312Packages.jinja2
             pkgs.python312Packages.matplotlib
             pkgs.ruff
+            pkgs.smartmontools
             pkgs.ty
             pkgs.util-linux
 

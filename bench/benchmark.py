@@ -8,7 +8,7 @@ import shlex
 import shutil
 import subprocess
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -38,6 +38,7 @@ class BenchmarkResult:
     results_file: Path
     instrumented: str  # "uninstrumented" or "instrumented"
     name: str
+    debug_logs: list[Path] = field(default_factory=list)
     flamegraph: Path | None = None
     perf_data: Path | None = None
     folded_stacks: Path | None = None
@@ -136,9 +137,14 @@ class BenchmarkPhase:
 
         try:
             # Create hook scripts for hyperfine
-            setup_script = self._create_setup_script(tmp_datadir)
-            prepare_script = self._create_prepare_script(tmp_datadir, datadir)
-            cleanup_script = self._create_cleanup_script(tmp_datadir, name, output_dir)
+            run_index_file = output_dir / f"{name}-run-index"
+            setup_script = self._create_setup_script(tmp_datadir, run_index_file)
+            prepare_script = self._create_prepare_script(
+                tmp_datadir, datadir, name, output_dir, run_index_file
+            )
+            cleanup_script = self._create_cleanup_script(
+                tmp_datadir, name, output_dir, run_index_file
+            )
 
             # Build hyperfine command
             cmd = self._build_hyperfine_cmd(
@@ -182,10 +188,14 @@ class BenchmarkPhase:
             )
 
             # Collect debug log (all runs)
-            debug_log_file = output_dir / f"{name}-debug.log"
-            if debug_log_file.exists():
-                result.debug_log = debug_log_file
-                logger.info(f"Collected debug log: {debug_log_file}")
+            result.debug_logs = [
+                path
+                for index in range(1, self.run_spec.runs + 1)
+                if (path := output_dir / f"{name}-run-{index}-debug.log").exists()
+            ]
+            if result.debug_logs:
+                result.debug_log = result.debug_logs[-1]
+                logger.info(f"Collected {len(result.debug_logs)} debug logs")
 
             # For instrumented runs, also collect profile artifacts.
             if self.is_instrumented:
@@ -235,11 +245,12 @@ class BenchmarkPhase:
             logger.debug(f"  {cmd}")
         return script_path
 
-    def _create_setup_script(self, tmp_datadir: Path) -> Path:
+    def _create_setup_script(self, tmp_datadir: Path, run_index_file: Path) -> Path:
         """Create setup script (runs once before all timing runs)."""
         commands = [
             f'mkdir -p "{tmp_datadir}"',
             f'rm -rf "{tmp_datadir}"/*',
+            f"printf '0\\n' > {shlex.quote(str(run_index_file))}",
         ]
 
         # TRIM SSD once before benchmarking for consistent write performance
@@ -249,10 +260,16 @@ class BenchmarkPhase:
         return self._create_temp_script(commands, "setup")
 
     def _create_prepare_script(
-        self, tmp_datadir: Path, original_datadir: Path | None
+        self,
+        tmp_datadir: Path,
+        original_datadir: Path | None,
+        name: str,
+        output_dir: Path,
+        run_index_file: Path,
     ) -> Path:
         """Create prepare script (runs before each timing run)."""
         commands = [
+            self._copy_debug_log_command(name, tmp_datadir, output_dir, run_index_file),
             f'rm -rf "{tmp_datadir}"/*',
         ]
 
@@ -268,6 +285,10 @@ class BenchmarkPhase:
         commands.append(
             f'find "{tmp_datadir}" -name debug.log -delete 2>/dev/null || true'
         )
+        commands.append(
+            f"run_index=$(cat {shlex.quote(str(run_index_file))}); "
+            f"printf '%s\\n' \"$((run_index + 1))\" > {shlex.quote(str(run_index_file))}"
+        )
 
         return self._create_temp_script(commands, "prepare")
 
@@ -276,9 +297,12 @@ class BenchmarkPhase:
         tmp_datadir: Path,
         name: str,
         output_dir: Path,
+        run_index_file: Path,
     ) -> Path:
         """Create cleanup script (runs after each timing run)."""
-        commands = self._create_artifact_commands(name, tmp_datadir, output_dir)
+        commands = self._create_artifact_commands(
+            name, tmp_datadir, output_dir, run_index_file
+        )
         commands.append(f'rm -rf "{tmp_datadir}"/*')
         return self._create_temp_script(commands, "cleanup")
 
@@ -364,6 +388,7 @@ class BenchmarkPhase:
         name: str,
         tmp_datadir: Path,
         output_dir: Path,
+        run_index_file: Path,
     ) -> list[str]:
         """Create artifact collection commands for the binary."""
         commands = []
@@ -384,10 +409,26 @@ class BenchmarkPhase:
                 )
             )
 
-        # Copy debug log if exists (all runs)
         commands.append(
-            f'debug_log=$(find "{tmp_datadir}" -name debug.log -print -quit); '
-            f'if [ -n "$debug_log" ]; then cp "$debug_log" "{output_dir}/{name}-debug.log"; fi'
+            self._copy_debug_log_command(name, tmp_datadir, output_dir, run_index_file)
         )
 
         return commands
+
+    def _copy_debug_log_command(
+        self,
+        name: str,
+        tmp_datadir: Path,
+        output_dir: Path,
+        run_index_file: Path,
+    ) -> str:
+        """Archive the previous repetition's log before its datadir is cleared."""
+        return (
+            f"run_index=$(cat {shlex.quote(str(run_index_file))}); "
+            f"outdir={shlex.quote(str(output_dir))}; "
+            f"name={shlex.quote(name)}; "
+            'if [ "$run_index" -gt 0 ]; then '
+            f'debug_log=$(find "{tmp_datadir}" -name debug.log -print -quit); '
+            'if [ -n "$debug_log" ]; then '
+            'cp "$debug_log" "$outdir/$name-run-$run_index-debug.log"; fi; fi'
+        )

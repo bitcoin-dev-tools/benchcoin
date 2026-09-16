@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .environment import BenchmarkEnvironment
+from .environment_manifest import write_environment_manifest
 from .patchelf import ensure_binary_runnable
 from .run_spec import RunSpec
 
@@ -44,6 +45,7 @@ class BenchmarkResult:
     perf_data: Path | None = None
     folded_stacks: Path | None = None
     debug_log: Path | None = None
+    environment_manifest: Path | None = None
 
 
 def parse_binary_spec(spec: str) -> tuple[str, Path]:
@@ -83,6 +85,7 @@ class BenchmarkPhase:
         binary: tuple[str, Path],
         datadir: Path | None,
         output_dir: Path,
+        binary_commit: str | None = None,
     ) -> BenchmarkResult:
         """Run benchmark on given binary.
 
@@ -121,6 +124,7 @@ class BenchmarkPhase:
         tmp_datadir.mkdir(parents=True, exist_ok=True)
 
         results_file = output_dir / "results.json"
+        environment_manifest = output_dir / f"{name}-environment.json"
 
         logger.info("Starting benchmark")
         logger.info(f"  Output dir: {output_dir}")
@@ -176,6 +180,33 @@ class BenchmarkPhase:
                     name=name,
                 )
 
+            write_environment_manifest(
+                environment_manifest,
+                name=name,
+                binary_path=binary_path,
+                binary_commit=binary_commit,
+                source_datadir=datadir,
+                tmp_datadir=tmp_datadir,
+                output_dir=output_dir,
+                bitcoind_command=bitcoind_cmd,
+                hyperfine_command=cmd,
+                run_spec=self.run_spec.to_dict(),
+                cache_drop={
+                    "enabled": (
+                        self.capabilities.can_drop_caches
+                        and not self.environment.no_cache_drop
+                    ),
+                    "path": self.capabilities.drop_caches_path,
+                },
+                fstrim={
+                    "enabled": self.capabilities.can_fstrim,
+                    "path": self.capabilities.fstrim_path,
+                    "mount": str(_find_mount_point(tmp_datadir))
+                    if self.capabilities.can_fstrim
+                    else None,
+                },
+            )
+
             # Log the full hyperfine command
             logger.info("Running hyperfine...")
             logger.debug(f"  Full command: {' '.join(cmd)}")
@@ -186,6 +217,7 @@ class BenchmarkPhase:
                 results_file=results_file,
                 instrumented=self.run_spec.instrumentation,
                 name=name,
+                environment_manifest=environment_manifest,
             )
 
             # Collect debug log (all runs)

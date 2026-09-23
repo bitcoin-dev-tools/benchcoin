@@ -14,7 +14,6 @@
 #include <sync.h>
 #include <test/util/setup_common.h>
 #include <tinyformat.h>
-#include <uint256.h>
 #include <util/check.h>
 #include <util/result.h>
 #include <wallet/db.h>
@@ -25,7 +24,6 @@
 #include <wallet/walletdb.h>
 
 #include <algorithm>
-#include <cstdint>
 #include <cstddef>
 #include <memory>
 #include <optional>
@@ -90,9 +88,7 @@ static void WalletMigration(benchmark::Bench& bench)
                 CMutableTransaction mtx;
                 mtx.vout.emplace_back(COIN, GetScriptForDestination(dest));
                 mtx.vout.emplace_back(COIN, scripts_watch_only.at(j % NUM_WATCH_ONLY_ADDR).first);
-                // Use distinct dummy prevouts so all txs don't appear to spend the same null outpoint
-                mtx.vin.emplace_back(COutPoint(Txid::FromUint256(uint256{uint8_t(j + 1)}), 0));
-                mtx.vin.emplace_back(COutPoint(Txid::FromUint256(uint256{uint8_t(j + 1)}), 1));
+                mtx.vin.resize(2);
                 wallet->AddToWallet(MakeTransactionRef(mtx), TxStateInactive{}, /*update_wtx=*/nullptr, /*rescanning_old_block=*/true);
                 batch.WriteKey(pubkey, key.GetPrivKey(), CKeyMetadata());
             }

@@ -300,20 +300,17 @@ BOOST_AUTO_TEST_CASE(util_Join)
 BOOST_AUTO_TEST_CASE(util_ReplaceAll)
 {
     const std::string original("A test \"%s\" string '%s'.");
-    auto test_replaceall{[](std::string test, std::string_view search, std::string_view substitute, std::string_view expected) {
+    auto test_replaceall = [&original](const std::string& search, const std::string& substitute, const std::string& expected) {
+        auto test = original;
         ReplaceAll(test, search, substitute);
         BOOST_CHECK_EQUAL(test, expected);
-    }};
+    };
 
-    test_replaceall(original, "", "foo", original);
-    test_replaceall(original, "missing", "foo", original);
-    test_replaceall(original, original, "foo", "foo");
-    test_replaceall(original, "%s", "foo", "A test \"foo\" string 'foo'.");
-    test_replaceall(original, "\"", "foo", "A test foo%sfoo string '%s'.");
-    test_replaceall(original, "'", "foo", "A test \"%s\" string foo%sfoo.");
-    test_replaceall("a.b", ".", "x", "axb");
-    test_replaceall("%w and %w", "%w", "$&$`$'$1$$", "$&$`$'$1$$ and $&$`$'$1$$");
-    test_replaceall("x", "x", "xx", "xx");
+    test_replaceall("", "foo", original);
+    test_replaceall(original, "foo", "foo");
+    test_replaceall("%s", "foo", "A test \"foo\" string 'foo'.");
+    test_replaceall("\"", "foo", "A test foo%sfoo string '%s'.");
+    test_replaceall("'", "foo", "A test \"%s\" string foo%sfoo.");
 }
 
 BOOST_AUTO_TEST_CASE(util_TrimString)

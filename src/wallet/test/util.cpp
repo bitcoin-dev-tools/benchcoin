@@ -10,7 +10,6 @@
 #include <test/util/setup_common.h>
 #include <validationinterface.h>
 #include <wallet/context.h>
-#include <wallet/scan.h>
 #include <wallet/wallet.h>
 #include <wallet/walletdb.h>
 
@@ -41,8 +40,8 @@ std::unique_ptr<CWallet> CreateSyncedWallet(interfaces::Chain& chain, CChain& cc
     }
     WalletRescanReserver reserver(*wallet);
     reserver.reserve();
-    ScanResult result = wallet->Scanner().Scan(cchain.Genesis()->GetBlockHash(), /*start_height=*/0, /*max_height=*/{}, reserver, /*save_progress=*/false);
-    assert(result.status == ScanResult::SUCCESS);
+    CWallet::ScanResult result = wallet->ScanForWalletTransactions(cchain.Genesis()->GetBlockHash(), /*start_height=*/0, /*max_height=*/{}, reserver, /*save_progress=*/false);
+    assert(result.status == CWallet::ScanResult::SUCCESS);
     assert(result.last_scanned_block == cchain.Tip()->GetBlockHash());
     assert(*result.last_scanned_height == cchain.Height());
     assert(result.last_failed_block.IsNull());

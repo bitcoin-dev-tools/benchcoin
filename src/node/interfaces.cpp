@@ -46,7 +46,7 @@
 #include <node/types.h>
 #include <node/warnings.h>
 #include <policy/feerate.h>
-#include <policy/fees/estimator_man.h>
+#include <policy/fees/block_policy_estimator.h>
 #include <policy/policy.h>
 #include <policy/rbf.h>
 #include <primitives/block.h>
@@ -61,8 +61,6 @@
 #include <univalue.h>
 #include <util/btcsignals.h>
 #include <util/check.h>
-#include <util/expected.h>
-#include <util/fees.h>
 #include <util/result.h>
 #include <util/signalinterrupt.h>
 #include <util/string.h>
@@ -738,15 +736,15 @@ public:
         }
         return {};
     }
-    util::Expected<FeeRateEstimation, FeeRateEstimationError> getFeeRateEstimate(int num_blocks, bool conservative) const override
+    CFeeRate estimateSmartFee(int num_blocks, bool conservative, FeeCalculation* calc) override
     {
-        if (!m_node.fee_estimator_man) return EstimationError(FeeRateEstimatorType::NONE, /*returned_target=*/0, /*error=*/{});
-        return m_node.fee_estimator_man->GetFeeRateEstimate(num_blocks, conservative);
+        if (!m_node.fee_estimator) return {};
+        return m_node.fee_estimator->estimateSmartFee(num_blocks, calc, conservative);
     }
-    unsigned int maximumFeeEstimationTargetBlocks() const override
+    unsigned int estimateMaxBlocks() override
     {
-        if (!m_node.fee_estimator_man) return 0;
-        return m_node.fee_estimator_man->MaximumTarget();
+        if (!m_node.fee_estimator) return 0;
+        return m_node.fee_estimator->HighestTargetTracked(FeeEstimateHorizon::LONG_HALFLIFE);
     }
     CFeeRate mempoolMinFee() override
     {
@@ -843,7 +841,7 @@ public:
         });
         if (!action) return false;
         // Now dump value to disk if requested
-        return *action != interfaces::SettingsAction::WRITE || (args().GetSettingsPath() && args().WriteSettingsFile());
+        return *action != interfaces::SettingsAction::WRITE || args().WriteSettingsFile();
     }
     bool overwriteRwSetting(const std::string& name, common::SettingsValue value, interfaces::SettingsAction action) override
     {

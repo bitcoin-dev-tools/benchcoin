@@ -6,8 +6,6 @@
 #ifndef BITCOIN_RPC_PROTOCOL_H
 #define BITCOIN_RPC_PROTOCOL_H
 
-#include <string_view>
-
 //! HTTP status codes
 enum HTTPStatusCode : int
 {

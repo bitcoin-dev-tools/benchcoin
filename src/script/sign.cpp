@@ -318,15 +318,14 @@ static bool SignMuSig2(const BaseSignatureCreator& creator, SignatureData& sigda
             }
             // Get the BIP32 derivation tweaks
             CExtPubKey extpub = CreateMuSig2SyntheticXpub(agg_pub);
-            for (const uint32_t i : agg_info.path) {
-                if (i >> 31) return false; // Hardened derivation is not possible from a public key
+            for (const int i : agg_info.path) {
                 auto& [t, xonly] = tweaks.emplace_back();
                 xonly = false;
                 if (!extpub.Derive(extpub, i, &t)) {
                     return false;
                 }
             }
-            if (XOnlyPubKey(extpub.pubkey) != script_pubkey) continue;
+            Assert(XOnlyPubKey(extpub.pubkey) == script_pubkey);
             plain_pub = extpub.pubkey;
         }
 

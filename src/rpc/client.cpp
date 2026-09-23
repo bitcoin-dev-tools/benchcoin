@@ -3,17 +3,14 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <common/args.h>
 #include <rpc/client.h>
-
 #include <tinyformat.h>
 
-#include <algorithm>
-#include <cstddef>
-#include <ranges>
-#include <stdexcept>
+#include <cstdint>
+#include <set>
 #include <string>
 #include <string_view>
-#include <utility>
 
 //! Specify whether parameter should be parsed by bitcoin-cli as a JSON value,
 //! or passed unchanged as a string, or a combination of both.
@@ -108,9 +105,6 @@ static const CRPCConvertParam vRPCConvertParams[] =
     { "listtransactions", 1, "count" },
     { "listtransactions", 2, "skip" },
     { "listtransactions", 3, "include_watchonly" },
-    { "listrawtransactions", 0, "count" },
-    { "listrawtransactions", 1, "skip" },
-    { "listrawtransactions", 2, "verbose" },
     { "walletpassphrase", 0, "passphrase", ParamFormat::STRING },
     { "walletpassphrase", 1, "timeout" },
     { "getblocktemplate", 0, "template_request" },
@@ -311,7 +305,6 @@ static const CRPCConvertParam vRPCConvertParams[] =
     { "getrawmempool", 1, "mempool_sequence" },
     { "getorphantxs", 0, "verbosity" },
     { "estimatesmartfee", 0, "conf_target" },
-    { "estimatesmartfee", 2, "options" },
     { "estimaterawfee", 0, "conf_target" },
     { "estimaterawfee", 1, "threshold" },
     { "prioritisetransaction", 1, "dummy" },

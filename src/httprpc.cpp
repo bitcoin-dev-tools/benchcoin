@@ -26,6 +26,7 @@
 #include <string>
 #include <vector>
 
+using http_bitcoin::HTTPRequest;
 using util::SplitString;
 using util::TrimStringView;
 
@@ -201,8 +202,8 @@ static void HTTPReq_JSONRPC(const std::any& context, HTTPRequest* req)
         return;
     }
     // Check authorization
-    std::optional<std::string> auth_header = req->GetHeader("authorization");
-    if (!auth_header) {
+    std::pair<bool, std::string> authHeader = req->GetHeader("authorization");
+    if (!authHeader.first) {
         req->WriteHeader("WWW-Authenticate", WWW_AUTH_HEADER_DATA);
         req->WriteReply(HTTP_UNAUTHORIZED);
         return;
@@ -212,7 +213,7 @@ static void HTTPReq_JSONRPC(const std::any& context, HTTPRequest* req)
     jreq.context = context;
     jreq.peerAddr = req->GetPeer().ToStringAddrPort();
     jreq.URI = req->GetURI();
-    if (!RPCAuthorized(*auth_header, jreq.authUser)) {
+    if (!RPCAuthorized(authHeader.second, jreq.authUser)) {
         LogWarning("ThreadRPCServer incorrect password attempt from %s", jreq.peerAddr);
 
         /* Deter brute-forcing

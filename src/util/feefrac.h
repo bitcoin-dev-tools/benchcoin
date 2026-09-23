@@ -8,6 +8,7 @@
 #include <util/check.h>
 #include <util/overflow.h>
 
+#include <compare>
 #include <concepts>
 #include <cstdint>
 #include <span>

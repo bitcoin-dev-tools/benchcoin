@@ -400,7 +400,6 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
             self.init_wallet(node=i)
 
     def init_wallet(self, *, node):
-        """Refer to the self.wallet_names docstring on how to use this"""
         wallet_name = self.default_wallet_name if self.wallet_names is None else self.wallet_names[node] if node < len(self.wallet_names) else False
         if wallet_name is not False:
             n = self.nodes[node]
@@ -962,13 +961,13 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
             self.stop_nodes()
             self.nodes = []
 
-            cache_path = cache_node_dir / self.chain
+            def cache_path(*paths):
+                return os.path.join(cache_node_dir, self.chain, *paths)
 
-            (cache_path / "wallets").rmdir()  # Do not cache empty wallets dir
-            shutil.rmtree(cache_path / "fees")  # Do not cache fees dat files
-            for entry in cache_path.iterdir():
-                if entry.name not in ["chainstate", "blocks", "indexes"]:  # Only keep indexes, chainstate and blocks folders
-                    entry.unlink()
+            os.rmdir(cache_path('wallets'))  # Remove empty wallets dir
+            for entry in os.listdir(cache_path()):
+                if entry not in ['chainstate', 'blocks', 'indexes']:  # Only indexes, chainstate and blocks folders
+                    os.remove(cache_path(entry))
 
         for i in range(self.num_nodes):
             self.log.debug("Copy cache directory {} to node {}".format(cache_node_dir, i))

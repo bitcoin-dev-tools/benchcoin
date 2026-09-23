@@ -10,42 +10,41 @@
 #include <common/types.h>
 #include <consensus/amount.h>
 #include <interfaces/chain.h>
-#include <primitives/transaction.h>
+#include <primitives/transaction_identifier.h>
 #include <pubkey.h>
+#include <script/script.h>
 #include <support/allocators/secure.h>
-#include <util/expected.h>
 #include <util/fs.h>
 #include <util/result.h>
 #include <util/ui_change_type.h>
-#include <wallet/types.h>
 
-#include <compare>
-#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <map>
 #include <memory>
-#include <optional>
-#include <set>
 #include <string>
 #include <tuple>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
-class ArgsManager;
-class CScript;
-class PartiallySignedTransaction;
-class uint256;
+class CFeeRate;
+class CKey;
 enum class FeeReason;
 enum class OutputType;
+class PartiallySignedTransaction;
 struct bilingual_str;
-struct CExtKey;
-
+namespace common {
+enum class PSBTError;
+} // namespace common
+namespace node {
+enum class TransactionError;
+} // namespace node
 namespace wallet {
+struct CreatedTransactionResult;
 class CCoinControl;
 class CWallet;
-struct ImportDescriptorRequest;
-struct ImportResult;
+enum class AddressPurpose;
 struct CRecipient;
 struct WalletContext;
 } // namespace wallet
@@ -76,14 +75,14 @@ public:
     virtual bool lock() = 0;
 
     //! Unlock wallet.
-    virtual util::Expected<void, wallet::WalletError> unlock(const SecureString& wallet_passphrase) = 0;
+    virtual bool unlock(const SecureString& wallet_passphrase) = 0;
 
     //! Return whether wallet is locked.
     virtual bool isLocked() = 0;
 
     //! Change wallet passphrase.
-    virtual util::Expected<void, wallet::WalletError> changeWalletPassphrase(const SecureString& old_wallet_passphrase,
-                                                                             const SecureString& new_wallet_passphrase) = 0;
+    virtual bool changeWalletPassphrase(const SecureString& old_wallet_passphrase,
+        const SecureString& new_wallet_passphrase) = 0;
 
     //! Abort a rescan.
     virtual void abortRescan() = 0;
@@ -99,13 +98,6 @@ public:
 
     //! Get public key.
     virtual bool getPubKey(const CScript& script, const CKeyID& address, CPubKey& pub_key) = 0;
-
-    //! Generate and add a new HD key to the wallet.
-    //! Requires the wallet to be unlocked. Returns a `WalletError` with code
-    //! `WalletErrorCode::UnlockNeeded` if the wallet is locked.
-    //!
-    //! Return the master xpub for the added HD key, or a `WalletError` on failure.
-    virtual util::Expected<CExtPubKey, wallet::WalletError> addHDKey(const std::optional<CExtKey>& key) = 0;
 
     //! Sign message
     virtual SigningResult signMessage(const std::string& message, const PKHash& pkhash, std::string& str_sig) = 0;
@@ -212,9 +204,6 @@ public:
         PartiallySignedTransaction& psbtx,
         bool& complete) = 0;
 
-    //! Import descriptors
-    virtual std::vector<wallet::ImportResult> importDescriptors(std::vector<wallet::ImportDescriptorRequest>& requests) = 0;
-
     //! Get balances.
     virtual WalletBalances getBalances() = 0;
 
@@ -253,7 +242,7 @@ public:
     //! Get minimum fee.
     virtual CAmount getMinimumFee(unsigned int tx_bytes,
         const wallet::CCoinControl& coin_control,
-        std::optional<int>* returned_target,
+        int* returned_target,
         FeeReason* reason) = 0;
 
     //! Get tx confirm target.

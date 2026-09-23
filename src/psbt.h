@@ -18,7 +18,6 @@
 #include <streams.h>
 #include <uint256.h>
 #include <util/result.h>
-#include <util/expected.h>
 
 #include <optional>
 #include <bitset>
@@ -324,7 +323,7 @@ public:
 
     void FillSignatureData(SignatureData& sigdata) const;
     void FromSignatureData(const SignatureData& sigdata);
-    void Merge(const PSBTInput& input);
+    [[nodiscard]] bool Merge(const PSBTInput& input);
     uint32_t GetVersion() const { return m_psbt_version; }
     COutPoint GetOutPoint() const;
     /**
@@ -958,7 +957,7 @@ public:
 
     void FillSignatureData(SignatureData& sigdata) const;
     void FromSignatureData(const SignatureData& sigdata);
-    void Merge(const PSBTOutput& output);
+    [[nodiscard]] bool Merge(const PSBTOutput& output);
     uint32_t GetVersion() const { return m_psbt_version; }
 
     explicit PSBTOutput(uint32_t psbt_version, CAmount amount, const CScript& script)
@@ -1643,7 +1642,7 @@ bool PSBTInputSignedAndVerified(const PartiallySignedTransaction& psbt, unsigned
  * txdata should be the output of PrecomputePSBTData (which can be shared across
  * multiple SignPSBTInput calls). If it is nullptr, a dummy signature will be created.
  **/
-[[nodiscard]] util::Expected<void, PSBTError> SignPSBTInput(const SigningProvider& provider, PartiallySignedTransaction& psbt, int index, const PrecomputedTransactionData* txdata, const common::PSBTFillOptions& options, SignatureData* out_sigdata = nullptr);
+[[nodiscard]] PSBTError SignPSBTInput(const SigningProvider& provider, PartiallySignedTransaction& psbt, int index, const PrecomputedTransactionData* txdata, const common::PSBTFillOptions& options, SignatureData* out_sigdata = nullptr);
 
 /**  Reduces the size of the PSBT by dropping unnecessary `non_witness_utxos` (i.e. complete previous transactions) from a psbt when all inputs are segwit v1. */
 void RemoveUnnecessaryTransactions(PartiallySignedTransaction& psbtx);

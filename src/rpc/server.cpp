@@ -11,26 +11,22 @@
 #include <common/system.h>
 #include <logging.h>
 #include <node/context.h>
-#include <rpc/protocol.h>
+#include <node/kernel_notifications.h>
 #include <rpc/server_util.h>
 #include <rpc/util.h>
 #include <sync.h>
-#include <tinyformat.h>
-#include <util/check.h>
-#include <util/fs.h>
 #include <util/overloaded.h>
+#include <util/signalinterrupt.h>
 #include <util/strencodings.h>
 #include <util/string.h>
 #include <util/time.h>
+#include <validation.h>
 
 #include <algorithm>
-#include <atomic>
-#include <cstddef>
-#include <exception>
-#include <list>
+#include <cassert>
+#include <chrono>
+#include <memory>
 #include <mutex>
-#include <optional>
-#include <set>
 #include <span>
 #include <string_view>
 #include <unordered_map>
@@ -559,8 +555,7 @@ static RPCResult OpenRPCDocResult()
                         {RPCResult::Type::OBJ, "result", "Method result.",
                             {
                                 {RPCResult::Type::STR, "name", "Result name."},
-                                {RPCResult::Type::ANY, "schema", "JSON Schema for the result. Numeric schemas may include "
-                                    "\"x-bitcoin-unit\" property: \"amount\" which denotes a Bitcoin amount in BTC."},
+                                {RPCResult::Type::ANY, "schema", "JSON Schema for the result."},
                             }},
                         {RPCResult::Type::STR, "x-bitcoin-category", "RPC category."},
                     }}}},

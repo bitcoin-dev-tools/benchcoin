@@ -8,9 +8,7 @@ include(CheckCXXSymbolExists)
 check_cxx_symbol_exists(O_CLOEXEC "fcntl.h" HAVE_O_CLOEXEC)
 check_cxx_symbol_exists(fdatasync "unistd.h" HAVE_FDATASYNC)
 check_cxx_symbol_exists(fork "unistd.h" HAVE_DECL_FORK)
-if (NOT CMAKE_SYSTEM_NAME STREQUAL "Darwin")
-  check_cxx_symbol_exists(pipe2 "unistd.h" HAVE_DECL_PIPE2)
-endif()
+check_cxx_symbol_exists(pipe2 "unistd.h" HAVE_DECL_PIPE2)
 check_cxx_symbol_exists(setsid "unistd.h" HAVE_DECL_SETSID)
 
 if(NOT WIN32)
@@ -77,10 +75,6 @@ check_cxx_source_compiles("
   }
   " HAVE_STRONG_GETAUXVAL
 )
-
-# Check for SetThreadDescription(), which is missing from mingw-w64 headers
-# before 12.0.0.
-check_cxx_symbol_exists(SetThreadDescription "windows.h" HAVE_SETTHREADDESCRIPTION)
 
 # Check for UNIX sockets.
 check_cxx_source_compiles("

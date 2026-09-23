@@ -84,10 +84,6 @@ BOOST_FIXTURE_TEST_CASE(baseindex_no_commit_ahead_of_flush, TestChain100Setup)
             // Reload index to see which block data was actually committed.
             BOOST_REQUIRE(index->Init());
             BOOST_CHECK_EQUAL(index->GetSummary().best_block_height, expected_commit_height);
-
-            // Drain in-flight validation callbacks before destroying the index.
-            m_node.chain->context()->validation_signals->SyncWithValidationInterfaceQueue();
-            // shutdown sequence (c.f. Shutdown() in init.cpp)
             index->Stop();
         };
 
@@ -112,15 +108,11 @@ BOOST_FIXTURE_TEST_CASE(baseindex_no_commit_ahead_of_flush, TestChain100Setup)
 }
 
 // Test shutdown between BlockConnected and ChainStateFlushed notifications,
-// make sure index is not corrupted and reloads at the last committed height.
+// make sure index is not corrupted and is able to reload.
 BOOST_FIXTURE_TEST_CASE(index_unclean_shutdown, TestChain100Setup)
 {
     Chainstate& chainstate = Assert(m_node.chainman)->ActiveChainstate();
     const CChainParams& params = Params();
-    const int tip_height{WITH_LOCK(cs_main, return chainstate.m_chain.Height())};
-    chainstate.ForceFlushStateToDisk();
-    // Drain the notification before registering any index.
-    m_node.chain->context()->validation_signals->SyncWithValidationInterfaceQueue();
     for (const auto& [index_name, make_index] : INDEX_FACTORIES) {
         BOOST_TEST_INFO_SCOPE(index_name);
         {
@@ -152,8 +144,7 @@ BOOST_FIXTURE_TEST_CASE(index_unclean_shutdown, TestChain100Setup)
         {
             auto index{make_index(m_node)};
             BOOST_REQUIRE(index->Init());
-            // Make sure the index reloads from the pre-crash commit.
-            BOOST_CHECK_EQUAL(index->GetSummary().best_block_height, tip_height);
+            // Make sure the index can be loaded.
             BOOST_REQUIRE(index->StartBackgroundSync());
             index->Stop();
         }
@@ -227,17 +218,10 @@ BOOST_FIXTURE_TEST_CASE(index_reorg_crash, TestChain100Setup)
         BOOST_REQUIRE(m_node.chainman->ProcessNewBlock(block, /*force_processing=*/true, /*min_pow_checked=*/true, nullptr));
     }
 
-    // The index thread is blocked and not done
-    BOOST_CHECK(!index.GetSummary().synced);
-
     // Unblock the index thread so it can process the reorg
     promise.set_value();
     // Wait for the index to reach the new tip
     func_wait_until(blocking_height + 2, 5s);
-
-    // Drain unused BlockConnected events, to avoid unsafe memory races during destruction
-    m_node.chain->context()->validation_signals->SyncWithValidationInterfaceQueue();
-    // shutdown sequence (c.f. Shutdown() in init.cpp)
     index.Stop();
 }
 

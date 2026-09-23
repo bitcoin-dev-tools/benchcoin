@@ -13,7 +13,6 @@
 #include <test/util/setup_common.h>
 #include <test/util/time.h>
 #include <util/check.h>
-#include <util/time.h>
 #include <wallet/context.h>
 #include <wallet/crypter.h>
 #include <wallet/db.h>
@@ -23,6 +22,7 @@
 #include <wallet/walletutil.h>
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <string>
 #include <utility>

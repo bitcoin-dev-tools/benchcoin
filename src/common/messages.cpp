@@ -7,6 +7,7 @@
 
 #include <common/types.h>
 #include <node/types.h>
+#include <policy/fees/block_policy_estimator.h>
 #include <tinyformat.h>
 #include <util/check.h>
 #include <util/fees.h>
@@ -27,9 +28,12 @@ namespace common {
 std::string StringForFeeReason(FeeReason reason)
 {
     static const std::map<FeeReason, std::string> fee_reason_strings = {
-        {FeeReason::FEE_RATE_ESTIMATOR, "Fee Rate Estimator"},
+        {FeeReason::NONE, "None"},
+        {FeeReason::HALF_ESTIMATE, "Half Target 60% Threshold"},
+        {FeeReason::FULL_ESTIMATE, "Target 85% Threshold"},
+        {FeeReason::DOUBLE_ESTIMATE, "Double Target 95% Threshold"},
+        {FeeReason::CONSERVATIVE, "Conservative Double Target longer horizon"},
         {FeeReason::MEMPOOL_MIN, "Mempool Min Fee"},
-        {FeeReason::USER_SPECIFIED, "User Specified Fee"},
         {FeeReason::FALLBACK, "Fallback fee"},
         {FeeReason::REQUIRED, "Minimum Required Fee"},
     };
@@ -56,9 +60,13 @@ std::string FeeModeInfo(const std::pair<std::string, FeeEstimateMode>& mode, std
         case FeeEstimateMode::UNSET:
             return strprintf("%s means no mode set (%s). \n", mode.first, default_info);
         case FeeEstimateMode::ECONOMICAL:
-            return strprintf("%s mode potentially returns a lower fee rate estimate.\n", mode.first);
+            return strprintf("%s estimates use a shorter time horizon, making them more\n"
+                   "responsive to short-term drops in the prevailing fee market. This mode\n"
+                   "potentially returns a lower fee rate estimate.\n", mode.first);
         case FeeEstimateMode::CONSERVATIVE:
-            return strprintf("%s potentially returns a higher fee rate estimate.\n", mode.first);
+            return strprintf("%s estimates use a longer time horizon, making them\n"
+                   "less responsive to short-term drops in the prevailing fee market. This mode\n"
+                   "potentially returns a higher fee rate estimate.\n", mode.first);
     } // no default case, so the compiler can warn about missing cases
     assert(false);
 }
@@ -111,6 +119,8 @@ bilingual_str PSBTErrorString(PSBTError err)
             return Untranslated("Input needs additional signatures or other data");
         case PSBTError::INVALID_TX:
             return Untranslated("The transaction cannot be valid");
+        case PSBTError::OK:
+            return Untranslated("No errors");
     } // no default case, so the compiler can warn about missing cases
     assert(false);
 }

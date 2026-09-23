@@ -27,7 +27,7 @@
 #include <sys/un.h>
 #endif
 
-using util::ContainsNUL;
+using util::ContainsNoNUL;
 
 // Settings
 static GlobalMutex g_proxyinfo_mutex;
@@ -143,7 +143,7 @@ std::vector<std::string> GetNetworkNames(bool append_unroutable)
 
 static std::vector<CNetAddr> LookupIntern(const std::string& name, unsigned int nMaxSolutions, bool fAllowLookup, DNSLookupFn dns_lookup_function)
 {
-    if (ContainsNUL(name)) return {};
+    if (!ContainsNoNUL(name)) return {};
     {
         CNetAddr addr;
         // From our perspective, onion addresses are not hostnames but rather
@@ -172,7 +172,7 @@ static std::vector<CNetAddr> LookupIntern(const std::string& name, unsigned int 
 
 std::vector<CNetAddr> LookupHost(const std::string& name, unsigned int nMaxSolutions, bool fAllowLookup, DNSLookupFn dns_lookup_function)
 {
-    if (ContainsNUL(name)) return {};
+    if (!ContainsNoNUL(name)) return {};
     std::string strHost = name;
     if (strHost.empty()) return {};
     if (strHost.front() == '[' && strHost.back() == ']') {
@@ -190,7 +190,7 @@ std::optional<CNetAddr> LookupHost(const std::string& name, bool fAllowLookup, D
 
 std::vector<CService> Lookup(const std::string& name, uint16_t portDefault, bool fAllowLookup, unsigned int nMaxSolutions, DNSLookupFn dns_lookup_function)
 {
-    if (name.empty() || ContainsNUL(name)) {
+    if (name.empty() || !ContainsNoNUL(name)) {
         return {};
     }
     uint16_t port{portDefault};
@@ -215,7 +215,7 @@ std::optional<CService> Lookup(const std::string& name, uint16_t portDefault, bo
 
 CService LookupNumeric(const std::string& name, uint16_t portDefault, DNSLookupFn dns_lookup_function)
 {
-    if (ContainsNUL(name)) {
+    if (!ContainsNoNUL(name)) {
         return {};
     }
     // "1.2:345" will fail to resolve the ip, but will still set the port.
@@ -832,7 +832,7 @@ CSubNet LookupSubNet(const std::string& subnet_str)
 {
     CSubNet subnet;
     assert(!subnet.IsValid());
-    if (ContainsNUL(subnet_str)) {
+    if (!ContainsNoNUL(subnet_str)) {
         return subnet;
     }
 

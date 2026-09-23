@@ -7,13 +7,11 @@
 
 #include <consensus/amount.h>
 #include <policy/feerate.h>
-#include <primitives/transaction_identifier.h>
 #include <random.h>
 #include <sync.h>
 #include <uint256.h>
-#include <util/expected.h>
-#include <util/fees.h>
 #include <util/fs.h>
+#include <validationinterface.h>
 
 #include <array>
 #include <chrono>
@@ -24,7 +22,10 @@
 #include <vector>
 
 
-/** Block policy estimate files that are more than 60 hours (2.5 days) old will not be read,
+// How often to flush fee estimates to fee_estimates.dat.
+inline constexpr std::chrono::hours FEE_FLUSH_INTERVAL{1};
+
+/** fee_estimates.dat that are more than 60 hours (2.5 days) old will not be read,
  * as fee estimates are based on historical data and may be inaccurate if
  * network activity has changed.
  */
@@ -55,15 +56,16 @@ inline constexpr auto ALL_FEE_ESTIMATE_HORIZONS = std::array{
 std::string StringForFeeEstimateHorizon(FeeEstimateHorizon horizon);
 
 /* Enumeration of reason for returned fee estimate */
-enum class BlockPolicyEstimateReason {
+enum class FeeReason {
     NONE,
     HALF_ESTIMATE,
     FULL_ESTIMATE,
     DOUBLE_ESTIMATE,
     CONSERVATIVE,
+    MEMPOOL_MIN,
+    FALLBACK,
+    REQUIRED,
 };
-
-std::string StringForBlockPolicyEstimateReason(BlockPolicyEstimateReason reason);
 
 /* Used to return detailed information about a feerate bucket */
 struct EstimatorBucket
@@ -88,7 +90,7 @@ struct EstimationResult
 struct FeeCalculation
 {
     EstimationResult est;
-    BlockPolicyEstimateReason reason = BlockPolicyEstimateReason::NONE;
+    FeeReason reason = FeeReason::NONE;
     int desiredTarget = 0;
     int returnedTarget = 0;
     unsigned int best_height{0};
@@ -142,7 +144,7 @@ struct FeeCalculation
  * a certain number of blocks.  Every time a block is added to the best chain, this class records
  * stats on the transactions included in that block
  */
-class CBlockPolicyEstimator
+class CBlockPolicyEstimator : public CValidationInterface
 {
 private:
     /** Track confirm delays up to 12 blocks for short horizon */
@@ -261,14 +263,14 @@ public:
     /** Calculates the age of the file, since last modified */
     std::chrono::hours GetFeeEstimatorFileAge();
 
-    /** Return the highest confirmation target for which an estimate can be provided. */
-    unsigned int MaximumTarget() const
+protected:
+    /** Overridden from CValidationInterface. */
+    void TransactionAddedToMempool(const NewMempoolTransactionInfo& tx, uint64_t /*unused*/) override
         EXCLUSIVE_LOCKS_REQUIRED(!m_cs_fee_estimator);
-
-    /** Estimate the feerate needed to confirm within @p target blocks; wraps estimateSmartFee into a FeeRateEstimation. */
-    util::Expected<FeeRateEstimation, FeeRateEstimationError> EstimateFeeRate(int target, bool conservative) const
+    void TransactionRemovedFromMempool(const CTransactionRef& tx, MemPoolRemovalReason /*unused*/, uint64_t /*unused*/) override
         EXCLUSIVE_LOCKS_REQUIRED(!m_cs_fee_estimator);
-
+    void MempoolTransactionsRemovedForBlock(const std::vector<RemovedMempoolTransactionInfo>& txs_removed_for_block, unsigned int nBlockHeight) override
+        EXCLUSIVE_LOCKS_REQUIRED(!m_cs_fee_estimator);
 
 private:
     mutable Mutex m_cs_fee_estimator;

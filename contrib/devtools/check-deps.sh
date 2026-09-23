@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-export LC_ALL=C.UTF-8
+export LC_ALL=C
 set -Eeuo pipefail
 
 # Declare paths to libraries

@@ -22,16 +22,16 @@ namespace leveldb {
 // Grouping of constants.  We may want to make some of these
 // parameters set via options.
 namespace config {
-inline constexpr int kNumLevels{7};
+static const int kNumLevels = 7;
 
 // Level-0 compaction is started when we hit this many files.
-inline constexpr int kL0_CompactionTrigger{4};
+static const int kL0_CompactionTrigger = 4;
 
 // Soft limit on number of level-0 files.  We slow down writes at this point.
-inline constexpr int kL0_SlowdownWritesTrigger{8};
+static const int kL0_SlowdownWritesTrigger = 8;
 
 // Maximum number of level-0 files.  We stop writes at this point.
-inline constexpr int kL0_StopWritesTrigger{12};
+static const int kL0_StopWritesTrigger = 12;
 
 // Maximum level to which a new compacted memtable is pushed if it
 // does not create overlap.  We try to push to level 2 to avoid the
@@ -39,10 +39,10 @@ inline constexpr int kL0_StopWritesTrigger{12};
 // expensive manifest file operations.  We do not push all the way to
 // the largest level since that can generate a lot of wasted disk
 // space if the same key space is being repeatedly overwritten.
-inline constexpr int kMaxMemCompactLevel{2};
+static const int kMaxMemCompactLevel = 2;
 
 // Approximate gap in bytes between samples of data read during iteration.
-inline constexpr int kReadBytesPeriod{1048576};
+static const int kReadBytesPeriod = 1048576;
 
 }  // namespace config
 
@@ -58,13 +58,13 @@ enum ValueType { kTypeDeletion = 0x0, kTypeValue = 0x1 };
 // and the value type is embedded as the low 8 bits in the sequence
 // number in internal keys, we need to use the highest-numbered
 // ValueType, not the lowest).
-inline constexpr ValueType kValueTypeForSeek{kTypeValue};
+static const ValueType kValueTypeForSeek = kTypeValue;
 
 typedef uint64_t SequenceNumber;
 
 // We leave eight bits empty at the bottom so a type and sequence#
 // can be packed together into 64-bits.
-inline constexpr SequenceNumber kMaxSequenceNumber{((0x1ull << 56) - 1)};
+static const SequenceNumber kMaxSequenceNumber = ((0x1ull << 56) - 1);
 
 struct ParsedInternalKey {
   Slice user_key;

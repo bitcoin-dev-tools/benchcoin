@@ -8,6 +8,7 @@
 #include <uint256.h>
 #include <util/check.h>
 
+#include <initializer_list>
 #include <utility>
 #include <vector>
 

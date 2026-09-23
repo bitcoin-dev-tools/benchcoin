@@ -74,10 +74,10 @@ class Footer {
 // kTableMagicNumber was picked by running
 //    echo http://code.google.com/p/leveldb/ | sha1sum
 // and taking the leading 64 bits.
-inline constexpr uint64_t kTableMagicNumber{0xdb4775248b80fb57ull};
+static const uint64_t kTableMagicNumber = 0xdb4775248b80fb57ull;
 
 // 1-byte type + 32-bit crc
-inline constexpr size_t kBlockTrailerSize{5};
+static const size_t kBlockTrailerSize = 5;
 
 struct BlockContents {
   Slice data;           // Actual contents of data

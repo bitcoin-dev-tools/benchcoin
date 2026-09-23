@@ -5,22 +5,19 @@
 #include <rpc/server_util.h>
 
 #include <chain.h>
+#include <common/args.h>
+#include <net_processing.h>
 #include <node/context.h>
 #include <node/miner.h>
+#include <policy/fees/block_policy_estimator.h>
 #include <pow.h>
-#include <primitives/block.h>
 #include <rpc/protocol.h>
 #include <rpc/request.h>
-#include <uint256.h>
+#include <txmempool.h>
 #include <util/any.h>
+#include <validation.h>
 
 #include <any>
-#include <memory>
-#include <string>
-
-namespace Consensus {
-struct Params;
-} // namespace Consensus
 
 using node::NodeContext;
 using node::UpdateTime;
@@ -87,17 +84,17 @@ ChainstateManager& EnsureAnyChainman(const std::any& context)
     return EnsureChainman(EnsureAnyNodeContext(context));
 }
 
-FeeRateEstimatorManager& EnsureFeeEstimatorMan(const NodeContext& node)
+CBlockPolicyEstimator& EnsureFeeEstimator(const NodeContext& node)
 {
-    if (!node.fee_estimator_man) {
+    if (!node.fee_estimator) {
         throw JSONRPCError(RPC_INTERNAL_ERROR, "Fee estimation disabled");
     }
-    return *node.fee_estimator_man;
+    return *node.fee_estimator;
 }
 
-FeeRateEstimatorManager& EnsureAnyFeeEstimatorMan(const std::any& context)
+CBlockPolicyEstimator& EnsureAnyFeeEstimator(const std::any& context)
 {
-    return EnsureFeeEstimatorMan(EnsureAnyNodeContext(context));
+    return EnsureFeeEstimator(EnsureAnyNodeContext(context));
 }
 
 CConnman& EnsureConnman(const NodeContext& node)

@@ -162,7 +162,11 @@ bool ExecuteWalletToolFunc(const ArgsManager& args, const std::string& command)
         return ret;
     } else if (command == "createfromdump") {
         bilingual_str error;
-        bool ret = CreateFromDump(args, name, path, error);
+        std::vector<bilingual_str> warnings;
+        bool ret = CreateFromDump(args, name, path, error, warnings);
+        for (const auto& warning : warnings) {
+            tfm::format(std::cout, "%s\n", warning.original);
+        }
         if (!ret && !error.empty()) {
             tfm::format(std::cerr, "%s\n", error.original);
         }

@@ -11,7 +11,6 @@ add_library(bitcoin_util STATIC EXCLUDE_FROM_ALL
   check.cpp
   exec.cpp
   exception.cpp
-  fees.cpp
   feefrac.cpp
   fs.cpp
   fs_helpers.cpp

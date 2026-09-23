@@ -13,7 +13,6 @@
 
 #include <algorithm>
 #include <cstddef>
-#include <variant>
 
 const SigningProvider& DUMMY_SIGNING_PROVIDER = SigningProvider();
 

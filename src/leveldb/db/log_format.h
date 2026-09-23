@@ -22,12 +22,12 @@ enum RecordType {
   kMiddleType = 3,
   kLastType = 4
 };
-inline constexpr int kMaxRecordType{kLastType};
+static const int kMaxRecordType = kLastType;
 
-inline constexpr int kBlockSize{32768};
+static const int kBlockSize = 32768;
 
 // Header is checksum (4 bytes), length (2 bytes), type (1 byte).
-inline constexpr int kHeaderSize{4 + 2 + 1};
+static const int kHeaderSize = 4 + 2 + 1;
 
 }  // namespace log
 }  // namespace leveldb

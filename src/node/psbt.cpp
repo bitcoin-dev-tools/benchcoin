@@ -72,8 +72,7 @@ PSBTAnalysis AnalyzePSBT(PartiallySignedTransaction psbtx)
 
             // Figure out what is missing
             SignatureData outdata;
-            const auto sign_result = SignPSBTInput(DUMMY_SIGNING_PROVIDER, psbtx, i, &txdata, /*options*/{}, &outdata);
-            bool complete = sign_result.has_value();
+            bool complete = SignPSBTInput(DUMMY_SIGNING_PROVIDER, psbtx, i, &txdata, /*options=*/{}, &outdata) == PSBTError::OK;
 
             // Things are missing
             if (!complete) {
@@ -131,8 +130,7 @@ PSBTAnalysis AnalyzePSBT(PartiallySignedTransaction psbtx)
             PSBTInput& input = psbtx.inputs[i];
             Coin newcoin;
 
-            const auto sign_result = SignPSBTInput(DUMMY_SIGNING_PROVIDER, psbtx, i, nullptr, /*options=*/{});
-            if (!sign_result.has_value() || !input.GetUTXO(newcoin.out)) {
+            if (SignPSBTInput(DUMMY_SIGNING_PROVIDER, psbtx, i, nullptr, /*options=*/{}) != PSBTError::OK || !input.GetUTXO(newcoin.out)) {
                 success = false;
                 break;
             } else {

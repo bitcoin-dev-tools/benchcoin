@@ -13,15 +13,13 @@
 #include <node/txorphanage.h>
 #include <primitives/transaction.h>
 #include <policy/packages.h>
-#include <random.h>
 #include <txrequest.h>
 
 class CTxMemPool;
 namespace node {
 class TxDownloadManagerImpl {
 public:
-    const CTxMemPool& m_mempool;
-    FastRandomContext m_rng;
+    TxDownloadOptions m_opts;
 
     /** Manages unvalidated tx data (orphan transactions for which we are downloading ancestors). */
     std::unique_ptr<TxOrphanage> m_orphanage;
@@ -130,12 +128,7 @@ public:
         return *m_lazy_recent_confirmed_transactions;
     }
 
-    TxDownloadManagerImpl(const TxDownloadOptions& options)
-        : m_mempool{options.m_mempool},
-          m_rng{options.m_deterministic_txrequest},
-          m_orphanage{MakeTxOrphanage()},
-          m_txrequest{options.m_deterministic_txrequest}
-    {}
+    TxDownloadManagerImpl(const TxDownloadOptions& options) : m_opts{options}, m_orphanage{MakeTxOrphanage()}, m_txrequest{options.m_deterministic_txrequest} {}
 
     struct PeerInfo {
         /** Information relevant to scheduling tx requests. */

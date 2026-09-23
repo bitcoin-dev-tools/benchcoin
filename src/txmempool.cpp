@@ -402,7 +402,7 @@ void CTxMemPool::removeConflicts(const CTransaction &tx)
     }
 }
 
-std::vector<RemovedMempoolTransactionInfo> CTxMemPool::removeForBlock(const std::vector<CTransactionRef>& vtx)
+void CTxMemPool::removeForBlock(const std::vector<CTransactionRef>& vtx, unsigned int nBlockHeight)
 {
     // Remove confirmed txs and conflicts when a new block is connected, updating the fee logic
     AssertLockHeld(cs);
@@ -420,12 +420,14 @@ std::vector<RemovedMempoolTransactionInfo> CTxMemPool::removeForBlock(const std:
             ClearPrioritisation(tx->GetHash());
         }
     }
+    if (m_opts.signals) {
+        m_opts.signals->MempoolTransactionsRemovedForBlock(txs_removed_for_block, nBlockHeight);
+    }
     lastRollingFeeUpdate = GetTime();
     blockSinceLastRollingFeeBump = true;
     if (!m_txgraph->DoWork(/*max_cost=*/POST_CHANGE_COST)) {
         LogDebug(BCLog::MEMPOOL, "Mempool in non-optimal ordering after block.");
     }
-    return txs_removed_for_block;
 }
 
 void CTxMemPool::check(const CCoinsViewCache& active_coins_tip, int64_t spendheight) const

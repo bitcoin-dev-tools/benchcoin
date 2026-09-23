@@ -5,7 +5,9 @@
 #include <bench/bench.h>
 #include <crypto/chacha20.h>
 #include <crypto/chacha20poly1305.h>
-#include <util/byte_units.h>
+// IWYU incorrectly suggests removing this header.
+// See https://github.com/include-what-you-use/include-what-you-use/issues/2014.
+#include <util/byte_units.h> // IWYU pragma: keep
 
 #include <cstddef>
 #include <cstdint>

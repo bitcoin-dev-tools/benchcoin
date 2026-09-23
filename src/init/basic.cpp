@@ -2,11 +2,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include <interfaces/init.h> // IWYU pragma: associated
-
+#include <interfaces/init.h>
 #include <interfaces/ipc.h>
-
-#include <memory>
 
 namespace init {
 namespace {

@@ -34,6 +34,7 @@
 #include <txmempool.h>
 #include <uint256.h>
 #include <util/check.h>
+#include <util/task_runner.h>
 #include <util/time.h>
 #include <validation.h>
 #include <validationinterface.h>
@@ -47,6 +48,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -102,6 +104,15 @@ public:
 };
 
 
+//! Used to run tasks in a std::thread to avoid DEBUG_LOCKORDER false positives.
+class ImmediateBackgroundTaskRunner : public util::TaskRunnerInterface
+{
+public:
+    void insert(std::function<void()> func) override { std::thread(std::move(func)).join(); }
+    void flush() override {}
+    size_t size() override { return 0; }
+};
+
 } // namespace
 
 extern void MakeRandDeterministicDANGEROUS(const uint256& seed) noexcept;
@@ -126,8 +137,6 @@ FUZZ_TARGET(cmpctblock, .init = initialize_cmpctblock)
     FakeSteadyClock steady_clock;
 
     auto setup = g_setup;
-    auto& connman = *static_cast<ConnmanTestMsg*>(setup->m_node.connman.get());
-    connman.Reset();
     auto& mempool = *setup->m_node.mempool;
     auto& chainman = static_cast<TestChainstateManager&>(*setup->m_node.chainman);
     chainman.ResetIbd();
@@ -135,6 +144,7 @@ FUZZ_TARGET(cmpctblock, .init = initialize_cmpctblock)
     const size_t initial_index_size{WITH_LOCK(chainman.GetMutex(), return chainman.BlockIndex().size())};
 
     AddrMan addrman{*setup->m_node.netgroupman, /*deterministic=*/true, /*consistency_check_ratio=*/0};
+    auto& connman = *static_cast<ConnmanTestMsg*>(setup->m_node.connman.get());
     auto peerman = PeerManager::make(connman, addrman,
                                      /*banman=*/nullptr, chainman,
                                      mempool, *setup->m_node.warnings,

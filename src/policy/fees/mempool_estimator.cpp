@@ -232,6 +232,12 @@ bool MemPoolFeeRateEstimator::Read(AutoFile& file)
                            active_tip->height, active_tip->hash.ToString());
                 return false;
             }
+            // Blocks connected during IBD are not reported to fee estimators, so a restored window would miss them
+            if (m_chainman.IsInitialBlockDownload()) {
+                LogDebug(BCLog::ESTIMATEFEE, "%s: Mined-block stats read end at height %s, but blocks connected during initial block download are not tracked; ignoring file",
+                         FeeRateEstimatorTypeToString(FeeRateEstimatorType::MEMPOOL_POLICY), last_block.m_height);
+                return false;
+            }
         }
         LOCK(cs);
         m_prev_mined_blocks = std::move(blocks);

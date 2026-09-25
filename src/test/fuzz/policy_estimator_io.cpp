@@ -10,6 +10,7 @@
 #include <test/fuzz/fuzz.h>
 #include <test/fuzz/util.h>
 #include <test/util/setup_common.h>
+#include <test/util/validation.h>
 
 #include <memory>
 
@@ -22,6 +23,7 @@ void initialize_policy_estimator_io()
     static const auto testing_setup{
         MakeNoLogFileContext<const TestingSetup>(ChainType::REGTEST, TestOpts{.setup_net = false})};
     g_setup = testing_setup.get();
+    static_cast<TestChainstateManager&>(*g_setup->m_node.chainman).JumpOutOfIbd();
 }
 
 FUZZ_TARGET(policy_estimator_io, .init = initialize_policy_estimator_io)

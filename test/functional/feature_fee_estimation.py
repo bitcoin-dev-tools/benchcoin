@@ -571,6 +571,31 @@ class EstimateFeeTest(BitcoinTestFramework):
         verify_estimate_response(combined_estimate, floor, [])
         assert_equal(combined_estimate["estimator"], "mempool_policy")
 
+    def test_mempool_estimates_during_ibd(self):
+        node0 = self.nodes[0]
+        miner = self.nodes[1]
+        self.connect_nodes(0, 1)
+        self.connect_nodes(0, 2)
+        # A new tip invalidates the cached empty-mempool estimate
+        self.generate(node0, 1)
+        num_txs = 10
+        target_vsize = int(((MAX_BLOCK_WEIGHT - DEFAULT_BLOCK_RESERVED_WEIGHT) / WITNESS_SCALE_FACTOR) / num_txs)
+        backlog_feerate = Decimal("0.00004")
+        self.send_transactions([self.wallet.get_utxo(confirmed_only=True) for _ in range(num_txs)], backlog_feerate, target_vsize)
+        self.sync_mempools(wait=0.1)
+        verify_estimate_response(node0.estimatesmartfee(1, "economical"), backlog_feerate, [])
+
+        self.stop_node(0)
+        self.generateblock(miner, output=self.wallet.get_address(), transactions=miner.getrawmempool(), sync_fun=self.no_op)
+        self.start_node(0, extra_args=[f"-mocktime={int(time.time()) + 2 * 24 * SECONDS_PER_HOUR}"])
+        assert_equal(node0.getmempoolinfo()["size"], num_txs)
+        self.connect_nodes(0, 1)
+        self.sync_blocks([node0, miner], wait=0.1)
+        assert node0.getblockchaininfo()["initialblockdownload"]
+        assert_equal(node0.getmempoolinfo()["size"], 0)
+        verify_estimate_response(node0.estimatesmartfee(1, "economical", {"fee_rate_estimator": "mempool_policy"}), None, ["mempool_policy: Not enough recent block data for fee rate estimation"])
+        self.restart_node(0)
+
     def test_stale_mempool_block_stats_are_rejected_on_load(self):
         # Persisted mempool block stats must be tied to the best block hash,
         # not just height, because a reorg can replace the tip without
@@ -667,6 +692,9 @@ class EstimateFeeTest(BitcoinTestFramework):
         self.log.info("Test that estimatesmartfee returns mempool estimates when lower")
         self.clear_estimates()
         self.test_estimatesmartfee_return_mempool_estimates()
+
+        self.log.info("Test mempool estimates after restarting into IBD")
+        self.test_mempool_estimates_during_ibd()
 
         self.log.info("Test that stale mempool block stats are rejected on load")
         self.test_stale_mempool_block_stats_are_rejected_on_load()

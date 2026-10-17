@@ -15475,6 +15475,37 @@
     },
     {
       "date": "2026-10-16",
+      "commit": "924f4c4ac78b0cd3b917c694f42c0651a6f3003a",
+      "mean": 1731.71388283948,
+      "stddev": 0.806844265504907,
+      "runs": 2,
+      "config": {
+        "full_ibd": false,
+        "start_height": 840000,
+        "runs": 2,
+        "instrumentation": "uninstrumented",
+        "bitcoind": {
+          "stopatheight": 900000,
+          "chain": "main",
+          "connect": "148.251.128.115:33333",
+          "prune": 1000000,
+          "daemon": false,
+          "printtoconsole": false,
+          "dbcache": 450
+        }
+      },
+      "machine": {
+        "cpu_model": "AMD Ryzen 7 7700 8-Core Processor",
+        "architecture": "x86_64",
+        "cpu_cores": 16,
+        "disk_type": "NVMe SSD",
+        "os_kernel": "6.6.119",
+        "total_ram_gb": 62.0
+      },
+      "run_date": "2026-10-17"
+    },
+    {
+      "date": "2026-10-16",
       "commit": "38ac0d530ff0dfcf43997698808675a9d7e0b5a7",
       "mean": 1914.68994829436,
       "stddev": 17.416976706592997,
@@ -15503,6 +15534,37 @@
         "total_ram_gb": 62.0
       },
       "run_date": "2026-10-16"
+    },
+    {
+      "date": "2026-10-16",
+      "commit": "924f4c4ac78b0cd3b917c694f42c0651a6f3003a",
+      "mean": 1926.39202378442,
+      "stddev": 13.582800948229336,
+      "runs": 2,
+      "config": {
+        "full_ibd": false,
+        "start_height": 840000,
+        "runs": 2,
+        "instrumentation": "uninstrumented",
+        "bitcoind": {
+          "stopatheight": 900000,
+          "chain": "main",
+          "connect": "148.251.128.115:33333",
+          "prune": 1000000,
+          "daemon": false,
+          "printtoconsole": false,
+          "dbcache": 32000
+        }
+      },
+      "machine": {
+        "cpu_model": "AMD Ryzen 7 7700 8-Core Processor",
+        "architecture": "x86_64",
+        "cpu_cores": 16,
+        "disk_type": "NVMe SSD",
+        "os_kernel": "6.6.119",
+        "total_ram_gb": 62.0
+      },
+      "run_date": "2026-10-17"
     }
   ]
 }

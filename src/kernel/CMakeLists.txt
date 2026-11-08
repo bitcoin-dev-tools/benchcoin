@@ -75,6 +75,7 @@ add_library(bitcoinkernel
   ../util/threadnames.cpp
   ../util/time.cpp
   ../util/tokenpipe.cpp
+  ../txhashing.cpp
   ../validation.cpp
   ../validationinterface.cpp
   ../versionbits.cpp

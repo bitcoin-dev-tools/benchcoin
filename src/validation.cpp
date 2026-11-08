@@ -3799,9 +3799,14 @@ bool Chainstate::ActivateBestChain(BlockValidationState& state, std::shared_ptr<
                 staged.time_start = SteadyClock::now();
                 // Read the block from disk, with no lock held unless the step is a reorg. The position was
                 // captured when the batch was planned; a block above the tip is never pruned meanwhile.
+                std::shared_ptr<const CBlock> from_cache{m_chainman.m_block_cache.Take(pindexConnect->nHeight, pindexConnect->GetBlockHash())};
                 if (pblock && pindexConnect == step->target && pblock->GetHash() == pindexConnect->GetBlockHash()) {
                     staged.block = pblock;
                     LogDebug(BCLog::BENCH, "  - Using cached block\n");
+                } else if (from_cache) {
+                    // Received and checked earlier, before its parent could be connected.
+                    staged.block = std::move(from_cache);
+                    LogDebug(BCLog::BENCH, "  - Using block from the cache\n");
                 } else {
                     if (!reorg_lock_main) AssertLockNotHeld(::cs_main);
                     std::shared_ptr<CBlock> pblockNew = std::make_shared<CBlock>();
@@ -4990,6 +4995,7 @@ bool ChainstateManager::ProcessNewBlock(const std::shared_ptr<const CBlock>& blo
                 return failed();
             }
             if (!FinishAcceptBlock(*block, state, prepared, written)) return failed();
+            m_block_cache.Insert(prepared.pindex->nHeight, block, ActiveHeight());
         }
     }
 
@@ -5611,8 +5617,10 @@ void ChainstateManager::LoadExternalBlockFile(
                         nRewind = blkdat.GetPos();
 
                         BlockValidationState state;
-                        if (AcceptBlock(pblock, state, nullptr, true, dbp, nullptr, true)) {
+                        CBlockIndex* accepted{nullptr};
+                        if (AcceptBlock(pblock, state, &accepted, true, dbp, nullptr, true)) {
                             nLoaded++;
+                            if (accepted) m_block_cache.Insert(accepted->nHeight, pblock, ActiveHeight());
                         }
                         if (state.IsError()) {
                             break;
@@ -6723,6 +6731,7 @@ static ChainstateManager::Options&& Flatten(ChainstateManager::Options&& opts)
 
 ChainstateManager::ChainstateManager(const util::SignalInterrupt& interrupt, Options options, node::BlockManager::Options blockman_options)
     : m_script_check_queue{/*batch_size=*/128, std::clamp(options.worker_threads_num, 0, MAX_SCRIPTCHECK_THREADS)},
+      m_block_cache{options.block_cache_bytes},
       m_interrupt{interrupt},
       m_options{Flatten(std::move(options))},
       m_blockman{interrupt, std::move(blockman_options)},
@@ -6741,6 +6750,10 @@ ChainstateManager::ChainstateManager(const util::SignalInterrupt& interrupt, Opt
 ChainstateManager::~ChainstateManager()
 {
     if (m_options.signals) m_options.signals->SetPreSyncHook({});
+    if (m_block_cache.Budget() > 0) {
+        const auto [hits, misses]{m_block_cache.HitsAndMisses()};
+        LogInfo("Block cache: %u blocks connected from it, %u not in it", hits, misses);
+    }
     LOCK(::cs_main);
 
     m_versionbitscache.Clear();

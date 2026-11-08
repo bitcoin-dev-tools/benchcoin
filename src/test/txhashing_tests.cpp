@@ -18,6 +18,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -137,6 +138,59 @@ bool CheckBlockBytes(std::span<const std::byte> bytes, ThreadPool* pool)
     return generic_ok;
 }
 
+//! A stream that hides its buffer: the deserialising constructor must fall back to serialise-and-hash.
+struct OpaqueReader {
+    SpanReader& inner;
+    void read(std::span<std::byte> dst) { inner.read(dst); }
+    template <typename T>
+    OpaqueReader& operator>>(T&& obj)
+    {
+        ::Unserialize(*this, obj);
+        return *this;
+    }
+};
+static_assert(ContiguousInputStream<SpanReader>);
+static_assert(ContiguousInputStream<DataStream>);
+static_assert(!ContiguousInputStream<OpaqueReader>);
+
+//! Deserialise one transaction's bytes with the hook-free path (hashes by serialising again) and through the
+//! deserialising constructor over a SpanReader, a DataStream and an opaque stream; all must fail together or agree.
+bool CheckTransactionBytes(std::span<const std::byte> bytes, const TransactionSerParams& params)
+{
+    bool plain_ok{true};
+    CMutableTransaction plain;
+    size_t plain_consumed{0};
+    try {
+        SpanReader reader{bytes};
+        UnserializeTransaction(plain, reader, params);
+        plain_consumed = bytes.size() - reader.size();
+    } catch (const std::ios_base::failure&) {
+        plain_ok = false;
+    }
+    const auto check{[&](auto make_stream, auto remaining) {
+        bool ok{true};
+        std::optional<CTransaction> tx;
+        auto stream{make_stream()};
+        try {
+            tx.emplace(deserialize, params, stream);
+        } catch (const std::ios_base::failure&) {
+            ok = false;
+        }
+        BOOST_CHECK_EQUAL(plain_ok, ok);
+        if (!plain_ok || !ok) return;
+        BOOST_CHECK_EQUAL(bytes.size() - remaining(stream), plain_consumed);
+        BOOST_CHECK(tx->GetHash() == ReserializedTxid(*tx));
+        BOOST_CHECK(tx->GetWitnessHash() == ReserializedWtxid(*tx));
+        BOOST_CHECK(tx->GetHash() == plain.GetHash());
+        BOOST_CHECK_EQUAL(tx->HasWitness(), plain.HasWitness());
+    }};
+    check([&] { return SpanReader{bytes}; }, [](const SpanReader& s) { return s.size(); });
+    check([&] { return DataStream{bytes}; }, [](const DataStream& s) { return s.size(); });
+    SpanReader opaque_inner{bytes};
+    check([&] { return OpaqueReader{opaque_inner}; }, [](const OpaqueReader& s) { return s.inner.size(); });
+    return plain_ok;
+}
+
 } // namespace
 
 BOOST_AUTO_TEST_CASE(transaction_hashes_from_bytes)
@@ -151,6 +205,9 @@ BOOST_AUTO_TEST_CASE(transaction_hashes_from_bytes)
             BOOST_CHECK(tx.vin.empty() && !tx.vout.empty());
             ++misparsed;
         }
+        CheckTransactionBytes(Bytes(TX_WITH_WITNESS(tx)), TX_WITH_WITNESS);
+        BOOST_CHECK(CheckTransactionBytes(Bytes(TX_NO_WITNESS(tx)), TX_NO_WITNESS));
+        CheckTransactionBytes(Bytes(TX_WITH_WITNESS(tx)), TX_NO_WITNESS);
     }
     BOOST_CHECK(parsed_with_witness > 100);
     BOOST_CHECK(parsed_without > 100);
@@ -172,6 +229,7 @@ BOOST_AUTO_TEST_CASE(transaction_hashes_on_damaged_bytes)
             bytes.resize(m_rng.randrange(bytes.size()));
         }
         CheckBlockBytes(BlockAround(bytes), nullptr);
+        CheckTransactionBytes(bytes, TX_WITH_WITNESS);
     }
 }
 

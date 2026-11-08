@@ -545,11 +545,22 @@ bool BlockManager::LoadBlockIndex(const std::optional<uint256>& snapshot_blockha
 void BlockManager::WriteBlockIndexDB()
 {
     AssertLockHeld(::cs_main);
-    auto batch{PrepareBlockIndexBatch()};
-    m_block_tree_db->CommitBatch(*batch);
+    CommitBlockIndexBatch(PrepareBlockIndexBatch());
 }
 
-std::unique_ptr<CDBBatch> BlockManager::PrepareBlockIndexBatch()
+void BlockManager::CommitBlockIndexBatch(const IndexBatch& batch)
+{
+    LOCK(m_index_commit_mutex);
+    // A later batch is committed already. What it wrote of the same entries is newer; the entries only this
+    // batch held are not written, and are not dirty any more. The one caller that can meet this is a
+    // write-out run whose completion was applied late, behind a synchronous flush, and that flush wrote
+    // the whole index after settling the run.
+    if (batch.generation <= m_index_batch_committed) return;
+    Assert(batch.db)->CommitBatch(*batch.batch);
+    m_index_batch_committed = batch.generation;
+}
+
+BlockManager::IndexBatch BlockManager::PrepareBlockIndexBatch()
 {
     AssertLockHeld(::cs_main);
     std::vector<std::pair<int, const CBlockFileInfo*>> vFiles;
@@ -565,7 +576,7 @@ std::unique_ptr<CDBBatch> BlockManager::PrepareBlockIndexBatch()
         m_dirty_blockindex.erase(it++);
     }
     int max_blockfile{this->MaxBlockfileNum()};
-    return m_block_tree_db->PrepareBatch(vFiles, max_blockfile, vBlocks);
+    return IndexBatch{m_block_tree_db->PrepareBatch(vFiles, max_blockfile, vBlocks), ++m_index_batch_generation, m_block_tree_db.get()};
 }
 
 std::optional<std::pair<FlatFilePos, FlatFilePos>> BlockManager::ChainstateBlockFileFlushPositions(int tip_height)

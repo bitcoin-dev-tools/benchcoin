@@ -11,6 +11,7 @@
 #include <chain.h>
 #include <checkqueue.h>
 #include <coins.h>
+#include <coinsstore.h>
 #include <consensus/amount.h>
 #include <cuckoocache.h>
 #include <deploymentstatus.h>
@@ -589,11 +590,11 @@ public:
     //! This view wraps access to the leveldb instance and handles read errors gracefully.
     CCoinsViewErrorCatcher m_catcherview GUARDED_BY(cs_main);
 
-    //! This is the top layer of the cache hierarchy - it keeps as many coins in memory as
-    //! can fit per the dbcache setting.
-    std::unique_ptr<CCoinsViewCache> m_cacheview GUARDED_BY(cs_main);
+    //! This is the top layer of the cache hierarchy: the young tier of the UTXO set, holding every coin
+    //! changed since it was last written out and as many clean coins as fit per the dbcache setting.
+    std::unique_ptr<CoinsStore> m_store GUARDED_BY(cs_main);
 
-    //! Reused CoinsViewOverlay layered on top of m_cacheview and passed to ConnectBlock().
+    //! Reused CoinsViewOverlay layered on top of m_store and passed to ConnectBlock().
     //! Reset between calls and flushed only on success, so invalid blocks don't pollute the underlying cache.
     std::unique_ptr<CoinsViewOverlay> m_connect_block_view GUARDED_BY(cs_main);
 
@@ -726,7 +727,7 @@ public:
     bool CanFlushToDisk() const EXCLUSIVE_LOCKS_REQUIRED(::cs_main)
     {
         AssertLockHeld(::cs_main);
-        return m_coins_views && m_coins_views->m_cacheview;
+        return m_coins_views && m_coins_views->m_store;
     }
 
     //! The current chain of blockheaders we consult and build on.
@@ -799,7 +800,15 @@ public:
     {
         AssertLockHeld(::cs_main);
         Assert(m_coins_views);
-        return *Assert(m_coins_views->m_cacheview);
+        return *Assert(m_coins_views->m_store);
+    }
+
+    //! @returns The same object as CoinsTip(), with the young tier's own interface (the lag write-out).
+    CoinsStore& CoinsStoreTip() EXCLUSIVE_LOCKS_REQUIRED(::cs_main)
+    {
+        AssertLockHeld(::cs_main);
+        Assert(m_coins_views);
+        return *Assert(m_coins_views->m_store);
     }
 
     //! @returns A reference to the on-disk UTXO set database.
@@ -823,14 +832,34 @@ public:
         return Assert(m_coins_views)->m_catcherview;
     }
 
-    //! Destructs all objects related to accessing the UTXO set.
-    void ResetCoinsViews() { m_coins_views.reset(); }
+    //! Destructs all objects related to accessing the UTXO set. A write-out run in flight lands first.
+    void ResetCoinsViews() EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
 
     //! The cache size of the on-disk coins view.
     size_t m_coinsdb_cache_size_bytes{0};
 
     //! The cache size of the in-memory coins view.
     size_t m_coinstip_cache_size_bytes{0};
+
+    /**
+     * Start a write-out run of the young tier: every change at or below `bound_height` goes to the coins
+     * database on the block manager's executor, behind the undo writes queued so far and together with the
+     * block-file sync and the block index write, so that the marker never names a tip whose data is not
+     * durable. The run streams from the tier a chunk at a time, each chunk clean as it lands. The completion
+     * (under cs_main) records the head the database now holds, evicts clean entries down to `evict_to`
+     * bytes if given, and notifies ChainStateFlushed. `final` drains the tier, and is forced while the
+     * written head is not on the active chain: after a disconnect only a whole write leaves the database
+     * at a block the marker can name. Returns false on a fatal error.
+     */
+    bool StartWriteOutRun(BlockValidationState& state, int bound_height, bool final, std::optional<size_t> evict_to = {}) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+    //! Wait for a write-out run in flight (and every effect queued before it) and apply its completion.
+    void SettleWriteOut() EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+    /**
+     * The most blocks the written head may lag the tip. On a pruned node the replay after a crash reads
+     * the lagged blocks, so they must stay inside what pruning keeps; otherwise there is no ceiling and the
+     * memory budget alone drives the write-out.
+     */
+    std::optional<int> LagCeiling() const EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
 
     //! Resize the CoinsViews caches dynamically and flush state to disk.
     //! @returns true unless an error occurred during the flush.
@@ -1055,6 +1084,9 @@ protected:
 
     NodeClock::time_point m_next_write{NodeClock::time_point::max()};
     const CBlockIndex* m_last_flushed_block GUARDED_BY(::cs_main){nullptr};
+    //! The write-out runs that failed (a fatal error is raised for each). What rests on a run having
+    //! landed, the removal of pruned files, compares it across the wait.
+    uint64_t m_write_out_runs_failed GUARDED_BY(::cs_main){0};
 
     /**
      * In case of an invalid snapshot, rename the coins leveldb directory so

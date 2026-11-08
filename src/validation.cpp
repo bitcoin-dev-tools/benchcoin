@@ -61,6 +61,7 @@
 #include <util/signalinterrupt.h>
 #include <util/strencodings.h>
 #include <util/string.h>
+#include <util/thread.h>
 #include <util/threadpool.h>
 #include <util/time.h>
 #include <util/trace.h>
@@ -4940,9 +4941,10 @@ bool ChainstateManager::AcceptBlock(const std::shared_ptr<const CBlock>& pblock,
     return FinishAcceptBlock(*pblock, state, prepared, written);
 }
 
-bool ChainstateManager::ProcessNewBlock(const std::shared_ptr<const CBlock>& block, bool force_processing, bool min_pow_checked, bool* new_block)
+bool ChainstateManager::ProcessNewBlock(const std::shared_ptr<const CBlock>& block, bool force_processing, bool min_pow_checked, bool* new_block, bool activate_async)
 {
     AssertLockNotHeld(cs_main);
+    const auto accept_start{SteadyClock::now()};
 
     {
         CBlockIndex *pindex = nullptr;
@@ -5001,6 +5003,14 @@ bool ChainstateManager::ProcessNewBlock(const std::shared_ptr<const CBlock>& blo
 
     NotifyHeaderTip();
 
+    if (activate_async) {
+        // The connector thread activates the best chain; the block itself is in the block cache for it.
+        ++m_blocks_accepted;
+        m_accept_time_us += Ticks<std::chrono::microseconds>(SteadyClock::now() - accept_start);
+        SignalConnector();
+        return true;
+    }
+
     BlockValidationState state; // Only used to report errors, not invalidity - ignore it
     if (!ActiveChainstate().ActivateBestChain(state, block)) {
         LogError("%s: ActivateBestChain failed (%s)\n", __func__, state.ToString());
@@ -5015,6 +5025,77 @@ bool ChainstateManager::ProcessNewBlock(const std::shared_ptr<const CBlock>& blo
      }
 
     return true;
+}
+
+void ChainstateManager::SignalConnector()
+{
+    {
+        LOCK(m_connector_mutex);
+        ++m_connector_signals;
+        if (!m_connector_thread.joinable()) {
+            m_connector_thread = std::thread(&util::TraceThread, "connect", std::function<void()>{[this] { ConnectorLoop(); }});
+        }
+    }
+    m_connector_cv.notify_all();
+}
+
+void ChainstateManager::WaitForConnector()
+{
+    WAIT_LOCK(m_connector_mutex, lock);
+    const uint64_t target{m_connector_signals};
+    m_connector_cv.wait(lock, [&]() EXCLUSIVE_LOCKS_REQUIRED(m_connector_mutex) { return m_connector_done >= target; });
+}
+
+bool ChainstateManager::ConnectorBusy() const
+{
+    LOCK(m_connector_mutex);
+    return m_connector_signals > m_connector_done;
+}
+
+void ChainstateManager::ConnectorLoop()
+{
+    while (true) {
+        uint64_t attempting;
+        {
+            WAIT_LOCK(m_connector_mutex, lock);
+            m_connector_cv.wait(lock, [&]() EXCLUSIVE_LOCKS_REQUIRED(m_connector_mutex) { return m_connector_stop || m_connector_signals > m_connector_done; });
+            if (m_connector_stop) return;
+            attempting = m_connector_signals;
+        }
+        // Once the node is interrupted no new pass starts: a pass begins by waiting on the validation
+        // interface queue, which the scheduler serves, and the scheduler stops at shutdown.
+        if (m_interrupt) {
+            LOCK(m_connector_mutex);
+            m_connector_done = attempting;
+            m_connector_cv.notify_all();
+            continue;
+        }
+        // One activation covers every signal so far: ActivateBestChain() runs until the tip is the best known.
+        BlockValidationState state;
+        if (!ActiveChainstate().ActivateBestChain(state, nullptr)) {
+            LogError("%s: ActivateBestChain failed (%s)\n", __func__, state.ToString());
+        }
+        Chainstate* bg_chain{WITH_LOCK(cs_main, return HistoricalChainstate())};
+        BlockValidationState bg_state;
+        if (bg_chain && !bg_chain->ActivateBestChain(bg_state, nullptr)) {
+            LogError("%s: [background] ActivateBestChain failed (%s)\n", __func__, bg_state.ToString());
+        }
+        {
+            LOCK(m_connector_mutex);
+            m_connector_done = attempting;
+        }
+        m_connector_cv.notify_all();
+    }
+}
+
+void ChainstateManager::StopConnector()
+{
+    {
+        LOCK(m_connector_mutex);
+        m_connector_stop = true;
+    }
+    m_connector_cv.notify_all();
+    if (m_connector_thread.joinable()) m_connector_thread.join();
 }
 
 MempoolAcceptResult ChainstateManager::ProcessTransaction(const CTransactionRef& tx, bool test_accept)
@@ -6749,10 +6830,15 @@ ChainstateManager::ChainstateManager(const util::SignalInterrupt& interrupt, Opt
 
 ChainstateManager::~ChainstateManager()
 {
+    StopConnector();
     if (m_options.signals) m_options.signals->SetPreSyncHook({});
     if (m_block_cache.Budget() > 0) {
         const auto [hits, misses]{m_block_cache.HitsAndMisses()};
         LogInfo("Block cache: %u blocks connected from it, %u not in it", hits, misses);
+    }
+    if (m_blocks_accepted > 0) {
+        LogInfo("Connect pipeline: %u blocks accepted for the connector thread in %.1fs (%.2fms/blk)",
+                m_blocks_accepted.load(), m_accept_time_us / 1e6, m_accept_time_us / 1e3 / m_blocks_accepted);
     }
     LOCK(::cs_main);
 

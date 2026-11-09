@@ -10,6 +10,8 @@
 #include <util/threadnames.h>
 #include <util/threadpool.h>
 
+#include <util/time.h>
+
 #include <algorithm>
 #include <array>
 #include <exception>

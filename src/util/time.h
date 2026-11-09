@@ -103,6 +103,12 @@ using SecondsDouble = std::chrono::duration<double, std::chrono::seconds::period
 using MillisecondsDouble = std::chrono::duration<double, std::chrono::milliseconds::period>;
 
 /**
+ * The CPU time the calling thread has used so far, where the platform tells (zero elsewhere). Against the
+ * wall time of the same stretch it says how long the thread was not running.
+ */
+std::chrono::nanoseconds ThreadCpuTime();
+
+/**
  * DEPRECATED
  * Use either ClockType::now() or Now<TimePointType>() if a cast is needed.
  * ClockType is

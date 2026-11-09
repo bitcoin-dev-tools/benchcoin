@@ -42,6 +42,7 @@
 #include <versionbits.h>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <condition_variable>
 #include <cstdint>
@@ -1286,6 +1287,27 @@ private:
     SteadyClock::duration GUARDED_BY(::cs_main) time_flush{};
     SteadyClock::duration GUARDED_BY(::cs_main) time_chainstate{};
     SteadyClock::duration GUARDED_BY(::cs_main) time_post_connect{};
+    //! The publisher's own share of a block: from taking the lock to the end of FinishConnectBlock.
+    SteadyClock::duration GUARDED_BY(::cs_main) time_publish_finish{};
+    //! The connector's wait for the lowest block in flight (idle time in the window).
+    SteadyClock::duration GUARDED_BY(::cs_main) time_window_wait{};
+    //! The connector's staging of blocks into the window (planning, views, submission).
+    SteadyClock::duration GUARDED_BY(::cs_main) time_window_stage{};
+    //! The connector's work after a publication: the periodic write, the tip notification, the queue limit.
+    SteadyClock::duration GUARDED_BY(::cs_main) time_window_periodic{};
+    //! Its parts: the periodic write call (which evicts and starts a write-out run when the cache is large),
+    //! the wait for the run it started, the validation interface queue's limit; and, inside the wait for
+    //! a run, the run's landing on this thread (the commit and the eviction of what it wrote).
+    SteadyClock::duration GUARDED_BY(::cs_main) time_window_write{};
+    SteadyClock::duration GUARDED_BY(::cs_main) time_window_run{};
+    SteadyClock::duration GUARDED_BY(::cs_main) time_window_queue{};
+    SteadyClock::duration GUARDED_BY(::cs_main) time_run_landing{};
+    //! The connect pool's work on the window's blocks, summed over the published blocks, as wall time and
+    //! as CPU time of the working thread: the read, the prefetch, the core, the batch into the store and
+    //! the continuation. Where the two differ the worker was not running.
+    static constexpr size_t WORKER_PHASES{5};
+    std::array<SteadyClock::duration, WORKER_PHASES> GUARDED_BY(::cs_main) time_phase_wall{};
+    std::array<std::chrono::nanoseconds, WORKER_PHASES> GUARDED_BY(::cs_main) time_phase_cpu{};
 
 protected:
     CBlockIndex* m_best_invalid GUARDED_BY(::cs_main){nullptr};

@@ -93,7 +93,7 @@ public:
     static constexpr BlockId NO_BLOCK{0};
     //! Enough slots for the widest window and the tip view, with room to spare. Open blocks are consecutive
     //! blocks of one chain, so no two of them are this many heights apart.
-    static constexpr size_t MAX_WINDOW_SLOTS{64};
+    static constexpr size_t MAX_WINDOW_SLOTS{128};
 
     //! A write-out run between BeginWriteOut() (or PrepareWriteOut()) and CommitWriteOut().
     struct WriteOutRun {

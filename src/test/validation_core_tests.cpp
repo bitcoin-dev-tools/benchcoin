@@ -337,7 +337,7 @@ BOOST_AUTO_TEST_CASE(deferred_transaction_completes_when_input_arrives)
     // Now A's changes arrive (as the lower block's apply would bring them), and B is finished.
     view->AddCoin(COutPoint{spend_a->GetHash(), 0}, Coin{spend_a->vout[0], 2, false}, false);
     view->SpendCoin(SEEDED_OUT);
-    BOOST_REQUIRE_MESSAGE(FinishDeferredTransactions(block_b, ctx_b, &index_b, *view, nullptr, chain.cache, state_b, result_b), state_b.ToString());
+    BOOST_REQUIRE_MESSAGE(FinishDeferredTransactions(block_b, ctx_b, &index_b, *view, chain.cache, state_b, result_b), state_b.ToString());
     BOOST_CHECK(result_b.deferred_txs.empty());
     BOOST_CHECK(!result_b.coinbase_check_deferred);
     BOOST_CHECK_EQUAL(result_b.fees, fee);
@@ -355,7 +355,7 @@ BOOST_AUTO_TEST_CASE(deferred_transaction_completes_when_input_arrives)
         BlockValidationState state;
         ConnectBlockResult result;
         BOOST_REQUIRE(ConnectBlock(block_b, ctx_b, &index_b, *lonely, nullptr, chain.cache, false, state, result));
-        BOOST_CHECK(!FinishDeferredTransactions(block_b, ctx_b, &index_b, *lonely, nullptr, chain.cache, state, result));
+        BOOST_CHECK(!FinishDeferredTransactions(block_b, ctx_b, &index_b, *lonely, chain.cache, state, result));
         BOOST_CHECK_EQUAL(state.GetRejectReason(), "bad-txns-inputs-missingorspent");
     }
     // Without deferral the block is invalid at once, as today.

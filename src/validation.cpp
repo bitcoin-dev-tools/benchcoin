@@ -6,6 +6,7 @@
 #include <bitcoin-build-config.h> // IWYU pragma: keep
 
 #include <validation.h>
+#include <unordered_set>
 
 #include <arith_uint256.h>
 #include <chain.h>
@@ -1852,7 +1853,7 @@ void CoinsViews::InitCache(int32_t prevoutfetch_threads)
         thread_pool->Start(prevoutfetch_threads);
         LogInfo("Block input prevout fetching uses %d additional threads", prevoutfetch_threads);
     }
-    m_connect_block_view = std::make_unique<CoinsViewOverlay>(&*m_store, std::move(thread_pool));
+    m_connect_block_view = std::make_unique<BlockApplyView>(*m_store, std::move(thread_pool));
 }
 
 Chainstate::Chainstate(
@@ -2518,6 +2519,7 @@ BlockValidationContext ChainstateManager::MakeBlockValidationContext(const uint2
         .deployments = deployments,
         .script_flags = script_flags,
         .check_scripts = true,
+        .defer_missing_inputs = false,
     };
 }
 
@@ -2687,6 +2689,8 @@ bool ConnectBlock(const CBlock& block, const BlockValidationContext& ctx, const 
     if (check_queue && check_queue->HasThreads() && fScriptChecks) control.emplace(*check_queue);
 
     std::vector<int> prevheights;
+    //! This block's transaction ids, built when the first transaction is deferred.
+    std::optional<std::unordered_set<Txid, SaltedTxidHasher>> block_txids;
     CAmount nFees = 0;
     int& nInputs{result.num_inputs};
     int64_t& nSigOpsCost{result.sigops_cost};
@@ -2697,6 +2701,41 @@ bool ConnectBlock(const CBlock& block, const BlockValidationContext& ctx, const 
         const CTransaction &tx = *(block.vtx[i]);
 
         nInputs += tx.vin.size();
+
+        if (!tx.IsCoinBase() && ctx.defer_missing_inputs && !view.HaveInputs(tx)) {
+            // A lower block that is still being applied may hold the missing input. Not so for an input
+            // from one of this block's own transactions: it is missing because it is produced later in the
+            // block (or is this transaction's own, or was spent earlier), which validating in order rejects
+            // at this point, and so does this.
+            if (!block_txids) {
+                block_txids.emplace();
+                for (const auto& block_tx : block.vtx) {
+                    // A transaction the block holds twice. No lower block can make that valid: the second
+                    // copy spends what the first spent. (The merkle root's check for mutation only catches
+                    // copies that are paired in the tree.) Its outputs must not be created a second time.
+                    if (!block_txids->insert(block_tx->GetHash()).second) {
+                        state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-txns-inputs-missingorspent",
+                                      "transaction " + block_tx->GetHash().ToString() + " is in the block twice");
+                        break;
+                    }
+                }
+                if (!state.IsValid()) break;
+            }
+            for (const CTxIn& txin : tx.vin) {
+                if (block_txids->contains(txin.prevout.hash) && !view.HaveCoin(txin.prevout)) {
+                    state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-txns-inputs-missingorspent",
+                                  "input from this block missing or spent in transaction " + tx.GetHash().ToString());
+                    break;
+                }
+            }
+            if (!state.IsValid()) break;
+            // The transaction's outputs are created now, so that later transactions of this block can spend
+            // them; everything else about it waits for FinishDeferredTransactions(), as do the block's totals.
+            result.deferred_txs.push_back(i);
+            if (i > 0) blockundo.vtxundo.emplace_back();
+            AddCoins(view, tx, pindex->nHeight);
+            continue;
+        }
 
         if (!tx.IsCoinBase())
         {
@@ -2770,11 +2809,17 @@ bool ConnectBlock(const CBlock& block, const BlockValidationContext& ctx, const 
         UpdateCoins(tx, view, i == 0 ? undoDummy : blockundo.vtxundo.back(), pindex->nHeight);
     }
     result.time_connected = SteadyClock::now();
+    result.fees = nFees;
 
-    CAmount blockReward = nFees + GetBlockSubsidy(pindex->nHeight, ctx.params);
-    if (block.vtx[0]->GetValueOut() > blockReward && state.IsValid()) {
-        state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-cb-amount",
-                      strprintf("coinbase pays too much (actual=%d vs limit=%d)", block.vtx[0]->GetValueOut(), blockReward));
+    if (!result.deferred_txs.empty()) {
+        // The fee total is incomplete: the coinbase amount is checked by FinishDeferredTransactions().
+        result.coinbase_check_deferred = true;
+    } else {
+        CAmount blockReward = nFees + GetBlockSubsidy(pindex->nHeight, ctx.params);
+        if (block.vtx[0]->GetValueOut() > blockReward && state.IsValid()) {
+            state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-cb-amount",
+                          strprintf("coinbase pays too much (actual=%d vs limit=%d)", block.vtx[0]->GetValueOut(), blockReward));
+        }
     }
     if (control) {
         auto parallel_result = control->Complete();
@@ -2792,6 +2837,97 @@ bool ConnectBlock(const CBlock& block, const BlockValidationContext& ctx, const 
         view.SetBestBlock(pindex->GetBlockHash());
     }
 
+    return true;
+}
+
+bool FinishDeferredTransactions(const CBlock& block, const BlockValidationContext& ctx, const CBlockIndex* pindex,
+                                CCoinsViewCache& view, CCheckQueue<CScriptCheck>* check_queue,
+                                ValidationCache& validation_cache, BlockValidationState& state,
+                                ConnectBlockResult& result)
+{
+    assert(pindex);
+    assert(result.coinbase_check_deferred || result.deferred_txs.empty());
+    const script_verify_flags flags{ctx.script_flags};
+    int nLockTimeFlags = 0;
+    if (ctx.deployments.csv) nLockTimeFlags |= LOCKTIME_VERIFY_SEQUENCE;
+
+    std::vector<PrecomputedTransactionData> txsdata(result.deferred_txs.size());
+    std::optional<CCheckQueueControl<CScriptCheck>> control;
+    if (check_queue && check_queue->HasThreads() && ctx.check_scripts) control.emplace(*check_queue);
+
+    std::vector<int> prevheights;
+    for (size_t k{0}; k < result.deferred_txs.size() && state.IsValid(); ++k) {
+        const uint32_t i{result.deferred_txs[k]};
+        assert(i > 0 && i < block.vtx.size());
+        const CTransaction& tx{*block.vtx[i]};
+
+        CAmount txfee{0};
+        TxValidationState tx_state;
+        if (!Consensus::CheckTxInputs(tx, tx_state, view, pindex->nHeight, txfee)) {
+            state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, tx_state.GetRejectReason(),
+                          tx_state.GetDebugMessage() + " in transaction " + tx.GetHash().ToString());
+            break;
+        }
+        result.fees += txfee;
+        if (!MoneyRange(result.fees)) {
+            state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-txns-accumulated-fee-outofrange",
+                          "accumulated fee in the block out of range");
+            break;
+        }
+        prevheights.resize(tx.vin.size());
+        for (size_t j{0}; j < tx.vin.size(); ++j) prevheights[j] = view.AccessCoin(tx.vin[j].prevout).nHeight;
+        if (!SequenceLocks(tx, nLockTimeFlags, prevheights, *pindex)) {
+            state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-txns-nonfinal",
+                          "contains a non-BIP68-final transaction " + tx.GetHash().ToString());
+            break;
+        }
+        result.sigops_cost += GetTransactionSigOpCost(tx, view, flags);
+        if (result.sigops_cost > MAX_BLOCK_SIGOPS_COST) {
+            state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-blk-sigops", "too many sigops");
+            break;
+        }
+        if (ctx.check_scripts) {
+            bool tx_ok;
+            TxValidationState script_state;
+            if (control) {
+                std::vector<CScriptCheck> vChecks;
+                tx_ok = CheckInputScripts(tx, script_state, view, flags, CheckInputScriptsFor::Block, false, false, txsdata[k], validation_cache, &vChecks);
+                if (tx_ok) control->Add(std::move(vChecks));
+            } else {
+                tx_ok = CheckInputScripts(tx, script_state, view, flags, CheckInputScriptsFor::Block, false, false, txsdata[k], validation_cache);
+            }
+            if (!tx_ok) {
+                state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, script_state.GetRejectReason(), script_state.GetDebugMessage());
+                break;
+            }
+        }
+        // The outputs were created when the block was applied; only the inputs are spent now, into the
+        // transaction's own undo slot.
+        CTxUndo& txundo{result.undo.vtxundo.at(i - 1)};
+        txundo.vprevout.reserve(tx.vin.size());
+        for (const CTxIn& txin : tx.vin) {
+            txundo.vprevout.emplace_back();
+            const bool is_spent{view.SpendCoin(txin.prevout, &txundo.vprevout.back())};
+            assert(is_spent);
+        }
+    }
+    if (state.IsValid()) {
+        const CAmount block_reward{result.fees + GetBlockSubsidy(pindex->nHeight, ctx.params)};
+        if (block.vtx[0]->GetValueOut() > block_reward) {
+            state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-cb-amount",
+                          strprintf("coinbase pays too much (actual=%d vs limit=%d)", block.vtx[0]->GetValueOut(), block_reward));
+        }
+    }
+    if (control) {
+        auto parallel_result = control->Complete();
+        if (parallel_result.has_value() && state.IsValid()) {
+            state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, strprintf("block-script-verify-flag-failed (%s)", ScriptErrorString(parallel_result->first)), parallel_result->second);
+        }
+    }
+    if (!state.IsValid()) return false;
+    result.deferred_txs.clear();
+    result.coinbase_check_deferred = false;
+    result.time_verified = SteadyClock::now();
     return true;
 }
 
@@ -3457,13 +3593,14 @@ struct StagedConnect {
     //! Resets the overlay, stopping its prefetch workers, when the staged connection ends, however it ends.
     struct FetchGuard {
         CCoinsViewCache::ResetGuard reset;
-        FetchGuard(CoinsViewOverlay& view, const CBlock& block) : reset{view.StartFetching(block)} {}
+        FetchGuard(BlockApplyView& view, const CBlock& block) : reset{view.StartFetching(block)} {}
     };
 
     CBlockIndex* pindex{nullptr};
     std::shared_ptr<const CBlock> block;
-    //! The overlay the block is connected into. Owned by the chainstate's CoinsViews.
-    CoinsViewOverlay* view{nullptr};
+    //! The view the block is connected into, its changes reaching the store under the block's identity.
+    //! Owned by the chainstate's CoinsViews.
+    BlockApplyView* view{nullptr};
     std::unique_ptr<FetchGuard> fetch;
     //! The assumevalid decision, made at staging time: nullptr means scripts are not checked.
     const char* script_check_reason{nullptr};
@@ -3486,8 +3623,9 @@ bool Chainstate::StageConnectTip(BlockValidationState& state, CBlockIndex* pinde
     // Everything the validation of this block reads from the node is gathered
     // here: the prefetch of the coins it spends is started into the overlay,
     // the node's decisions go into the context.
-    CoinsViewOverlay& view{*m_coins_views->m_connect_block_view};
+    BlockApplyView& view{*m_coins_views->m_connect_block_view};
     staged.view = &view;
+    view.BeginBlock(pindexNew->nHeight);
     staged.fetch = std::make_unique<StagedConnect::FetchGuard>(view, *staged.block);
     staged.script_check_reason = ScriptCheckReason(*pindexNew);
     staged.ctx.emplace(m_chainman.MakeBlockValidationContext(pindexNew->GetBlockHash(), pindexNew->pprev));
@@ -3530,7 +3668,7 @@ bool Chainstate::PublishConnectTip(
     // Hand on the completions of earlier blocks (their notifications) now that the lock is held, so they
     // trail the blocks they belong to by at most one block even when the lock is otherwise busy.
     m_blockman.ApplyEffectCompletions();
-    CoinsViewOverlay& view{*staged.view};
+    BlockApplyView& view{*staged.view};
 
     const auto time_1{staged.time_start};
     const auto time_2{staged.time_read};
@@ -3539,6 +3677,17 @@ bool Chainstate::PublishConnectTip(
     // When adding aggregate statistics in the future, keep in mind that
     // num_blocks_total may be zero until the FinishConnectBlock() call below.
     {
+        if (staged.ok && !staged.result.deferred_txs.empty()) {
+            // Every lower block is in the view now: finish what the block deferred.
+            staged.ok = FinishDeferredTransactions(*block_to_connect, *staged.ctx, pindexNew, view, &m_chainman.GetCheckQueue(),
+                                                   m_chainman.m_validation_cache, staged.state, staged.result);
+        }
+        if (staged.ok && view.Conflicts() != 0) {
+            // Another block of lower height spent one of this block's inputs first.
+            staged.state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-txns-inputs-missingorspent",
+                                 strprintf("%u inputs spent by a lower block", view.Conflicts()));
+            staged.ok = false;
+        }
         state = staged.state;
         const bool rv{FinishConnectBlock(*block_to_connect, state, pindexNew, staged.script_check_reason, staged.ok, staged.result, /*just_check=*/false)};
         if (m_chainman.m_options.signals) {
@@ -3548,6 +3697,7 @@ bool Chainstate::PublishConnectTip(
             if (state.IsInvalid())
                 InvalidBlockFound(pindexNew, state);
             LogError("%s: ConnectBlock %s failed, %s\n", __func__, pindexNew->GetBlockHash().ToString(), state.ToString());
+            view.Unwind();
             return false;
         }
         time_3 = SteadyClock::now();
@@ -3557,12 +3707,13 @@ bool Chainstate::PublishConnectTip(
                  Ticks<MillisecondsDouble>(time_3 - time_2),
                  Ticks<SecondsDouble>(m_chainman.time_connect_total),
                  Ticks<MillisecondsDouble>(m_chainman.time_connect_total) / m_chainman.num_blocks_total);
-        CoinsStoreTip().SetChangeHeight(pindexNew->nHeight);
-        view.Flush(/*reallocate_cache=*/false); // No need to reallocate since it only has capacity for 1 block
+        // The block's changes are already in the store, dirty where the write-out will find them; this
+        // makes them confirmed state in one status flip.
+        view.Confirm();
     }
     const auto time_4{SteadyClock::now()};
     m_chainman.time_flush += time_4 - time_3;
-    LogDebug(BCLog::BENCH, "  - Flush: %.2fms [%.2fs (%.2fms/blk)]\n",
+    LogDebug(BCLog::BENCH, "  - Confirm: %.2fms [%.2fs (%.2fms/blk)]\n",
              Ticks<MillisecondsDouble>(time_4 - time_3),
              Ticks<SecondsDouble>(m_chainman.time_flush),
              Ticks<MillisecondsDouble>(m_chainman.time_flush) / m_chainman.num_blocks_total);

@@ -3599,6 +3599,46 @@ bool Chainstate::DisconnectTip(BlockValidationState& state, DisconnectedBlockTra
     return true;
 }
 
+/**
+ * The blocks each thread built in a task on the connect pool, back from their last holder: see
+ * ChainstateManager::NewBlock(). A bin outlives the manager for as long as a block of its thread is held.
+ */
+class BlockBins
+{
+    struct Bin {
+        Mutex mutex;
+        std::vector<CBlock*> blocks GUARDED_BY(mutex);
+        void Empty() EXCLUSIVE_LOCKS_REQUIRED(!mutex)
+        {
+            for (const CBlock* block : WITH_LOCK(mutex, return std::exchange(blocks, {}))) delete block;
+        }
+        ~Bin() { Empty(); }
+    };
+    Mutex m_mutex;
+    std::map<std::thread::id, std::shared_ptr<Bin>> m_bins GUARDED_BY(m_mutex);
+
+public:
+    //! A block for the calling thread, which first frees the blocks that came back to it.
+    std::shared_ptr<CBlock> NewBlock() EXCLUSIVE_LOCKS_REQUIRED(!m_mutex)
+    {
+        std::shared_ptr<Bin> bin;
+        {
+            LOCK(m_mutex);
+            auto& mine{m_bins[std::this_thread::get_id()]};
+            if (!mine) mine = std::make_shared<Bin>();
+            bin = mine;
+        }
+        bin->Empty();
+        return {new CBlock, [bin](CBlock* block) { WITH_LOCK(bin->mutex, bin->blocks.push_back(block)); }};
+    }
+    //! Free the blocks that came back to every thread.
+    void Empty() EXCLUSIVE_LOCKS_REQUIRED(!m_mutex)
+    {
+        LOCK(m_mutex);
+        for (const auto& [id, bin] : m_bins) bin->Empty();
+    }
+};
+
 struct StagedConnect;
 
 /**
@@ -3757,7 +3797,7 @@ void Chainstate::RunConnectTask(StagedConnect& staged) noexcept
     // failed allocation, and the process terminates (noexcept): the pool would keep the exception in a
     // future nobody reads, and the connector would wait for the block forever.
     if (!staged.block) {
-        auto block{m_chainman.NewBlock()};
+        auto block{m_chainman.NewBlock(/*on_pool=*/true)};
         bool read;
         {
             const auto timer{staged.Time(StagedConnect::READ)};
@@ -4781,6 +4821,7 @@ bool Chainstate::ActivateBestChain(BlockValidationState& state, std::shared_ptr<
         if (m_chainman.m_interrupt) break;
     } while (pindexNewTip != pindexMostWork);
 
+    if (!m_chainman.IsInitialBlockDownload()) m_chainman.m_block_bins->Empty();
     m_chainman.CheckBlockIndex();
 
     return true;
@@ -7711,7 +7752,8 @@ ChainstateManager::ChainstateManager(const util::SignalInterrupt& interrupt, Opt
       m_blockman{interrupt, std::move(blockman_options)},
       m_all_consensus_script_flags{GetAllConsensusScriptFlags(m_options.chainparams.GetConsensus())},
       m_validation_cache{m_options.script_execution_cache_bytes, m_options.signature_cache_bytes},
-      m_connect_pool{std::make_shared<ThreadPool>("connect")}
+      m_connect_pool{std::make_shared<ThreadPool>("connect")},
+      m_block_bins{std::make_unique<BlockBins>()}
 {
     if (const int hash_threads{std::clamp(m_options.worker_threads_num, 0, MAX_BLOCKHASH_THREADS)}; hash_threads > 0) {
         m_blockman.m_hash_pool.Start(hash_threads);
@@ -7726,8 +7768,9 @@ ChainstateManager::ChainstateManager(const util::SignalInterrupt& interrupt, Opt
     }
 }
 
-std::shared_ptr<CBlock> ChainstateManager::NewBlock() const
+std::shared_ptr<CBlock> ChainstateManager::NewBlock(bool on_pool) const
 {
+    if (on_pool) return m_block_bins->NewBlock();
     return std::shared_ptr<CBlock>(new CBlock, [pool = m_connect_pool](CBlock* block) {
         if (!pool->Submit([block] { delete block; })) delete block;
     });

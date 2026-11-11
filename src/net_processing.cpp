@@ -3798,7 +3798,7 @@ bool PeerManagerImpl::ProcessBlock(const std::shared_ptr<const CBlock>& block, b
 
 void PeerManagerImpl::ProcessBlockMessage(Peer& peer, CNode* node, std::span<const std::byte> bytes)
 {
-    std::shared_ptr<CBlock> pblock{m_chainman.NewBlock()};
+    std::shared_ptr<CBlock> pblock{m_chainman.NewBlock(/*on_pool=*/!node)};
     {
         // Hash the transactions from the wire bytes: on the hashing pool's workers for a large block when this
         // is the message handler, in the task itself for a block on the connect pool, where the blocks beside

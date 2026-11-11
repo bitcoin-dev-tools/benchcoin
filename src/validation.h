@@ -58,6 +58,7 @@
 #include <utility>
 #include <vector>
 
+class BlockBins;
 class Chainstate;
 class CTxMemPool;
 class ChainstateManager;
@@ -1778,14 +1779,20 @@ public:
     //! block download, input prefetchers at the tip (sized by -prevoutfetchthreads). Shared by every
     //! chainstate's views.
     const util::NotNullSharedPtr<ThreadPool> m_connect_pool;
+    //! The blocks each thread built in a task on the connect pool, back from their last holder (NewBlock()).
+    const std::unique_ptr<BlockBins> m_block_bins;
     /**
      * A block to be read or received, whose destruction runs on the connect pool. A block is destroyed on
      * whichever thread drops its last reference, which for a connected block is the scheduler, in its
      * BlockConnected callback: thousands of frees per block on the one thread every notification goes
      * through, which at the window's block rate is the thread that bounds it. The deleter hands the
      * destruction to the pool instead, and deletes in place when the pool has no workers.
+     *
+     * A block built by a task on the pool (`on_pool`) goes back to the thread that built it, which frees
+     * it before it builds its next one: the block's memory is returned by the thread that took it. What is
+     * left with a thread that builds no more is freed by ActivateBestChain() outside initial block download.
      */
-    std::shared_ptr<CBlock> NewBlock() const;
+    std::shared_ptr<CBlock> NewBlock(bool on_pool = false) const;
     //! How many blocks the window validates at once: -connectwindow, or twice the connect pool's worker count.
     int ConnectWindow() const;
 

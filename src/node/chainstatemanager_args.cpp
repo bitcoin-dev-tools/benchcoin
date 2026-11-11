@@ -74,7 +74,7 @@ util::Result<void> ApplyArgsManOptions(const ArgsManager& args, ChainstateManage
 
     if (auto value{args.GetArg<int32_t>("-prevoutfetchthreads")}) {
         if (*value < 0) {
-            return util::Error{Untranslated(strprintf("-prevoutfetchthreads must be non-negative (got %d). Use 0 to disable parallel input fetching.", *value))};
+            return util::Error{Untranslated(strprintf("-prevoutfetchthreads must be non-negative (got %d). Use 0 for no connect pool threads.", *value))};
         }
         opts.prevoutfetch_threads_num = std::min(*value, MAX_PREVOUTFETCH_THREADS);
     }

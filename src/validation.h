@@ -1774,8 +1774,9 @@ public:
     std::optional<int> BlocksAheadOfTip() const LOCKS_EXCLUDED(::cs_main);
 
     CCheckQueue<CScriptCheck>& GetCheckQueue() { return m_script_check_queue; }
-    //! The connect pool: block appliers of the window during initial block download, input prefetchers at
-    //! the tip (sized by -prevoutfetchthreads). Shared by every chainstate's views.
+    //! The connect pool: block appliers of the window and the blocks received from peers during initial
+    //! block download, input prefetchers at the tip (sized by -prevoutfetchthreads). Shared by every
+    //! chainstate's views.
     const util::NotNullSharedPtr<ThreadPool> m_connect_pool;
     /**
      * A block to be read or received, whose destruction runs on the connect pool. A block is destroyed on

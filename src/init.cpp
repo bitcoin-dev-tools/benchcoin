@@ -340,6 +340,9 @@ void Shutdown(NodeContext& node)
     // using the other before destroying them.
     if (node.peerman && node.validation_signals) node.validation_signals->UnregisterValidationInterface(node.peerman.get());
     if (node.connman) node.connman->Stop();
+    // Blocks of peers still being processed on the connect pool are finished now that the message handler
+    // hands out no more, while the connector thread and everything else they rely on are still there.
+    if (node.peerman) node.peerman->FinishBlockTasks();
 
     if (node.tor_controller) {
         node.tor_controller->Join();
@@ -539,7 +542,7 @@ void SetupServerArgs(ArgsManager& argsman, bool can_listen_ipc)
     argsman.AddArg("-par=<n>", strprintf("Set the number of script verification threads (0 = auto, up to %d, <0 = leave that many cores free, default: %d)",
         MAX_SCRIPTCHECK_THREADS, DEFAULT_SCRIPTCHECK_THREADS), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     argsman.AddArg("-blockcache=<n>", strprintf("Keep accepted blocks in memory until they are connected, up to <n> MiB, so that a block that arrived before its parent is connected from the object received rather than read from disk and deserialized again (0 disables, default: %d).", DEFAULT_BLOCK_CACHE_BYTES / 1_MiB), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
-    argsman.AddArg("-prevoutfetchthreads=<n>", strprintf("Set the number of connect pool threads, which validate blocks in parallel during initial block download and prefetch block input prevouts from the chainstate database at the tip (0 disables both, up to %d, default: %d). Negative values are rejected.", MAX_PREVOUTFETCH_THREADS, DEFAULT_PREVOUTFETCH_THREADS), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
+    argsman.AddArg("-prevoutfetchthreads=<n>", strprintf("Set the number of connect pool threads, which process the blocks received from peers and validate blocks in parallel during initial block download, and prefetch block input prevouts from the chainstate database at the tip (0 disables both, up to %d, default: %d). Negative values are rejected.", MAX_PREVOUTFETCH_THREADS, DEFAULT_PREVOUTFETCH_THREADS), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     argsman.AddArg("-connectwindow=<n>", strprintf("Set how many blocks are validated at the same time during initial block download, each on a connect pool thread, with the blocks confirmed in order (0 = twice as many as there are connect pool threads, 1 = one at a time, up to %d, default: 0)", MAX_CONNECT_WINDOW), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     argsman.AddArg("-persistmempool", strprintf("Whether to save the mempool on shutdown and load on restart (default: %u)", DEFAULT_PERSIST_MEMPOOL), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     argsman.AddArg("-pid=<file>", strprintf("Specify pid file. Relative paths will be prefixed by a net-specific datadir location. (default: %s)", BITCOIN_PID_FILENAME), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);

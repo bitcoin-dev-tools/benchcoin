@@ -60,6 +60,7 @@
 #include <util/check.h>
 #include <util/hasher.h>
 #include <util/strencodings.h>
+#include <util/threadpool.h>
 #include <util/time.h>
 #include <util/tokenbucket.h>
 #include <util/trace.h>
@@ -69,12 +70,14 @@
 #include <array>
 #include <atomic>
 #include <compare>
+#include <condition_variable>
 #include <cstddef>
 #include <deque>
 #include <exception>
 #include <functional>
 #include <future>
 #include <initializer_list>
+#include <ios>
 #include <iterator>
 #include <limits>
 #include <list>
@@ -216,6 +219,9 @@ struct QueuedBlock {
     const CBlockIndex* pindex;
     /** Optional, used for CMPCTBLOCK downloads */
     std::unique_ptr<PartiallyDownloadedBlock> partialBlock;
+    /** The block has arrived and is with the connect pool (see PeerManagerImpl::HandOffBlock). Its peer is no
+     *  longer sending it, so it takes none of the places for blocks requested from that peer at a time. */
+    bool with_pool{false};
 };
 
 /**
@@ -574,6 +580,7 @@ public:
     PeerManagerImpl(CConnman& connman, AddrMan& addrman,
                     BanMan* banman, ChainstateManager& chainman,
                     CTxMemPool& pool, node::Warnings& warnings, Options opts);
+    ~PeerManagerImpl() override EXCLUSIVE_LOCKS_REQUIRED(!m_block_tasks_mutex);
 
     /** Overridden from CValidationInterface. */
     void ActiveTipChange(const CBlockIndex& new_tip, bool) override
@@ -594,9 +601,9 @@ public:
     void FinalizeNode(const CNode& node) override EXCLUSIVE_LOCKS_REQUIRED(!m_peer_mutex, !m_headers_presync_mutex, !m_tx_download_mutex);
     bool HasAllDesirableServiceFlags(ServiceFlags services) const override;
     bool ProcessMessages(CNode& node, std::atomic<bool>& interrupt) override
-        EXCLUSIVE_LOCKS_REQUIRED(!m_peer_mutex, !m_most_recent_block_mutex, !m_headers_presync_mutex, g_msgproc_mutex, !m_tx_download_mutex, !m_inv_to_send_mutex);
+        EXCLUSIVE_LOCKS_REQUIRED(!m_peer_mutex, !m_most_recent_block_mutex, !m_headers_presync_mutex, g_msgproc_mutex, !m_tx_download_mutex, !m_inv_to_send_mutex, !m_block_tasks_mutex);
     bool SendMessages(CNode& node) override
-        EXCLUSIVE_LOCKS_REQUIRED(!m_peer_mutex, !m_most_recent_block_mutex, g_msgproc_mutex, !m_tx_download_mutex, !m_inv_to_send_mutex);
+        EXCLUSIVE_LOCKS_REQUIRED(!m_peer_mutex, !m_most_recent_block_mutex, g_msgproc_mutex, !m_tx_download_mutex, !m_inv_to_send_mutex, !m_block_tasks_mutex);
 
     /** Implement PeerManager */
     void StartScheduledTasks(CScheduler& scheduler) override;
@@ -609,6 +616,7 @@ public:
     std::vector<PrivateBroadcast::TxBroadcastInfo> GetPrivateBroadcastInfo() const override EXCLUSIVE_LOCKS_REQUIRED(!m_peer_mutex);
     std::vector<CTransactionRef> AbortPrivateBroadcast(const uint256& id) override EXCLUSIVE_LOCKS_REQUIRED(!m_peer_mutex);
     void SendPings() override EXCLUSIVE_LOCKS_REQUIRED(!m_peer_mutex);
+    void FinishBlockTasks() override EXCLUSIVE_LOCKS_REQUIRED(!m_block_tasks_mutex);
     void InitiateTxBroadcastToAll(const Wtxid& wtxid) override EXCLUSIVE_LOCKS_REQUIRED(!m_peer_mutex, !m_inv_to_send_mutex);
     node::TransactionError InitiateTxBroadcastPrivate(const CTransactionRef& tx) override EXCLUSIVE_LOCKS_REQUIRED(!m_peer_mutex);
     void SetBestBlock(int height, std::chrono::seconds time) override
@@ -623,7 +631,7 @@ public:
 private:
     void ProcessMessage(Peer& peer, CNode& pfrom, const std::string& msg_type, DataStream& vRecv, NodeClock::time_point time_received,
                         const std::atomic<bool>& interruptMsgProc)
-        EXCLUSIVE_LOCKS_REQUIRED(!m_peer_mutex, !m_most_recent_block_mutex, !m_headers_presync_mutex, g_msgproc_mutex, !m_tx_download_mutex, !m_inv_to_send_mutex);
+        EXCLUSIVE_LOCKS_REQUIRED(!m_peer_mutex, !m_most_recent_block_mutex, !m_headers_presync_mutex, g_msgproc_mutex, !m_tx_download_mutex, !m_inv_to_send_mutex, !m_block_tasks_mutex);
 
     /** Consider evicting an outbound peer based on the amount of time they've been behind our tip */
     void ConsiderEviction(CNode& pto, Peer& peer, std::chrono::seconds time_in_seconds) EXCLUSIVE_LOCKS_REQUIRED(cs_main, g_msgproc_mutex);
@@ -1051,6 +1059,62 @@ private:
 
     /** Process a new block. Perform any post-processing housekeeping */
     void ProcessBlock(CNode& node, const std::shared_ptr<const CBlock>& block, bool force_processing, bool min_pow_checked);
+    /** The same without the peer's connection. With `activate_async` the connector thread connects the block
+     *  (see ChainstateManager::ProcessNewBlock). Returns whether the block was new. */
+    bool ProcessBlock(const std::shared_ptr<const CBlock>& block, bool force_processing, bool min_pow_checked, bool activate_async);
+
+    /**
+     * A `block` message from its bytes on: deserialisation, the mutation check, the request bookkeeping and
+     * ProcessBlock(). On the message handler `node` is the peer's connection. A block handed to the connect
+     * pool (see HandOffBlock) passes null: the peer is then addressed by its id, the transactions are hashed
+     * by the task itself and the connector thread connects the block.
+     * Throws std::ios_base::failure for bytes that are not a block.
+     */
+    void ProcessBlockMessage(Peer& peer, CNode* node, std::span<const std::byte> bytes)
+        EXCLUSIVE_LOCKS_REQUIRED(!m_peer_mutex);
+
+    /**
+     * During initial block download, a block this peer was asked for is processed on the connect pool, so
+     * that the blocks of a peer are deserialised, checked and stored several at a time while the message
+     * handler takes the next message. The decision is made from the 80 header bytes alone. Returns false,
+     * with `recv` untouched, for a block that stays on the message handler: outside initial block download,
+     * not requested from this peer, or with no pool to speak of.
+     *
+     * What a peer may rely on is kept by four rules. A block found mutated or invalid marks its peer through
+     * Misbehaving() as on the message handler. ProcessMessages() takes no further message of a marked peer,
+     * so that SendMessages() disconnects it first. A task that starts once its peer is marked or is being
+     * disconnected drops its block. And a `ping` is answered only when the peer's blocks handed off before
+     * it are processed (WaitForBlockTasks).
+     *
+     * The request stays until the block is stored, so that the block is not asked for again, but from the
+     * hand-off on it takes no place among the blocks requested from the peer at a time (QueuedBlock::with_pool):
+     * the next block is asked for right after the hand-off, as on the handler when a block arrives, and not
+     * when the task is done. The peer stops counting as stalling at the hand-off as well. A second copy of a
+     * block whose first is still with its task is dropped. A task wakes the message handler when it is done:
+     * for the mark, and for a block it dropped, which is to be asked for again.
+     *
+     * At most one fewer than the pool's workers are outstanding; beyond that this waits for one to finish,
+     * which bounds the memory held by messages and their blocks and stops the net thread reading further,
+     * as a busy message handler does. The worker left over is what keeps the connector thread served where
+     * it waits for the pool with cs_main held (Chainstate::DrainWindow), since a block's task takes cs_main.
+     */
+    bool HandOffBlock(Peer& peer, DataStream& recv)
+        EXCLUSIVE_LOCKS_REQUIRED(!m_block_tasks_mutex, g_msgproc_mutex);
+    /** The body of a task of HandOffBlock(). An exception other than the one malformed bytes raise would be
+     *  lost in the pool's unread future, so this terminates on it. */
+    void RunBlockTask(NodeId id, const uint256& hash, const DataStream& recv) noexcept
+        EXCLUSIVE_LOCKS_REQUIRED(!m_block_tasks_mutex, !m_peer_mutex);
+    /** Wait for the blocks of a peer that were handed to the connect pool. */
+    void WaitForBlockTasks(NodeId id) EXCLUSIVE_LOCKS_REQUIRED(!m_block_tasks_mutex);
+    /** Whether any peer's block is with the connect pool. */
+    bool BlockTasksOutstanding() const EXCLUSIVE_LOCKS_REQUIRED(!m_block_tasks_mutex);
+
+    mutable Mutex m_block_tasks_mutex;
+    std::condition_variable m_block_tasks_cv;
+    /** Blocks handed to the connect pool whose tasks have not finished, by peer and block hash. */
+    std::set<std::pair<NodeId, uint256>> m_block_tasks GUARDED_BY(m_block_tasks_mutex);
+    /** Blocks handed to the connect pool so far. */
+    uint64_t m_blocks_handed_off GUARDED_BY(m_block_tasks_mutex){0};
 
     /** Process compact block txns  */
     void ProcessCompactBlockTxns(CNode& pfrom, Peer& peer, const BlockTransactions& block_transactions)
@@ -2148,6 +2212,15 @@ PeerManagerImpl::PeerManagerImpl(CConnman& connman, AddrMan& addrman,
     // This argument can go away after Erlay support is complete.
     if (opts.reconcile_txs) {
         m_txreconciliation = std::make_unique<TxReconciliationTracker>(TXRECONCILIATION_VERSION);
+    }
+}
+
+PeerManagerImpl::~PeerManagerImpl()
+{
+    // A block's task on the connect pool refers to this object.
+    FinishBlockTasks();
+    if (const uint64_t blocks{WITH_LOCK(m_block_tasks_mutex, return m_blocks_handed_off)}; blocks > 0) {
+        LogInfo("Block receive: %u blocks of peers processed on the connect pool", blocks);
     }
 }
 
@@ -3680,14 +3753,20 @@ void PeerManagerImpl::ProcessGetCFCheckPt(CNode& node, Peer& peer, DataStream& v
 
 void PeerManagerImpl::ProcessBlock(CNode& node, const std::shared_ptr<const CBlock>& block, bool force_processing, bool min_pow_checked)
 {
-    bool new_block{false};
     // During initial block download the connector thread connects the blocks this thread accepts, so the next
     // block's deserialisation and checks overlap the connection of this one. (Not under the deterministic
     // configuration the fuzz tests use.)
     const bool activate_async{m_chainman.IsInitialBlockDownload() && !m_opts.deterministic_rng};
+    if (ProcessBlock(block, force_processing, min_pow_checked, activate_async)) {
+        node.m_last_block_time = GetTime<std::chrono::seconds>();
+    }
+}
+
+bool PeerManagerImpl::ProcessBlock(const std::shared_ptr<const CBlock>& block, bool force_processing, bool min_pow_checked, bool activate_async)
+{
+    bool new_block{false};
     m_chainman.ProcessNewBlock(block, force_processing, min_pow_checked, &new_block, activate_async);
     if (new_block) {
-        node.m_last_block_time = GetTime<std::chrono::seconds>();
         // In case this block came from a different peer than we requested
         // from, we can erase the block request now anyway (as we just stored
         // this block to disk).
@@ -3697,6 +3776,171 @@ void PeerManagerImpl::ProcessBlock(CNode& node, const std::shared_ptr<const CBlo
         LOCK(cs_main);
         mapBlockSource.erase(block->GetHash());
     }
+    return new_block;
+}
+
+void PeerManagerImpl::ProcessBlockMessage(Peer& peer, CNode* node, std::span<const std::byte> bytes)
+{
+    std::shared_ptr<CBlock> pblock{m_chainman.NewBlock()};
+    {
+        // Hash the transactions from the wire bytes: on the hashing pool's workers for a large block when this
+        // is the message handler, in the task itself for a block on the connect pool, where the blocks beside
+        // it are the parallelism.
+        const auto time_start{SteadyClock::now()};
+        DeserializeBlock(bytes, *pblock, node ? &m_chainman.m_blockman.m_hash_pool : nullptr);
+        LogDebug(BCLog::BENCH, "- Deserialize block %s (%u txs): %.2fms\n", pblock->GetHash().ToString(), pblock->vtx.size(),
+                 Ticks<MillisecondsDouble>(SteadyClock::now() - time_start));
+    }
+
+    LogDebug(BCLog::NET, "received block %s peer=%d\n", pblock->GetHash().ToString(), peer.m_id);
+
+    const CBlockIndex* prev_block{WITH_LOCK(m_chainman.GetMutex(), return m_chainman.m_blockman.LookupBlockIndex(pblock->hashPrevBlock))};
+
+    // Check for possible mutation if it connects to something we know so we can check for DEPLOYMENT_SEGWIT being active
+    if (prev_block && IsBlockMutated(/*block=*/*pblock,
+                       /*check_witness_root=*/DeploymentActiveAfter(prev_block, m_chainman, Consensus::DEPLOYMENT_SEGWIT))) {
+        LogDebug(BCLog::NET, "Received mutated block from peer=%d\n", peer.m_id);
+        Misbehaving(peer, "mutated block");
+        WITH_LOCK(cs_main, RemoveBlockRequest(pblock->GetHash(), peer.m_id));
+        return;
+    }
+
+    bool forceProcessing = false;
+    const uint256 hash(pblock->GetHash());
+    bool min_pow_checked = false;
+    {
+        LOCK(cs_main);
+        // Always process the block if we requested it, since we may
+        // need it even when it's not a candidate for a new best tip.
+        forceProcessing = IsBlockRequested(hash);
+        // A block on the connect pool stays in flight until it is stored: the message handler is free
+        // meanwhile and would request it again.
+        if (node) RemoveBlockRequest(hash, peer.m_id);
+        // mapBlockSource is only used for punishing peers and setting
+        // which peers send us compact blocks, so the race between here and
+        // cs_main in ProcessNewBlock is fine.
+        mapBlockSource.emplace(hash, std::make_pair(peer.m_id, true));
+
+        // Check claimed work on this block against our anti-dos thresholds.
+        if (prev_block && prev_block->nChainWork + GetBlockProof(*pblock) >= GetAntiDoSWorkThreshold()) {
+            min_pow_checked = true;
+        }
+    }
+    if (node) {
+        ProcessBlock(*node, pblock, forceProcessing, min_pow_checked);
+    } else if (ProcessBlock(pblock, forceProcessing, min_pow_checked, /*activate_async=*/true)) {
+        m_connman.ForNode(peer.m_id, [now = GetTime<std::chrono::seconds>()](CNode* connection) {
+            connection->m_last_block_time = now;
+            return true;
+        });
+    } else {
+        WITH_LOCK(cs_main, RemoveBlockRequest(hash, peer.m_id));
+    }
+}
+
+bool PeerManagerImpl::HandOffBlock(Peer& peer, DataStream& recv)
+{
+    static constexpr size_t HEADER_BYTES{80};
+    if (m_opts.deterministic_rng || !m_chainman.IsInitialBlockDownload()) return false;
+    const int limit{static_cast<int>(m_chainman.m_connect_pool->WorkersCount()) - 1};
+    if (limit < 1 || recv.size() < HEADER_BYTES) return false;
+    CBlockHeader header;
+    SpanReader{std::span<const std::byte>{recv.data(), HEADER_BYTES}} >> header;
+    const uint256 hash{header.GetHash()};
+    {
+        // A block in flight was requested by its index entry, so its header is known and has been checked.
+        LOCK(cs_main);
+        bool requested{false};
+        for (auto range{mapBlocksInFlight.equal_range(hash)}; range.first != range.second; ++range.first) {
+            if (range.first->second.first != peer.m_id) continue;
+            requested = true;
+            // The request itself stays until the block is stored, so that nothing asks for the block again.
+            // Its place among the peer's requests is free from here on: the pass of SendMessages() that
+            // follows this message asks the peer for its next block, as it does on the message handler.
+            range.first->second.second->with_pool = true;
+        }
+        if (!requested) return false;
+        // The peer delivered: it is not stalling, as when the request is removed on the message handler.
+        Assert(State(peer.m_id))->m_stalling_since = 0us;
+    }
+    {
+        WAIT_LOCK(m_block_tasks_mutex, lock);
+        if (m_block_tasks.contains({peer.m_id, hash})) {
+            // The first copy's task settles the request. Processed beside it, this one would find the block
+            // being stored and remove the request before it is.
+            LogDebug(BCLog::NET, "block %s of peer=%d is with the connect pool already, dropping the copy", hash.ToString(), peer.m_id);
+            return true;
+        }
+        m_block_tasks_cv.wait(lock, [&]() EXCLUSIVE_LOCKS_REQUIRED(m_block_tasks_mutex) { return static_cast<int>(m_block_tasks.size()) < limit; });
+        m_block_tasks.emplace(peer.m_id, hash);
+        ++m_blocks_handed_off;
+    }
+    LogDebug(BCLog::NET, "block %s of peer=%d goes to the connect pool", hash.ToString(), peer.m_id);
+    auto bytes{std::make_shared<DataStream>(std::move(recv))};
+    recv.clear();
+    auto task{[this, id = peer.m_id, hash, bytes] { RunBlockTask(id, hash, *bytes); }};
+    // A pool that stopped meanwhile: here, as the task would.
+    if (!m_chainman.m_connect_pool->Submit(task)) task();
+    return true;
+}
+
+void PeerManagerImpl::RunBlockTask(NodeId id, const uint256& hash, const DataStream& recv) noexcept
+{
+    const PeerRef peer{GetPeerRef(id)};
+    const auto marked{[&] { return WITH_LOCK(peer->m_misbehavior_mutex, return peer->m_should_discourage); }};
+    if (!peer || marked() || !m_connman.ForNode(id, [](CNode*) { return true; })) {
+        // The peer sent a bad block before this one, or is going for another reason: as on the message
+        // handler, nothing more of it is processed. The request is dropped for the block to be asked for
+        // again, from this peer too should it stay.
+        LogDebug(BCLog::NET, "Not processing block %s of peer=%d, which sent a bad block or is gone", hash.ToString(), id);
+        WITH_LOCK(cs_main, RemoveBlockRequest(hash, id));
+    } else {
+        try {
+            ProcessBlockMessage(*peer, /*node=*/nullptr, std::span<const std::byte>{recv.data(), recv.size()});
+        } catch (const std::ios_base::failure& e) {
+            LogDebug(BCLog::NET, "ProcessMessages(%s, %u bytes): Exception '%s' (%s) caught\n", SanitizeString(NetMsgType::BLOCK), recv.size(), e.what(), typeid(e).name());
+            // The header was the requested block's, the rest of the message is no block. On the message
+            // handler the request would stay and time the peer out. Here it no longer counts among the
+            // peer's requests and nothing would: it is dropped for the block to be asked for again, and
+            // the peer, which answered a request with bytes that are no block, is disconnected.
+            WITH_LOCK(cs_main, RemoveBlockRequest(hash, id));
+            LogDebug(BCLog::NET, "block %s of peer=%d does not deserialize, disconnecting", hash.ToString(), id);
+            m_connman.ForNode(id, [](CNode* connection) {
+                connection->fDisconnect = true;
+                return true;
+            });
+        }
+    }
+    // The block's request is gone. If the block was dropped it is to be asked for again, and the peer may be
+    // marked: the message handler may be asleep with that request to send or the peer to disconnect.
+    m_connman.WakeMessageHandler();
+    {
+        LOCK(m_block_tasks_mutex);
+        m_block_tasks.erase({id, hash});
+        // Under the lock: the destructor goes on once the last task is gone.
+        m_block_tasks_cv.notify_all();
+    }
+}
+
+void PeerManagerImpl::WaitForBlockTasks(NodeId id)
+{
+    WAIT_LOCK(m_block_tasks_mutex, lock);
+    m_block_tasks_cv.wait(lock, [&]() EXCLUSIVE_LOCKS_REQUIRED(m_block_tasks_mutex) {
+        const auto it{m_block_tasks.lower_bound({id, uint256::ZERO})};
+        return it == m_block_tasks.end() || it->first != id;
+    });
+}
+
+bool PeerManagerImpl::BlockTasksOutstanding() const
+{
+    LOCK(m_block_tasks_mutex);
+    return !m_block_tasks.empty();
+}
+
+void PeerManagerImpl::FinishBlockTasks()
+{
+    WAIT_LOCK(m_block_tasks_mutex, lock);
+    m_block_tasks_cv.wait(lock, [&]() EXCLUSIVE_LOCKS_REQUIRED(m_block_tasks_mutex) { return m_block_tasks.empty(); });
 }
 
 void PeerManagerImpl::ProcessCompactBlockTxns(CNode& pfrom, Peer& peer, const BlockTransactions& block_transactions)
@@ -5113,48 +5357,9 @@ void PeerManagerImpl::ProcessMessage(Peer& peer, CNode& pfrom, const std::string
             return;
         }
 
-        std::shared_ptr<CBlock> pblock{m_chainman.NewBlock()};
-        {
-            // Hash the transactions from the wire bytes, on the hashing pool's workers for a large block.
-            const auto time_start{SteadyClock::now()};
-            vRecv.ignore(DeserializeBlock(std::span<const std::byte>{vRecv.data(), vRecv.size()}, *pblock, &m_chainman.m_blockman.m_hash_pool));
-            LogDebug(BCLog::BENCH, "- Deserialize block %s (%u txs): %.2fms\n", pblock->GetHash().ToString(), pblock->vtx.size(),
-                     Ticks<MillisecondsDouble>(SteadyClock::now() - time_start));
-        }
-
-        LogDebug(BCLog::NET, "received block %s peer=%d\n", pblock->GetHash().ToString(), pfrom.GetId());
-
-        const CBlockIndex* prev_block{WITH_LOCK(m_chainman.GetMutex(), return m_chainman.m_blockman.LookupBlockIndex(pblock->hashPrevBlock))};
-
-        // Check for possible mutation if it connects to something we know so we can check for DEPLOYMENT_SEGWIT being active
-        if (prev_block && IsBlockMutated(/*block=*/*pblock,
-                           /*check_witness_root=*/DeploymentActiveAfter(prev_block, m_chainman, Consensus::DEPLOYMENT_SEGWIT))) {
-            LogDebug(BCLog::NET, "Received mutated block from peer=%d\n", peer.m_id);
-            Misbehaving(peer, "mutated block");
-            WITH_LOCK(cs_main, RemoveBlockRequest(pblock->GetHash(), peer.m_id));
-            return;
-        }
-
-        bool forceProcessing = false;
-        const uint256 hash(pblock->GetHash());
-        bool min_pow_checked = false;
-        {
-            LOCK(cs_main);
-            // Always process the block if we requested it, since we may
-            // need it even when it's not a candidate for a new best tip.
-            forceProcessing = IsBlockRequested(hash);
-            RemoveBlockRequest(hash, pfrom.GetId());
-            // mapBlockSource is only used for punishing peers and setting
-            // which peers send us compact blocks, so the race between here and
-            // cs_main in ProcessNewBlock is fine.
-            mapBlockSource.emplace(hash, std::make_pair(pfrom.GetId(), true));
-
-            // Check claimed work on this block against our anti-dos thresholds.
-            if (prev_block && prev_block->nChainWork + GetBlockProof(*pblock) >= GetAntiDoSWorkThreshold()) {
-                min_pow_checked = true;
-            }
-        }
-        ProcessBlock(pfrom, pblock, forceProcessing, min_pow_checked);
+        // In initial block download a block the peer was asked for goes to the connect pool.
+        if (HandOffBlock(peer, vRecv)) return;
+        ProcessBlockMessage(peer, &pfrom, std::span<const std::byte>{vRecv.data(), vRecv.size()});
         return;
     }
 
@@ -5225,8 +5430,10 @@ void PeerManagerImpl::ProcessMessage(Peer& peer, CNode& pfrom, const std::string
     }
 
     if (msg_type == NetMsgType::PING) {
-        // Blocks this thread accepted earlier are connected before the peer gets its answer, so that it never
-        // sees a view older than what it sent (see ChainstateManager::SignalConnector).
+        // The peer's blocks that went to the connect pool are processed and the blocks accepted earlier are
+        // connected before the peer gets its answer, so that it never sees a view older than what it sent
+        // (see HandOffBlock and ChainstateManager::SignalConnector).
+        WaitForBlockTasks(pfrom.GetId());
         m_chainman.WaitForConnector();
         if (pfrom.GetCommonVersion() > BIP0031_VERSION) {
             uint64_t nonce = 0;
@@ -5465,6 +5672,12 @@ bool PeerManagerImpl::ProcessMessages(CNode& node, std::atomic<bool>& interruptM
 
     // Don't bother if send buffer is too full to respond anyway
     if (node.fPauseSend) return false;
+
+    // A block of this peer that was processed off this thread, on the connect pool or by the connector thread,
+    // was found bad: no further message of the peer is taken, and SendMessages(), which follows, disconnects it
+    // as it would have had the verdict come on this thread. More work is reported for the peer that is kept
+    // all the same (noban, manual): its waiting messages are taken on the next pass, without a sleep before it.
+    if (WITH_LOCK(peer.m_misbehavior_mutex, return peer.m_should_discourage)) return true;
 
     auto poll_result{node.PollMessage()};
     if (!poll_result) {
@@ -6534,12 +6747,15 @@ bool PeerManagerImpl::SendMessages(CNode& node)
         //
         std::vector<CInv> vGetData;
         const bool can_request_blocks_from_peer{current_time >= state.m_block_download_paused_until};
-        if (CanServeBlocks(peer) && can_request_blocks_from_peer && ((sync_blocks_and_headers_from_peer && !IsLimitedPeer(peer)) || !m_chainman.IsInitialBlockDownload()) && state.vBlocksInFlight.size() < MAX_BLOCKS_IN_TRANSIT_PER_PEER) {
+        // Blocks the peer still has to send: a block that arrived and is with the connect pool keeps its
+        // request until it is stored, and is not one of them.
+        auto get_inflight_budget = [&state]() {
+            const auto on_the_wire{std::ranges::count_if(state.vBlocksInFlight, [](const QueuedBlock& block) { return !block.with_pool; })};
+            return std::max(0, MAX_BLOCKS_IN_TRANSIT_PER_PEER - static_cast<int>(on_the_wire));
+        };
+        if (CanServeBlocks(peer) && can_request_blocks_from_peer && ((sync_blocks_and_headers_from_peer && !IsLimitedPeer(peer)) || !m_chainman.IsInitialBlockDownload()) && get_inflight_budget() > 0) {
             std::vector<const CBlockIndex*> vToDownload;
             NodeId staller = -1;
-            auto get_inflight_budget = [&state]() {
-                return std::max(0, MAX_BLOCKS_IN_TRANSIT_PER_PEER - static_cast<int>(state.vBlocksInFlight.size()));
-            };
 
             // If there are multiple chainstates, download blocks for the
             // current chainstate first, to prioritize getting to network tip
@@ -6567,8 +6783,9 @@ bool PeerManagerImpl::SendMessages(CNode& node)
                 // connector thread connects accepted blocks after this thread has moved on, so the window may
                 // only look exhausted because the tip has not caught up with the blocks already stored; the
                 // verdict waits until the connector has nothing left to attempt, when the window is what it
-                // would be had the blocks been connected on this thread.
-                if (m_chainman.ConnectorBusy()) {
+                // would be had the blocks been connected on this thread. Blocks still with the connect pool
+                // have not reached the connector yet, so it waits for those as well.
+                if (BlockTasksOutstanding() || m_chainman.ConnectorBusy()) {
                     // Decided on a later pass.
                 } else if (State(staller)->m_stalling_since == 0us) {
                     State(staller)->m_stalling_since = current_time;

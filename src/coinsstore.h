@@ -421,7 +421,63 @@ private:
         Node* prev{nullptr};
         Node* next{nullptr};
     };
-    using Map = std::unordered_map<COutPoint, Entry, SaltedCoinsCacheHasher>;
+    //! A shard's entries are inserted and erased by whichever thread holds its mutex, so a node is often freed
+    //! by another thread than the one that allocated it, which the general allocator pays for with a lock. A
+    //! thread therefore keeps the nodes it frees, up to a bound, for its own next insertions.
+    template <typename T>
+    struct NodeAllocator {
+        using value_type = T;
+        static constexpr size_t MAX_KEPT{1024};
+        struct Kept {
+            void* head{nullptr};
+            size_t count{0};
+            ~Kept()
+            {
+                while (head) {
+                    void* next{*static_cast<void**>(head)};
+                    std::allocator<T>{}.deallocate(static_cast<T*>(head), 1);
+                    head = next;
+                }
+            }
+        };
+        static Kept& Mine()
+        {
+            static_assert(sizeof(T) >= sizeof(void*));
+            thread_local Kept kept;
+            return kept;
+        }
+        NodeAllocator() = default;
+        template <typename U>
+        NodeAllocator(const NodeAllocator<U>&) noexcept {}
+        T* allocate(size_t n)
+        {
+            if (n == 1) {
+                Kept& kept{Mine()};
+                if (kept.head) {
+                    void* node{kept.head};
+                    kept.head = *static_cast<void**>(node);
+                    --kept.count;
+                    return static_cast<T*>(node);
+                }
+            }
+            return std::allocator<T>{}.allocate(n);
+        }
+        void deallocate(T* p, size_t n) noexcept
+        {
+            if (n == 1) {
+                Kept& kept{Mine()};
+                if (kept.count < MAX_KEPT) {
+                    *reinterpret_cast<void**>(p) = kept.head;
+                    kept.head = p;
+                    ++kept.count;
+                    return;
+                }
+            }
+            std::allocator<T>{}.deallocate(p, n);
+        }
+        friend bool operator==(const NodeAllocator&, const NodeAllocator&) noexcept { return true; }
+    };
+    using Map = std::unordered_map<COutPoint, Entry, SaltedCoinsCacheHasher, std::equal_to<COutPoint>, NodeAllocator<std::pair<const COutPoint, Entry>>>;
     //! The dirty entries of one span of change heights in a shard.
     struct Bucket {
         //! What writing them out frees: DirtyBytes() of each.

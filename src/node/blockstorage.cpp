@@ -1165,7 +1165,7 @@ void BlockManager::ApplyEffectCompletions()
     m_effects.ApplyCompletions();
 }
 
-bool BlockManager::ReadBlock(CBlock& block, const FlatFilePos& pos, const std::optional<uint256>& expected_hash) const
+bool BlockManager::ReadBlock(CBlock& block, const FlatFilePos& pos, const std::optional<uint256>& expected_hash, bool hash_on_pool) const
 {
     block.SetNull();
 
@@ -1176,8 +1176,8 @@ bool BlockManager::ReadBlock(CBlock& block, const FlatFilePos& pos, const std::o
     }
 
     try {
-        // Read block, hashing its transactions from the bytes on the pool's workers.
-        DeserializeBlock(std::as_bytes(std::span{*block_data}), block, &m_hash_pool);
+        // Read block, hashing its transactions from the bytes: on the hashing pool's workers, or here.
+        DeserializeBlock(std::as_bytes(std::span{*block_data}), block, hash_on_pool ? &m_hash_pool : nullptr);
     } catch (const std::exception& e) {
         LogError("Deserialize or I/O error - %s at %s while reading block", e.what(), pos.ToString());
         return false;

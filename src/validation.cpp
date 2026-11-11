@@ -3801,7 +3801,9 @@ void Chainstate::RunConnectTask(StagedConnect& staged) noexcept
         bool read;
         {
             const auto timer{staged.Time(StagedConnect::READ)};
-            read = m_blockman.ReadBlock(*block, staged.pos, staged.pindex->GetBlockHash());
+            // The task hashes the transactions itself: the blocks beside it are the parallelism, and a
+            // wait for the hashing pool would put this worker to sleep with a core of its own to use.
+            read = m_blockman.ReadBlock(*block, staged.pos, staged.pindex->GetBlockHash(), /*hash_on_pool=*/false);
         }
         if (!read) {
             staged.read_failed = true;

@@ -206,7 +206,7 @@ void CCoinsViewDB::WriteRun(const std::vector<CoinWrite>& writes, const uint256&
     CDBBatch batch(*m_db);
     const auto simulate_crash{[&] {
         if (!m_options.simulate_crash_ratio) return;
-        // Two threads may be writing runs at once.
+        // Several threads may be writing runs at once.
         thread_local FastRandomContext rng;
         if (rng.randrange(m_options.simulate_crash_ratio) == 0) {
             LogError("Simulating a crash. Goodbye.");

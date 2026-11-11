@@ -162,11 +162,11 @@ public:
     void Sync();
     /**
      * How the base takes its writes: the size of a batch (the database's batch size, the size its writes
-     * are measured to be good at), and whether two threads may call its WriteRun() at once (the
+     * are measured to be good at), and whether several threads may call its WriteRun() at once (the
      * database's may). Flush() and Sync() write batches of up to that size, filled across neighbouring
-     * shards. A flush of more than a few batches to a base that allows it runs on two threads, a half of
-     * the shards each, collecting and serializing its next batch while the database is busy with the
-     * other's.
+     * shards. A flush of more than a few batches to a base that allows it runs on up to four threads, a
+     * range of the shards each, collecting and serializing its next batch while the database is busy
+     * with another's.
      */
     void SetBaseWrites(uint64_t batch_bytes, bool concurrent)
     {

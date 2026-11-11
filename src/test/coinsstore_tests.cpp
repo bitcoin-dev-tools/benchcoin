@@ -505,7 +505,7 @@ public:
 };
 
 //! A flush fills its batches across the shards up to the batch size, a batch not being a shard's worth of
-//! changes, with two workers writing; the database then holds every change and the tier is empty.
+//! changes, with several workers writing; the database then holds every change and the tier is empty.
 BOOST_AUTO_TEST_CASE(flush_fills_batches_across_shards)
 {
     static constexpr uint64_t BATCH{4000};
@@ -576,7 +576,7 @@ public:
 };
 
 //! A flush of shards that are small against a batch writes batches of whole neighbouring shards: ranges
-//! of the database's keys that do not reach into one another, from two workers.
+//! of the database's keys that do not reach into one another, from several workers.
 BOOST_AUTO_TEST_CASE(flush_batches_are_disjoint_key_ranges)
 {
     static constexpr uint64_t BATCH{20000};

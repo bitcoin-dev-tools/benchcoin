@@ -1635,9 +1635,14 @@ struct CoinsStore::Wipe {
     const uint256 old_head;
     //! The size of a batch.
     const uint64_t limit;
-    //! A worker's write failed: the other takes no further shard.
+    //! A worker's write failed: the others take no further shard.
     std::atomic<bool> failed{false};
 };
+
+//! The most workers a flush has. The database takes one batch at a time, and a batch takes two to three
+//! times as long to prepare as the database takes to write it: four keep the database busy, and more
+//! would wait for it.
+static constexpr size_t MAX_WIPE_WORKERS{4};
 
 //! A worker of a flush: its shards, the batch it is filling, and the shards whose changes are in it.
 struct CoinsStore::WipeWorker {
@@ -1767,7 +1772,7 @@ void CoinsStore::RunWipeWorker(Wipe& wipe, WipeWorker& worker)
         }
         WriteWipeBatch(wipe, worker);
     } catch (const std::runtime_error&) {
-        // The base's write failed. Flush() throws it on once both workers are through.
+        // The base's write failed. Flush() throws it on once every worker is through.
         worker.error = std::current_exception();
         wipe.failed.store(true, std::memory_order_relaxed);
         if (walked) {
@@ -1805,10 +1810,11 @@ void CoinsStore::Flush(bool /*reallocate_cache*/)
     // A shard larger than a batch is not cut here, where its entries come in the order of their hashes:
     // it is a batch of its own, and the database cuts it at its batch size along the keys.
     //
-    // The database takes one batch at a time. With two workers the walk of the shards, the sort and
-    // the serialization of a batch run while the database is busy with the other worker's batch. Each
-    // has one half of the shards, and the second starts once the first batch, the marker's, is in the
-    // database.
+    // The database takes one batch at a time. With several workers the walk of the shards, the sort and
+    // the serialization of a batch run while the database is busy with another worker's batch. Each has
+    // a range of neighbouring shards of its own, so that a batch is still a range of keys no other
+    // reaches into, and all but the one with the highest range start once its first batch, the marker's,
+    // is in the database.
     const uint256 best{GetBestBlock()};
     const int head_height{m_tier_height >= 0 ? m_tier_height : m_change_height};
     // See below: the shutdown's flush after one that failed fails as well, and writes nothing.
@@ -1817,30 +1823,36 @@ void CoinsStore::Flush(bool /*reallocate_cache*/)
     m_run_in_flight = true;
     const auto start{SteadyClock::now()};
     Wipe wipe{.best = best, .old_head = m_written_head, .limit = std::max<uint64_t>(m_batch_bytes, 1)};
-    std::array<WipeWorker, 2> workers;
-    // Two workers when there are batches for them to take turns with: a change is 38 bytes of a batch at least.
-    const bool two{m_base_concurrent && GetDirtyCount() * uint64_t{38} >= 4 * wipe.limit};
-    const size_t mid{two ? m_shards.size() / 2 : 0};
-    workers[0].begin = mid;
-    workers[0].end = m_shards.size();
-    workers[1].end = mid;
+    // A worker for every two batches there may be, so that each has batches to take turns with, and no
+    // more than there are cores: a change is 38 bytes of a batch at least. A flush of a few batches, a
+    // small cache's, has one.
+    const uint64_t cores{std::max(1U, std::thread::hardware_concurrency())};
+    const uint64_t wanted{m_base_concurrent ? GetDirtyCount() * uint64_t{38} / wipe.limit / 2 : 1};
+    std::vector<WipeWorker> workers(std::clamp<uint64_t>(wanted, 1, std::min<uint64_t>({MAX_WIPE_WORKERS, cores, m_shards.size()})));
+    for (size_t i{0}; i < workers.size(); ++i) {
+        workers[i].begin = m_shards.size() * i / workers.size();
+        workers[i].end = m_shards.size() * (i + 1) / workers.size();
+    }
     {
-        std::thread helper;
-        if (two) {
-            workers[0].after_first_batch = [&] {
-                helper = std::thread{[&] {
-                    util::ThreadRename("coinswipe");
-                    RunWipeWorker(wipe, workers[1]);
-                }};
+        // The worker of the highest range runs here, and starts the others.
+        std::vector<std::thread> helpers;
+        WipeWorker& first{workers.back()};
+        if (workers.size() > 1) {
+            first.after_first_batch = [&] {
+                for (size_t i{0}; i + 1 < workers.size(); ++i) {
+                    helpers.emplace_back([&, i] {
+                        util::ThreadRename("coinswipe");
+                        RunWipeWorker(wipe, workers[i]);
+                    });
+                }
             };
         }
-        RunWipeWorker(wipe, workers[0]);
-        if (helper.joinable()) {
-            helper.join();
-        } else {
-            // The upper half had nothing to write, or there is one worker and this is an empty range.
-            RunWipeWorker(wipe, workers[1]);
+        RunWipeWorker(wipe, first);
+        if (helpers.empty()) {
+            // The highest range had nothing to write: the others one after the other, from the highest down.
+            for (size_t i{workers.size() - 1}; i-- > 0;) RunWipeWorker(wipe, workers[i]);
         }
+        for (std::thread& helper : helpers) helper.join();
     }
     for (const WipeWorker& worker : workers) {
         if (!worker.error) continue;
@@ -1862,10 +1874,21 @@ void CoinsStore::Flush(bool /*reallocate_cache*/)
     m_written_height = head_height;
     m_fell_below_written = false;
     m_run_in_flight = false;
-    LogDebug(BCLog::COINDB, "Flushed the coins tier in %.2fs: %u changes in %u batches of up to %.2f MiB; worker %.2fs of which %.2fs in the database's write%s",
-             Ticks<SecondsDouble>(SteadyClock::now() - start), workers[0].changes + workers[1].changes, workers[0].batches + workers[1].batches,
-             wipe.limit / double(1 << 20), Ticks<SecondsDouble>(workers[0].total_time), Ticks<SecondsDouble>(workers[0].write_time),
-             two ? strprintf(", second worker %.2fs of which %.2fs", Ticks<SecondsDouble>(workers[1].total_time), Ticks<SecondsDouble>(workers[1].write_time)) : "");
+    uint64_t changes{0};
+    uint64_t batches{0};
+    SteadyClock::duration total_time{0};
+    SteadyClock::duration write_time{0};
+    SteadyClock::duration longest{0};
+    for (const WipeWorker& worker : workers) {
+        changes += worker.changes;
+        batches += worker.batches;
+        total_time += worker.total_time;
+        write_time += worker.write_time;
+        longest = std::max(longest, worker.total_time);
+    }
+    LogDebug(BCLog::COINDB, "Flushed the coins tier in %.2fs: %u changes in %u runs, batches of up to %.2f MiB; %u workers, %.2fs between them of which %.2fs in the database's write, the longest %.2fs",
+             Ticks<SecondsDouble>(SteadyClock::now() - start), changes, batches, wipe.limit / double(1 << 20), workers.size(),
+             Ticks<SecondsDouble>(total_time), Ticks<SecondsDouble>(write_time), Ticks<SecondsDouble>(longest));
 }
 
 void CoinsStore::Sync()

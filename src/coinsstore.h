@@ -870,9 +870,9 @@ private:
     struct WipeWorker;
     //! A flush's worker: takes its shards from the highest down, and writes what it took out of them.
     void RunWipeWorker(Wipe& wipe, WipeWorker& worker) NO_THREAD_SAFETY_ANALYSIS;
-    //! Take the shard's entries out of it, its changes into the worker's batch; a full batch is written on
-    //! the way. Returns what the shard's changes come to as a database batch.
-    uint64_t WipeShard(Shard& shard, const Wipe& wipe, WipeWorker& worker) EXCLUSIVE_LOCKS_REQUIRED(shard.mutex);
+    //! Take the shard's entries out of it, its changes into the worker's batch in the order of their
+    //! keys. Returns what the shard's changes come to as a database batch.
+    uint64_t WipeShard(Shard& shard, WipeWorker& worker) EXCLUSIVE_LOCKS_REQUIRED(shard.mutex);
     //! Write the worker's batch and unlock the shards it emptied: their changes are in the database.
     void WriteWipeBatch(const Wipe& wipe, WipeWorker& worker) NO_THREAD_SAFETY_ANALYSIS;
     //! The map's size or bucket count may have changed: count the difference into the totals.

@@ -511,7 +511,7 @@ BOOST_AUTO_TEST_CASE(flush_fills_batches_across_shards)
     static constexpr uint64_t BATCH{4000};
     CCoinsViewDB db{MemoryDb("store"), {}};
     CountingBase base{&db};
-    CoinsStore store{&base, 16, true};
+    CoinsStore store{&base, 256, true};
     store.SetBaseWrites(BATCH, /*concurrent=*/true);
     store.SetBestBlock(uint256::ONE, 1);
     std::map<COutPoint, std::optional<Coin>> expected;
@@ -545,10 +545,11 @@ BOOST_AUTO_TEST_CASE(flush_fills_batches_across_shards)
     }
     LOCK(base.m_mutex);
     BOOST_CHECK_EQUAL(base.m_changes, 2500U);
-    // Full batches, then what each of the two workers had left, and the run that closes the marker: far
-    // fewer and far larger than a run for each of the 16 shards' share would be at this batch size.
+    // Batches of whole shards, each within a shard's changes of the batch size, then what each worker
+    // had left, and the run that closes the marker: far fewer and far larger than a run for each of the
+    // 256 shards would be.
     BOOST_CHECK_GE(base.m_runs, base.m_bytes / (BATCH + 100));
-    BOOST_CHECK_LE(base.m_runs, base.m_bytes / BATCH + 3);
+    BOOST_CHECK_LE(base.m_runs, base.m_bytes / (BATCH - 1000) + 5);
     store.SanityCheck();
 }
 
@@ -559,12 +560,16 @@ public:
     using CCoinsViewBacked::CCoinsViewBacked;
     Mutex m_mutex;
     std::vector<std::pair<uint256, uint256>> m_ranges GUARDED_BY(m_mutex);
+    //! Runs whose changes were not in the descending order of the keys.
+    size_t m_unordered GUARDED_BY(m_mutex){0};
     void WriteRun(const std::vector<CoinWrite>& writes, const uint256& new_head, const uint256& old_head, bool final) override EXCLUSIVE_LOCKS_REQUIRED(!m_mutex)
     {
         if (!writes.empty()) {
             const auto [lo, hi]{std::ranges::minmax_element(writes, {}, [](const CoinWrite& write) { return write.outpoint.hash.ToUint256(); })};
+            const bool ordered{std::ranges::is_sorted(writes, [](const CoinWrite& a, const CoinWrite& b) { return b.outpoint < a.outpoint; })};
             LOCK(m_mutex);
             m_ranges.emplace_back(lo->outpoint.hash.ToUint256(), hi->outpoint.hash.ToUint256());
+            if (!ordered) ++m_unordered;
         }
         CCoinsViewBacked::WriteRun(writes, new_head, old_head, final);
     }
@@ -598,6 +603,43 @@ BOOST_AUTO_TEST_CASE(flush_batches_are_disjoint_key_ranges)
     // A shard's share is a fifth of a batch or so: a batch is a few shards, and there are many batches.
     BOOST_CHECK_GE(base.m_ranges.size(), 8U);
     BOOST_CHECK_LE(base.m_ranges.size(), 64U);
+    std::ranges::sort(base.m_ranges);
+    for (size_t i{1}; i < base.m_ranges.size(); ++i) {
+        BOOST_CHECK_MESSAGE(base.m_ranges[i - 1].second < base.m_ranges[i].first, "batches " << i - 1 << " and " << i << " overlap");
+    }
+}
+
+//! A shard larger than a batch is written as one run in the order of its keys, the outputs of one
+//! transaction among themselves included, and never as two runs that both cover its range: the database
+//! cuts the run at its batch size, and holds every change.
+BOOST_AUTO_TEST_CASE(flush_never_ends_a_batch_inside_a_shard)
+{
+    static constexpr uint64_t BATCH{4000};
+    CCoinsViewDB db{MemoryDb("store"), {.batch_write_bytes = BATCH, .simulate_crash_ratio = 0}};
+    RangeBase base{&db};
+    CoinsStore store{&base, 4};
+    store.SetBaseWrites(BATCH, /*concurrent=*/true);
+    store.SetBestBlock(uint256::ONE, 1);
+    std::map<COutPoint, Coin> expected;
+    for (int i{0}; i < 500; ++i) {
+        const Txid txid{Txid::FromUint256(m_rng.rand256())};
+        for (uint32_t n{0}; n < 4; ++n) {
+            Coin coin{RandomCoin(m_rng, 1)};
+            expected[COutPoint{txid, n}] = coin;
+            store.AddCoin(COutPoint{txid, n}, std::move(coin), false);
+        }
+    }
+    store.Flush();
+    BOOST_CHECK_EQUAL(store.GetCacheSize(), 0U);
+    BOOST_CHECK(db.GetBestBlock() == uint256::ONE);
+    BOOST_CHECK(db.GetHeadBlocks().empty());
+    for (const auto& [outpoint, coin] : expected) {
+        BOOST_CHECK_MESSAGE(Same(db.PeekCoin(outpoint), coin), "mismatch at " << outpoint.ToString());
+    }
+    LOCK(base.m_mutex);
+    // A shard's share is six batches or so, and it is one run.
+    BOOST_CHECK_EQUAL(base.m_ranges.size(), 4U);
+    BOOST_CHECK_EQUAL(base.m_unordered, 0U);
     std::ranges::sort(base.m_ranges);
     for (size_t i{1}; i < base.m_ranges.size(); ++i) {
         BOOST_CHECK_MESSAGE(base.m_ranges[i - 1].second < base.m_ranges[i].first, "batches " << i - 1 << " and " << i << " overlap");

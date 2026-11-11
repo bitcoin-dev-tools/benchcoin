@@ -1313,7 +1313,9 @@ struct WriteSorter {
  * batch one change at a time into a sorted structure, one writer at a time, and finds the place of a key
  * next to the last one it took far faster than the place of a key anywhere: the order costs a sort here,
  * on the thread that prepares the batch, and saves several times that inside the database's write. By
- * the leading bytes of the txid, which is the order of the keys but for the outputs of one transaction.
+ * the leading bytes of the txid and, where they are equal, by the outpoint: the order of the keys (but
+ * among the outputs past the 16511th of one transaction, whose index is a byte longer in the key), so
+ * that a batch the database cuts at its batch size (CCoinsViewDB::WriteRun()) is cut along its keys.
  */
 static void SortWrites(std::vector<CoinWrite>& writes, size_t from, WriteSorter& sorter)
 {
@@ -1324,7 +1326,10 @@ static void SortWrites(std::vector<CoinWrite>& writes, size_t from, WriteSorter&
     for (size_t i{0}; i < count; ++i) {
         sorter.order.emplace_back(ReadBE64(writes[from + i].outpoint.hash.ToUint256().data()), static_cast<uint32_t>(i));
     }
-    std::sort(sorter.order.begin(), sorter.order.end(), std::greater{});
+    std::sort(sorter.order.begin(), sorter.order.end(), [&](const auto& a, const auto& b) {
+        if (a.first != b.first) return a.first > b.first;
+        return writes[from + b.second].outpoint < writes[from + a.second].outpoint;
+    });
     sorter.sorted.clear();
     sorter.sorted.reserve(count);
     for (const auto& [prefix, i] : sorter.order) sorter.sorted.push_back(std::move(writes[from + i]));
@@ -1672,7 +1677,7 @@ void CoinsStore::WriteWipeBatch(const Wipe& wipe, WipeWorker& worker)
     worker.held.clear();
 }
 
-uint64_t CoinsStore::WipeShard(Shard& shard, const Wipe& wipe, WipeWorker& worker)
+uint64_t CoinsStore::WipeShard(Shard& shard, WipeWorker& worker)
 {
     AssertLockHeld(shard.mutex);
     // The lists go with the entries; the few entries that stay, the open blocks' own changes, are put
@@ -1683,8 +1688,8 @@ uint64_t CoinsStore::WipeShard(Shard& shard, const Wipe& wipe, WipeWorker& worke
     shard.clean_young = nullptr;
     shard.clean_old = nullptr;
     uint64_t added{0};
-    // Where the shard's changes begin in the batch, or what is left of them after a batch went out.
-    size_t from{worker.writes.size()};
+    // Where the shard's changes begin in the batch.
+    const size_t from{worker.writes.size()};
     const auto add{[&](CoinWrite&& write) {
         const uint64_t bytes{BatchBytes(write)};
         added += bytes;
@@ -1717,17 +1722,10 @@ uint64_t CoinsStore::WipeShard(Shard& shard, const Wipe& wipe, WipeWorker& worke
             SubUsage(shard, usage);
             it = shard.map.erase(it);
         }
-        // A full batch goes out in the middle of a shard that is a large part of a batch by itself. The
-        // shard stays locked: everything taken out of it so far is in this batch or an earlier one. A
-        // batch of smaller shards ends between two of them (RunWipeWorker()), and when the last of them
-        // turns out larger than expected the batch runs over the size by that much rather than be cut here.
-        if (worker.size >= wipe.limit && added * 2 > wipe.limit) {
-            SortWrites(worker.writes, from, worker.sorter);
-            WriteWipeBatch(wipe, worker);
-            from = 0;
-        }
     }
-    // The map hands its entries out in the order of their hashes.
+    // The map hands its entries out in the order of their hashes, and no batch ends during the walk for
+    // that reason: what the walk has passed at any point is spread over the shard's whole range of keys,
+    // and so is the rest, and two batches with a part each would cover the same range.
     SortWrites(worker.writes, from, worker.sorter);
     shard.map.rehash(0);
     Resized(shard);
@@ -1756,16 +1754,16 @@ void CoinsStore::RunWipeWorker(Wipe& wipe, WipeWorker& worker)
             EnterCritical("shard.mutex", __FILE__, __LINE__, static_cast<ShardMutex::unique_lock::mutex_type*>(&shard.mutex));
             shard.mutex.lock();
             walked = &shard;
-            const uint64_t added{WipeShard(shard, wipe, worker)};
+            const uint64_t added{WipeShard(shard, worker)};
             walked = nullptr;
             LeaveCritical();
             worker.held.push_back(&shard);
             // A batch ends between two shards when it is full, or when the next shard, taken to be as
             // large as this one, would not fit: the batch is then whole shards, a range of the database's
-            // keys that no other batch reaches into. Shards of more than half a batch fill it to the
-            // limit instead (WipeShard()), and two batches then share the range of the shard they were
-            // cut in.
-            if (worker.size >= wipe.limit || (added * 2 <= wipe.limit && worker.size + added > wipe.limit)) WriteWipeBatch(wipe, worker);
+            // keys that no other batch reaches into. A shard larger than a batch is a batch of its own,
+            // which the database cuts at its batch size (CCoinsViewDB::WriteRun()): along the keys, the
+            // shard being in their order, so that the pieces are ranges of their own as well.
+            if (worker.size >= wipe.limit || worker.size + added > wipe.limit) WriteWipeBatch(wipe, worker);
         }
         WriteWipeBatch(wipe, worker);
     } catch (const std::runtime_error&) {
@@ -1804,6 +1802,8 @@ void CoinsStore::Flush(bool /*reallocate_cache*/)
     // holds it then covers the top of the range, not all of it. The marker's other keys are in that
     // first batch and in the last, tiny one that closes it, and in none between (CCoinsViewDB::WriteRun()).
     // Inside a batch the changes are in the order of the keys as well (SortWrites()), a shard at a time.
+    // A shard larger than a batch is not cut here, where its entries come in the order of their hashes:
+    // it is a batch of its own, and the database cuts it at its batch size along the keys.
     //
     // The database takes one batch at a time. With two workers the walk of the shards, the sort and
     // the serialization of a batch run while the database is busy with the other worker's batch. Each

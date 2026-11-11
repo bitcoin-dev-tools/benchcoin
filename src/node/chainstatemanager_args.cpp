@@ -25,6 +25,11 @@
 #include <string>
 
 namespace node {
+int32_t DefaultPrevoutFetchThreads()
+{
+    return std::clamp<int32_t>(GetNumCores(), MIN_DEFAULT_PREVOUTFETCH_THREADS, MAX_PREVOUTFETCH_THREADS);
+}
+
 util::Result<void> ApplyArgsManOptions(const ArgsManager& args, ChainstateManager::Options& opts)
 {
     if (auto value{args.GetIntArg("-checkblockindex")}) {
@@ -77,6 +82,8 @@ util::Result<void> ApplyArgsManOptions(const ArgsManager& args, ChainstateManage
             return util::Error{Untranslated(strprintf("-prevoutfetchthreads must be non-negative (got %d). Use 0 for no connect pool threads.", *value))};
         }
         opts.prevoutfetch_threads_num = std::min(*value, MAX_PREVOUTFETCH_THREADS);
+    } else {
+        opts.prevoutfetch_threads_num = DefaultPrevoutFetchThreads();
     }
 
     if (auto value{args.GetArg<int32_t>("-connectwindow")}) {

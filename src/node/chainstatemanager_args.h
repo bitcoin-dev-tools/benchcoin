@@ -13,7 +13,16 @@ class ArgsManager;
 /** -par default (number of script-checking threads, 0 = auto) */
 inline constexpr int DEFAULT_SCRIPTCHECK_THREADS{0};
 
+/** The fewest connect pool threads -prevoutfetchthreads defaults to: with a single one the blocks of a peer
+ *  stay on the message handler. */
+inline constexpr int32_t MIN_DEFAULT_PREVOUTFETCH_THREADS{2};
+
 namespace node {
+/** The default of -prevoutfetchthreads: one connect pool thread for each core, at least
+ *  MIN_DEFAULT_PREVOUTFETCH_THREADS and at most MAX_PREVOUTFETCH_THREADS. The block rate of the initial block
+ *  download follows the smaller of the two counts, and threads beyond the cores only hold memory: by default the
+ *  window of blocks in flight is twice as wide as the pool, up to MAX_CONNECT_WINDOW. */
+int32_t DefaultPrevoutFetchThreads();
 [[nodiscard]] util::Result<void> ApplyArgsManOptions(const ArgsManager& args, ChainstateManager::Options& opts);
 } // namespace node
 

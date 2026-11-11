@@ -100,8 +100,8 @@ inline constexpr int MAX_SCRIPTCHECK_THREADS{15};
 inline constexpr int MAX_BLOCKHASH_THREADS{4};
 
 /** Maximum number of dedicated threads allowed for prefetching block input prevouts */
-inline constexpr int32_t MAX_PREVOUTFETCH_THREADS{32};
-//! The most blocks the connect window validates at once (-connectwindow); one batch of ActivateBestChain.
+inline constexpr int32_t MAX_PREVOUTFETCH_THREADS{1024};
+//! The most blocks the connect window validates at once (-connectwindow).
 inline constexpr int MAX_CONNECT_WINDOW{64};
 
 /** Current sync state passed to tip changed callbacks. */
@@ -539,7 +539,7 @@ struct BlockValidationContext {
 
 /** Outputs of the pure ConnectBlock() besides the mutated coins view. */
 struct ConnectBlockResult {
-    //! Undo data for the connected block; empty when connection failed.
+    //! Undo data for the connected block; of no meaning when connection failed.
     CBlockUndo undo;
     //! The serialized size of `undo`, when it was measured ahead of FinishConnectBlock() (a window block's
     //! worker does, so that the connector thread need not walk the undo data).
@@ -1571,9 +1571,10 @@ public:
         std::multimap<uint256, FlatFilePos>* blocks_with_unknown_parent = nullptr);
 
     /**
-     * Process an incoming block. This only returns after the best known valid
-     * block is made active. Note that it does not, however, guarantee that the
-     * specific block passed to it has been checked for validity!
+     * Process an incoming block. Unless `activate_async` is set, this only returns
+     * after the best known valid block is made active. Note that it does not,
+     * however, guarantee that the specific block passed to it has been checked
+     * for validity!
      *
      * If you want to *possibly* get feedback on whether block is valid, you must
      * install a CValidationInterface (see validationinterface.h) - this will have
@@ -1592,6 +1593,9 @@ public:
      *                               block header is already present in block
      *                               index then this parameter has no effect)
      * @param[out]  new_block A boolean which is set to indicate if the block was first received via this call
+     * @param[in]   activate_async Return once the block is accepted and stored, and leave making the best
+     *                             chain active to the connector thread (SignalConnector()), which reports
+     *                             through the validation interface as a synchronous call does.
      * @returns     If the block was processed, independently of block validity
      */
     bool ProcessNewBlock(const std::shared_ptr<const CBlock>& block, bool force_processing, bool min_pow_checked, bool* new_block, bool activate_async = false) LOCKS_EXCLUDED(cs_main) EXCLUSIVE_LOCKS_REQUIRED(!m_connector_mutex);

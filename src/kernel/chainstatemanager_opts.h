@@ -23,6 +23,8 @@ class CChainParams;
 class ValidationSignals;
 
 inline constexpr auto DEFAULT_MAX_TIP_AGE{24h};
+//! The connect pool's threads when nothing derives them from the machine. bitcoind does: see
+//! node::DefaultPrevoutFetchThreads().
 inline constexpr int32_t DEFAULT_PREVOUTFETCH_THREADS{8};
 inline constexpr size_t DEFAULT_BLOCK_CACHE_BYTES{128_MiB};
 

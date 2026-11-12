@@ -18,6 +18,7 @@
 #include <functional>
 #include <map>
 #include <optional>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -1196,6 +1197,40 @@ BOOST_AUTO_TEST_CASE(spend_reads_the_base_again_after_a_settle)
     BOOST_CHECK_EQUAL(store.ConflictCount(b3), 1U);
     store.UnwindBlock(b3);
     store.SanityCheck();
+}
+
+//! The map nodes one thread frees, more than a thread keeps, serve another thread's insertions, and the
+//! coins that land in them are whole.
+BOOST_AUTO_TEST_CASE(freed_nodes_serve_another_thread)
+{
+    CCoinsViewDB db{MemoryDb("store"), {}};
+    CoinsStore store{&db, 4, true};
+    store.SetBestBlock(uint256::ONE, 1);
+    constexpr uint32_t COUNT{5000};
+    const auto outpoint{[](uint8_t round, uint32_t i) { return COutPoint{Txid::FromUint256(uint256{round}), i}; }};
+    const auto add{[&](uint8_t round) {
+        for (uint32_t i{0}; i < COUNT; ++i) {
+            store.AddCoin(outpoint(round, i), Coin{CTxOut{CAmount{i} + round, CScript{} << OP_TRUE}, 1, false}, false);
+        }
+    }};
+    std::thread{add, uint8_t{1}}.join();
+    BOOST_CHECK_EQUAL(store.GetCacheSize(), COUNT);
+    // Fresh coins: each spend frees its node, two full lists stay with the thread and the rest change hands.
+    store.SetChangeHeight(2);
+    uint32_t spent{0};
+    std::thread{[&] {
+        for (uint32_t i{0}; i < COUNT; ++i) spent += store.SpendCoin(outpoint(1, i));
+    }}.join();
+    BOOST_CHECK_EQUAL(spent, COUNT);
+    BOOST_CHECK_EQUAL(store.GetCacheSize(), 0U);
+    std::thread{add, uint8_t{2}}.join();
+    BOOST_CHECK_EQUAL(store.GetCacheSize(), COUNT);
+    for (uint32_t i{0}; i < COUNT; ++i) {
+        BOOST_CHECK(!store.PeekCoin(outpoint(1, i)));
+        const std::optional<Coin> coin{store.PeekCoin(outpoint(2, i))};
+        BOOST_REQUIRE(coin);
+        BOOST_CHECK_EQUAL(coin->out.nValue, CAmount{i} + 2);
+    }
 }
 
 //! Where outpoints made twice are checked for (BIP30), a higher block's spend of a coin the database never

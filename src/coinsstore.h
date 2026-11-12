@@ -424,20 +424,64 @@ private:
     };
     //! A shard's entries are inserted and erased by whichever thread holds its mutex, so a node is often freed
     //! by another thread than the one that allocated it, which the general allocator pays for with a lock. A
-    //! thread therefore keeps the nodes it frees, up to a bound, for its own next insertions.
+    //! thread therefore keeps the nodes it frees for its own next insertions: a list of up to MAX_KEPT nodes
+    //! and one full list beside it. A block's changes are lopsided (a batch of spends frees thousands of
+    //! nodes in a row, a batch of creates takes as many), so a thread with two full lists gives one to the
+    //! depot, and a thread with none takes one from there: a lock for every MAX_KEPT nodes, held for the
+    //! exchange of a pointer. Only when the depot is full or empty does the general allocator serve.
     template <typename T>
     struct NodeAllocator {
         using value_type = T;
         static constexpr size_t MAX_KEPT{1024};
+        //! The full lists the depot holds at most.
+        static constexpr size_t MAX_DEPOT{64};
+        //! Full lists, each MAX_KEPT nodes, for whichever thread next runs out. Never destroyed, so that a
+        //! thread may end at any time; the nodes it holds at exit are the process's last.
+        struct Depot {
+            Mutex mutex;
+            std::array<void*, MAX_DEPOT> lists GUARDED_BY(mutex){};
+            //! Changed under the mutex. Read without it first: a thread that only inserts finds the depot
+            //! empty at every node, and one that only erases finds it full, and neither should take a lock
+            //! to learn it.
+            std::atomic<size_t> count{0};
+            bool Give(void* list) EXCLUSIVE_LOCKS_REQUIRED(!mutex)
+            {
+                if (count.load(std::memory_order_relaxed) == MAX_DEPOT) return false;
+                LOCK(mutex);
+                const size_t held{count.load(std::memory_order_relaxed)};
+                if (held == MAX_DEPOT) return false;
+                lists[held] = list;
+                count.store(held + 1, std::memory_order_relaxed);
+                return true;
+            }
+            void* Take() EXCLUSIVE_LOCKS_REQUIRED(!mutex)
+            {
+                if (count.load(std::memory_order_relaxed) == 0) return nullptr;
+                LOCK(mutex);
+                const size_t held{count.load(std::memory_order_relaxed)};
+                if (held == 0) return nullptr;
+                count.store(held - 1, std::memory_order_relaxed);
+                return lists[held - 1];
+            }
+        };
+        static Depot& Shared()
+        {
+            static Depot* const depot{new Depot};
+            return *depot;
+        }
         struct Kept {
             void* head{nullptr};
             size_t count{0};
+            //! A full list, or none.
+            void* spare{nullptr};
             ~Kept()
             {
-                while (head) {
-                    void* next{*static_cast<void**>(head)};
-                    std::allocator<T>{}.deallocate(static_cast<T*>(head), 1);
-                    head = next;
+                for (void* list : {head, spare}) {
+                    while (list) {
+                        void* next{*static_cast<void**>(list)};
+                        std::allocator<T>{}.deallocate(static_cast<T*>(list), 1);
+                        list = next;
+                    }
                 }
             }
         };
@@ -454,6 +498,11 @@ private:
         {
             if (n == 1) {
                 Kept& kept{Mine()};
+                if (!kept.head) {
+                    // The full list beside, else one of the depot's.
+                    kept.head = kept.spare ? std::exchange(kept.spare, nullptr) : Shared().Take();
+                    if (kept.head) kept.count = MAX_KEPT;
+                }
                 if (kept.head) {
                     void* node{kept.head};
                     kept.head = *static_cast<void**>(node);
@@ -467,6 +516,11 @@ private:
         {
             if (n == 1) {
                 Kept& kept{Mine()};
+                if (kept.count == MAX_KEPT && (!kept.spare || Shared().Give(kept.spare))) {
+                    // The full list goes beside, where the one the depot took was, and a new one begins.
+                    kept.spare = std::exchange(kept.head, nullptr);
+                    kept.count = 0;
+                }
                 if (kept.count < MAX_KEPT) {
                     *reinterpret_cast<void**>(p) = kept.head;
                     kept.head = p;

@@ -22,9 +22,10 @@
 #include <limits>
 #include <memory>
 #include <mutex>
+#include <new>
 #include <optional>
 #include <span>
-#include <unordered_map>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -477,7 +478,172 @@ private:
         }
         friend bool operator==(const NodeAllocator&, const NodeAllocator&) noexcept { return true; }
     };
-    using Map = std::unordered_map<COutPoint, Entry, SaltedCoinsCacheHasher, std::equal_to<COutPoint>, NodeAllocator<std::pair<const COutPoint, Entry>>>;
+    //! The salted hash of an outpoint, one salt for all shards: a batch hashes its keys before it takes a shard.
+    static uint64_t KeyHash(const COutPoint& outpoint) noexcept
+    {
+        static const SaltedCoinsCacheHasher hasher;
+        return hasher(outpoint);
+    }
+    /**
+     * A shard's table: chained, with nodes that never move (the lists and a run in flight point at them),
+     * of the std::unordered_map interface as far as the store uses it. The bucket array is a power of two,
+     * so a probe takes a mask and no division, and a chain ends at a null pointer, so a probe reads no
+     * node of another bucket. A caller with many keys for one shard hashes them first and asks for their
+     * buckets and nodes ahead (Prefetch(), PrefetchNode()).
+     */
+    class Map
+    {
+    public:
+        using value_type = Node;
+        struct Cell {
+            Cell* chain;
+            Node node;
+        };
+        class iterator
+        {
+        public:
+            iterator() = default;
+            iterator(const Map* map, size_t bucket, Cell* cell) : m_map{map}, m_bucket{bucket}, m_cell{cell} {}
+            Node& operator*() const { return m_cell->node; }
+            Node* operator->() const { return &m_cell->node; }
+            bool operator==(const iterator& other) const { return m_cell == other.m_cell; }
+            iterator& operator++()
+            {
+                m_cell = m_cell->chain;
+                while (!m_cell && ++m_bucket < m_map->m_bucket_count) m_cell = m_map->m_buckets[m_bucket];
+                return *this;
+            }
+
+        private:
+            friend class Map;
+            const Map* m_map{nullptr};
+            size_t m_bucket{0};
+            Cell* m_cell{nullptr};
+        };
+
+        Map() = default;
+        Map(const Map&) = delete;
+        Map& operator=(const Map&) = delete;
+        ~Map()
+        {
+            for (size_t b{0}; b < m_bucket_count; ++b) {
+                for (Cell* cell{m_buckets[b]}; cell;) {
+                    Cell* next{cell->chain};
+                    Free(cell);
+                    cell = next;
+                }
+            }
+        }
+
+        size_t size() const { return m_size; }
+        size_t bucket_count() const { return m_bucket_count; }
+        iterator end() const { return {}; }
+        iterator begin() const
+        {
+            for (size_t b{0}; b < m_bucket_count; ++b) {
+                if (m_buckets[b]) return {this, b, m_buckets[b]};
+            }
+            return {};
+        }
+        //! Ask for the bucket of a hash ahead of its probe.
+        void Prefetch(uint64_t hash) const
+        {
+            if (m_bucket_count != 0) Ahead(&m_buckets[hash & (m_bucket_count - 1)]);
+        }
+        //! Ask for the first node of the bucket's chain, both of its cache lines. Reads the bucket.
+        void PrefetchNode(uint64_t hash) const
+        {
+            if (m_bucket_count == 0) return;
+            if (const Cell* cell{m_buckets[hash & (m_bucket_count - 1)]}) {
+                Ahead(cell);
+                Ahead(reinterpret_cast<const char*>(cell) + 64);
+            }
+        }
+        iterator find(const COutPoint& key) const { return find(key, KeyHash(key)); }
+        iterator find(const COutPoint& key, uint64_t hash) const
+        {
+            if (m_bucket_count == 0) return {};
+            const size_t bucket{hash & (m_bucket_count - 1)};
+            for (Cell* cell{m_buckets[bucket]}; cell; cell = cell->chain) {
+                if (cell->node.first == key) return {this, bucket, cell};
+            }
+            return {};
+        }
+        std::pair<iterator, bool> try_emplace(const COutPoint& key) { return try_emplace(key, KeyHash(key)); }
+        std::pair<iterator, bool> try_emplace(const COutPoint& key, uint64_t hash)
+        {
+            if (const iterator it{find(key, hash)}; it != end()) return {it, false};
+            if (m_size == m_bucket_count) Rebucket(m_bucket_count == 0 ? MIN_BUCKETS : m_bucket_count * 2);
+            const size_t bucket{hash & (m_bucket_count - 1)};
+            Cell* cell{NodeAllocator<Cell>{}.allocate(1)};
+            new (&cell->node) Node(std::piecewise_construct, std::forward_as_tuple(key), std::tuple<>());
+            cell->chain = m_buckets[bucket];
+            m_buckets[bucket] = cell;
+            ++m_size;
+            return {iterator{this, bucket, cell}, true};
+        }
+        iterator erase(iterator it)
+        {
+            iterator next{it};
+            ++next;
+            Cell** link{&m_buckets[it.m_bucket]};
+            while (*link != it.m_cell) link = &(*link)->chain;
+            *link = it.m_cell->chain;
+            Free(it.m_cell);
+            --m_size;
+            return next;
+        }
+        size_t erase(const COutPoint& key)
+        {
+            const iterator it{find(key)};
+            if (it == end()) return 0;
+            erase(it);
+            return 1;
+        }
+        //! Only rehash(0) is used: the smallest array for the entries there are.
+        void rehash(size_t)
+        {
+            size_t count{m_size == 0 ? 0 : MIN_BUCKETS};
+            while (count < m_size) count *= 2;
+            if (count != m_bucket_count) Rebucket(count);
+        }
+
+    private:
+        static constexpr size_t MIN_BUCKETS{16};
+        //! A hint only: without the builtin the probe just waits for its memory as before.
+        static void Ahead(const void* p)
+        {
+#if defined(__GNUC__) || defined(__clang__)
+            __builtin_prefetch(p);
+#else
+            (void)p;
+#endif
+        }
+        static void Free(Cell* cell)
+        {
+            cell->node.~Node();
+            NodeAllocator<Cell>{}.deallocate(cell, 1);
+        }
+        void Rebucket(size_t count)
+        {
+            std::unique_ptr<Cell*[]> buckets{count == 0 ? nullptr : new Cell*[count]()};
+            for (size_t b{0}; b < m_bucket_count; ++b) {
+                for (Cell* cell{m_buckets[b]}; cell;) {
+                    Cell* next{cell->chain};
+                    const size_t bucket{KeyHash(cell->node.first) & (count - 1)};
+                    cell->chain = buckets[bucket];
+                    buckets[bucket] = cell;
+                    cell = next;
+                }
+            }
+            m_buckets = std::move(buckets);
+            m_bucket_count = count;
+        }
+
+        std::unique_ptr<Cell*[]> m_buckets;
+        size_t m_bucket_count{0};
+        size_t m_size{0};
+    };
     //! The dirty entries of one span of change heights in a shard.
     struct Bucket {
         //! What writing them out frees: DirtyBytes() of each.
@@ -660,12 +826,12 @@ private:
     //! ApplyCreate() for the block at `height` with the shard held. The change goes to `undo` and what it
     //! adds to the dirty entries to `delta`, for the caller to hand to Record() before it lets go of the
     //! shard. False: not made, a conflict for the block (the outpoint is another open block's to settle).
-    bool CreateLocked(Shard& shard, int height, const COutPoint& outpoint, Coin&& coin, bool possible_overwrite, std::vector<Undo>& undo, int64_t& delta) EXCLUSIVE_LOCKS_REQUIRED(shard.mutex);
+    bool CreateLocked(Shard& shard, int height, const COutPoint& outpoint, uint64_t hash, Coin&& coin, bool possible_overwrite, std::vector<Undo>& undo, int64_t& delta) EXCLUSIVE_LOCKS_REQUIRED(shard.mutex);
     enum class SpendResult { DONE, CONFLICT, MISS };
     //! ApplySpend() for the block at `height` with the shard held, `undo` and `delta` as for
     //! CreateLocked(). MISS: the entry is not in the tier and `from_base` was not given; the caller reads
     //! the base with the shard unlocked and comes back with the coin. The caller counts a CONFLICT.
-    SpendResult SpendLocked(Shard& shard, int height, bool mark_fresh, const COutPoint& outpoint, Coin* copy, const Coin* from_base, std::vector<Undo>& undo, int64_t& delta) EXCLUSIVE_LOCKS_REQUIRED(shard.mutex);
+    SpendResult SpendLocked(Shard& shard, int height, bool mark_fresh, const COutPoint& outpoint, uint64_t hash, Coin* copy, const Coin* from_base, std::vector<Undo>& undo, int64_t& delta) EXCLUSIVE_LOCKS_REQUIRED(shard.mutex);
     //! One item of the record of the block at `height`, which is being unwound, taken back with the shard held.
     void UnwindItem(Shard& shard, int height, Undo&& item) EXCLUSIVE_LOCKS_REQUIRED(shard.mutex);
     /**

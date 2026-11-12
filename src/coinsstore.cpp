@@ -636,12 +636,12 @@ size_t CoinsStore::OpenBlocks() const
     return open;
 }
 
-bool CoinsStore::CreateLocked(Shard& shard, int height, const COutPoint& outpoint, Coin&& coin, bool possible_overwrite, std::vector<Undo>& undo, int64_t& delta)
+bool CoinsStore::CreateLocked(Shard& shard, int height, const COutPoint& outpoint, uint64_t hash, Coin&& coin, bool possible_overwrite, std::vector<Undo>& undo, int64_t& delta)
 {
     AssertLockHeld(shard.mutex);
     // The coin's height is what tells the create from a confirmed one (Pending()).
     Assume(static_cast<int>(coin.nHeight) == height);
-    auto [it, inserted]{shard.map.try_emplace(outpoint)};
+    auto [it, inserted]{shard.map.try_emplace(outpoint, hash)};
     Entry& entry{it->second};
     // Whether the entry takes the block's height as its change height.
     bool retag{true};
@@ -722,7 +722,7 @@ void CoinsStore::ApplyCreate(BlockId block, const COutPoint& outpoint, Coin&& co
     bool made;
     {
         LOCK(shard.mutex);
-        made = CreateLocked(shard, height, outpoint, std::move(coin), possible_overwrite, undo, delta);
+        made = CreateLocked(shard, height, outpoint, KeyHash(outpoint), std::move(coin), possible_overwrite, undo, delta);
         Record(mine, undo, delta);
     }
     if (!made) {
@@ -731,15 +731,15 @@ void CoinsStore::ApplyCreate(BlockId block, const COutPoint& outpoint, Coin&& co
     }
 }
 
-CoinsStore::SpendResult CoinsStore::SpendLocked(Shard& shard, int height, bool mark_fresh, const COutPoint& outpoint, Coin* copy, const Coin* from_base, std::vector<Undo>& undo, int64_t& delta)
+CoinsStore::SpendResult CoinsStore::SpendLocked(Shard& shard, int height, bool mark_fresh, const COutPoint& outpoint, uint64_t hash, Coin* copy, const Coin* from_base, std::vector<Undo>& undo, int64_t& delta)
 {
     AssertLockHeld(shard.mutex);
-    auto it{shard.map.find(outpoint)};
+    auto it{shard.map.find(outpoint, hash)};
     if (it == shard.map.end()) {
         // Not in the tier (the prefetch reads without inserting): the caller reads the base with the shard
         // unlocked. The database's coin goes to the record, and the tier keeps the spend, for the erase.
         if (!from_base) return SpendResult::MISS;
-        it = shard.map.try_emplace(outpoint).first;
+        it = shard.map.try_emplace(outpoint, hash).first;
         Resized(shard);
         Entry& marker{it->second};
         marker.height = height;
@@ -825,6 +825,7 @@ bool CoinsStore::ApplySpend(BlockId block, const COutPoint& outpoint, Coin* copy
     int64_t delta{0};
     std::optional<Coin> from_base;
     uint64_t settles{0};
+    const uint64_t hash{KeyHash(outpoint)};
     while (true) {
         SpendResult result;
         {
@@ -834,7 +835,7 @@ bool CoinsStore::ApplySpend(BlockId block, const COutPoint& outpoint, Coin* copy
             // dropped since the miss, with the base read before the erase: the coin read is then stale,
             // and inserting it would hide the double spend. Read again.
             if (from_base && shard.settles != settles) from_base.reset();
-            result = SpendLocked(shard, height, mark_fresh, outpoint, copy, from_base ? &*from_base : nullptr, undo, delta);
+            result = SpendLocked(shard, height, mark_fresh, outpoint, hash, copy, from_base ? &*from_base : nullptr, undo, delta);
             settles = shard.settles;
             Record(mine, undo, delta);
         }
@@ -892,12 +893,15 @@ void CoinsStore::ApplyBatch(BlockId block, std::vector<Change>&& changes)
     // Grouped by shard, so that each shard is taken once.
     std::vector<Change*> applied;
     std::vector<uint32_t> shard_of;
+    std::vector<uint64_t> hashes;
     applied.reserve(changes.size());
     shard_of.reserve(changes.size());
+    hashes.reserve(changes.size());
     for (Change& change : changes) {
         if (!change.coin.IsSpent() && change.coin.out.scriptPubKey.IsUnspendable()) continue; // as ApplyCreate()
         applied.push_back(&change);
         shard_of.push_back(ShardIndex(change.outpoint));
+        hashes.push_back(KeyHash(change.outpoint));
     }
     WindowBlock& mine{m_window[block]};
     const bool mark_fresh{mine.mark_fresh_spends.load(std::memory_order_relaxed)};
@@ -911,15 +915,18 @@ void CoinsStore::ApplyBatch(BlockId block, std::vector<Change>&& changes)
     uint32_t conflicts{0};
     std::vector<const Change*> misses;
     VisitShards(block, shard_of, [&](Shard& shard, std::span<const uint32_t> items) EXCLUSIVE_LOCKS_REQUIRED(shard.mutex) {
+        // Ask for every bucket, then every chain's first node, before the first probe waits for one.
+        for (const uint32_t i : items) shard.map.Prefetch(hashes[i]);
+        for (const uint32_t i : items) shard.map.PrefetchNode(hashes[i]);
         for (const uint32_t i : items) {
             Change* change{applied[i]};
             if (change->coin.IsSpent()) {
-                switch (SpendLocked(shard, height, mark_fresh, change->outpoint, nullptr, nullptr, undo, delta)) {
+                switch (SpendLocked(shard, height, mark_fresh, change->outpoint, hashes[i], nullptr, nullptr, undo, delta)) {
                 case SpendResult::DONE: break;
                 case SpendResult::CONFLICT: ++conflicts; break;
                 case SpendResult::MISS: misses.push_back(change); break;
                 }
-            } else if (!CreateLocked(shard, height, change->outpoint, std::move(change->coin), change->possible_overwrite, undo, delta)) {
+            } else if (!CreateLocked(shard, height, change->outpoint, hashes[i], std::move(change->coin), change->possible_overwrite, undo, delta)) {
                 ++conflicts;
             }
         }
@@ -937,14 +944,22 @@ std::vector<std::pair<COutPoint, Coin>> CoinsStore::FetchFor(BlockId viewer, std
 {
     const int viewer_height{ViewerHeight(viewer)};
     std::vector<uint32_t> shard_of;
+    std::vector<uint64_t> hashes;
     shard_of.reserve(outpoints.size());
-    for (const COutPoint& outpoint : outpoints) shard_of.push_back(ShardIndex(outpoint));
+    hashes.reserve(outpoints.size());
+    for (const COutPoint& outpoint : outpoints) {
+        shard_of.push_back(ShardIndex(outpoint));
+        hashes.push_back(KeyHash(outpoint));
+    }
     std::vector<std::pair<COutPoint, Coin>> found;
     found.reserve(outpoints.size());
     VisitShards(viewer, shard_of, [&](Shard& shard, std::span<const uint32_t> items) EXCLUSIVE_LOCKS_REQUIRED(shard.mutex) {
+        // Ask for every bucket, then every chain's first node, before the first probe waits for one.
+        for (const uint32_t i : items) shard.map.Prefetch(hashes[i]);
+        for (const uint32_t i : items) shard.map.PrefetchNode(hashes[i]);
         for (const uint32_t i : items) {
             const COutPoint& outpoint{outpoints[i]};
-            const auto it{shard.map.find(outpoint)};
+            const auto it{shard.map.find(outpoint, hashes[i])};
             if (it == shard.map.end() || See(it->second, viewer_height) != Sight::COIN) continue;
             Reference(it->second);
             found.emplace_back(outpoint, it->second.coin);

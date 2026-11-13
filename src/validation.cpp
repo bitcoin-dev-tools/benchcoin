@@ -3754,6 +3754,10 @@ bool Chainstate::StageConnectTip(BlockValidationState& state, CBlockIndex* pinde
     // The view stands at the parent, whether or not the parent is confirmed yet.
     if (pindexNew->pprev) view->SetBestBlock(pindexNew->pprev->GetBlockHash());
     view->BeginBlock(pindexNew->nHeight, staged.windowed && OpenBlocksCheckBIP30(*pindexNew, m_chainman.GetConsensus()));
+    // Where the block is checked to overwrite no coin (BIP30), a coin a lower block puts under one of its
+    // outputs after that check is a conflict at the apply, for a coinbase too. Alone, a block has no
+    // lower block open, and what its check read is what it applies to.
+    view->SetCreatesMustBeNew(staged.windowed && pindexNew->pprev && ConnectBlockChecksBIP30(*pindexNew, m_chainman.GetConsensus())); // the genesis block creates nothing
     if (!staged.windowed) staged.fetch = std::make_unique<StagedConnect::FetchGuard>(*view, *staged.block);
     staged.script_check_reason = ScriptCheckReason(*pindexNew);
     staged.ctx.emplace(m_chainman.MakeBlockValidationContext(pindexNew->GetBlockHash(), pindexNew->pprev));
@@ -4512,14 +4516,11 @@ bool Chainstate::ActivateBestChain(BlockValidationState& state, std::shared_ptr<
                             reorg_lock_main.emplace(::cs_main, "cs_main", __FILE__, __LINE__);
                             if (m_mempool) reorg_lock_mempool.emplace(m_mempool->cs, "m_mempool->cs", __FILE__, __LINE__);
                         }
-                        // The window: in initial block download, extending the tip, once BIP34 has made
-                        // duplicate transactions impossible (below that height a block's BIP30 check reads
-                        // the view, and could see a coin a lower block in flight spends).
+                        // The window: in initial block download, extending the tip.
                         // A block that failed in the window is connected alone, in a step of its own
                         // (PublishConnectTip()).
                         const bool retry{std::exchange(m_window_retry_serial, false)};
-                        step->use_window = !retry && was_in_ibd && !reorg_lock_main && m_chainman.ConnectWindow() > 1 &&
-                                           m_chain.Height() >= m_chainman.GetConsensus().BIP34Height;
+                        step->use_window = !retry && was_in_ibd && !reorg_lock_main && m_chainman.ConnectWindow() > 1;
                         if (step->use_window) step->sync = std::make_shared<WindowSync>();
                     }
 

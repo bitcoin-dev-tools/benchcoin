@@ -1341,7 +1341,8 @@ BOOST_AUTO_TEST_CASE(fresh_spend_marked_for_lower_create)
 
 //! A create that takes no coin to be at its outpoint and meets one the block sees is a conflict, counted
 //! against the block and left for its connection alone to judge, whether the coin is confirmed or a lower
-//! open block's.
+//! open block's. Where the block was checked to overwrite nothing, that holds for a create that may
+//! overwrite as well: a lower block can put its coin there after the check.
 BOOST_AUTO_TEST_CASE(create_over_a_visible_coin_is_a_conflict)
 {
     CCoinsViewDB db{MemoryDb("store"), {}};
@@ -1371,6 +1372,140 @@ BOOST_AUTO_TEST_CASE(create_over_a_visible_coin_is_a_conflict)
         store.UnwindBlock(lower);
         BOOST_CHECK(Assert(store.PeekCoin(confirmed))->out == first.out);
         BOOST_CHECK(!store.HaveCoin(open));
+        store.SanityCheck();
+    }
+
+    util::NotNull pool{std::make_shared<ThreadPool>("test")}; // no workers: lookups are served inline
+    int height{2};
+    for (const bool must_be_new : {false, true}) {
+        const COutPoint twice{Txid::FromUint256(must_be_new ? uint256{13} : uint256{12}), 0};
+        BlockApplyView lower{store, pool, /*deterministic=*/true};
+        BlockApplyView higher{store, pool, /*deterministic=*/true};
+        lower.BeginBlock(height);
+        higher.BeginBlock(height + 1);
+        higher.SetCreatesMustBeNew(must_be_new);
+        // The higher block looked and found nothing, as its check for overwritten coins does; its output
+        // is a coinbase's, added without a look.
+        BOOST_CHECK(!higher.HaveCoin(twice));
+        const Coin higher_coin{RandomCoin(m_rng, height + 1)};
+        higher.AddCoin(twice, Coin{higher_coin}, /*possible_overwrite=*/true);
+        // The lower block makes the same outpoint and is confirmed in the meantime.
+        const Coin lower_coin{RandomCoin(m_rng, height)};
+        lower.AddCoin(twice, Coin{lower_coin}, /*possible_overwrite=*/true);
+        lower.SetBestBlock(uint256{static_cast<uint8_t>(height)});
+        lower.Confirm();
+        store.SetBestBlock(uint256{static_cast<uint8_t>(height)}, height);
+        higher.ApplyChanges();
+        BOOST_CHECK_EQUAL(higher.Conflicts(), must_be_new ? 1U : 0U);
+        BOOST_CHECK(Assert(store.PeekCoinFor(higher.Block(), twice))->out == (must_be_new ? lower_coin : higher_coin).out);
+        higher.Unwind();
+        if (must_be_new) BOOST_CHECK(Assert(store.PeekCoin(twice))->out == lower_coin.out); // an overwrite taken back leaves nothing, as a disconnect does
+        store.SanityCheck();
+        height += 2;
+    }
+}
+
+//! A block validates the spend of a coin; lower blocks then spend that coin and make the outpoint again
+//! (a transaction made twice). The coin the block would spend at its apply is not the one it validated.
+BOOST_AUTO_TEST_CASE(spend_of_another_coin_is_a_conflict)
+{
+    CCoinsViewDB db{MemoryDb("store"), {}};
+    CoinsStore store{&db, 4, true};
+    store.SetBestBlock(uint256::ONE, 1);
+    const COutPoint twice{Txid::FromUint256(uint256{10}), 0};
+    const COutPoint once{Txid::FromUint256(uint256{11}), 0};
+    Coin first{RandomCoin(m_rng, 1)};
+    first.fCoinBase = true;
+    store.AddCoin(twice, Coin{first}, false);
+    store.AddCoin(once, RandomCoin(m_rng, 1), false);
+
+    util::NotNull pool{std::make_shared<ThreadPool>("test")}; // no workers: lookups are served inline
+    BlockApplyView spender{store, pool, /*deterministic=*/true};
+    BlockApplyView remaker{store, pool, /*deterministic=*/true};
+    BlockApplyView higher{store, pool, /*deterministic=*/true};
+    spender.BeginBlock(2);
+    remaker.BeginBlock(3);
+    higher.BeginBlock(4);
+    // The higher block spends both coins as it found them.
+    Coin spent;
+    BOOST_CHECK(higher.SpendCoin(twice, &spent));
+    BOOST_CHECK_EQUAL(spent.nHeight, 1U);
+    BOOST_CHECK(higher.SpendCoin(once));
+    // Below it, one coin is spent and its outpoint made again, with the same output.
+    BOOST_CHECK(spender.SpendCoin(twice));
+    spender.SetBestBlock(uint256{2});
+    spender.Confirm();
+    store.SetBestBlock(uint256{2}, 2);
+    Coin second{first};
+    second.nHeight = 3;
+    remaker.AddCoin(twice, Coin{second}, /*possible_overwrite=*/false);
+    remaker.SetBestBlock(uint256{3});
+    remaker.Confirm();
+    store.SetBestBlock(uint256{3}, 3);
+
+    higher.ApplyChanges();
+    // The spend of the coin made again is the conflict; the other spend is applied.
+    BOOST_CHECK_EQUAL(higher.Conflicts(), 1U);
+    BOOST_CHECK(!store.PeekCoinFor(higher.Block(), once));
+    BOOST_CHECK_EQUAL(Assert(store.PeekCoinFor(higher.Block(), twice))->nHeight, 3U);
+    higher.Unwind();
+    BOOST_CHECK(store.HaveCoin(once));
+    BOOST_CHECK_EQUAL(Assert(store.PeekCoin(twice))->nHeight, 3U);
+    store.SanityCheck();
+
+    // Connected again alone, the block reads the second coin and spends it.
+    higher.BeginBlock(4);
+    BOOST_CHECK(higher.SpendCoin(twice, &spent));
+    BOOST_CHECK_EQUAL(spent.nHeight, 3U);
+    higher.ApplyChanges();
+    BOOST_CHECK_EQUAL(higher.Conflicts(), 0U);
+    higher.SetBestBlock(uint256{4});
+    higher.Confirm();
+    store.SetBestBlock(uint256{4}, 4);
+    BOOST_CHECK(!store.HaveCoin(twice));
+    store.SanityCheck();
+}
+
+//! A block checked to make no outpoint that has a coin finds no entry at its apply. That is no proof once
+//! changes confirmed since the block was opened have been written and may have left the tier: the coin
+//! of a lower block may be in the database alone.
+BOOST_AUTO_TEST_CASE(create_that_must_be_new_with_the_base_unseen)
+{
+    CCoinsViewDB db{MemoryDb("store"), {}};
+    CoinsStore store{&db, 4, true};
+    store.SetBestBlock(uint256::ONE, 1);
+    store.InitWrittenHead(uint256::ONE, 1);
+    const COutPoint twice{Txid::FromUint256(uint256{10}), 0};
+
+    util::NotNull pool{std::make_shared<ThreadPool>("test")}; // no workers: lookups are served inline
+    for (const bool written : {false, true}) {
+        const int height{written ? 4 : 2};
+        BlockApplyView lower{store, pool, /*deterministic=*/true};
+        BlockApplyView higher{store, pool, /*deterministic=*/true};
+        lower.BeginBlock(height);
+        higher.BeginBlock(height + 1);
+        higher.SetCreatesMustBeNew(true);
+        BOOST_CHECK(!higher.HaveCoin(twice));
+        const COutPoint other{Txid::FromUint256(uint256{static_cast<uint8_t>(20 + height)}), 0};
+        higher.AddCoin(written ? twice : other, RandomCoin(m_rng, height + 1), /*possible_overwrite=*/true);
+        // The lower block is confirmed, and with `written` its coin is written and dropped from the tier.
+        if (written) lower.AddCoin(twice, RandomCoin(m_rng, height), /*possible_overwrite=*/true);
+        lower.SetBestBlock(uint256{static_cast<uint8_t>(height)});
+        lower.Confirm();
+        store.SetBestBlock(uint256{static_cast<uint8_t>(height)}, height);
+        if (written) {
+            auto run{store.PrepareWriteOut(height, height, uint256{static_cast<uint8_t>(height)}, /*final=*/false)};
+            BOOST_REQUIRE(run);
+            run->settled_head = uint256{static_cast<uint8_t>(height)};
+            store.WriteRun(run->writes, run->new_head, run->old_head, false);
+            store.CommitWriteOut(*run);
+            store.EvictClean(0);
+            BOOST_CHECK(!store.HaveCoinInCache(twice));
+            BOOST_CHECK(db.HaveCoin(twice));
+        }
+        higher.ApplyChanges();
+        BOOST_CHECK_EQUAL(higher.Conflicts(), written ? 1U : 0U);
+        higher.Unwind();
         store.SanityCheck();
     }
 }

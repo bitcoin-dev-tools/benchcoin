@@ -198,6 +198,8 @@ public:
         if (height < (m_run_in_flight ? std::max(m_written_height, m_inflight_settled_height) : m_written_height)) m_fell_below_written = true;
         m_tier_height = height;
         m_confirmed_height.store(height, std::memory_order_release);
+        // Nothing above the tier's block is in the database to be met (a disconnect lowers the height).
+        if (m_dropped_through.load(std::memory_order_relaxed) > height) m_dropped_through.store(height, std::memory_order_relaxed);
     }
     int TierHeight() const { return m_tier_height; }
 
@@ -229,13 +231,19 @@ public:
      * which left the tier with that spend: the owner unwinds the higher blocks and connects this one again.
      * The coin is copied to `copy` when given (for the undo data). Returns whether the spend was recorded.
      */
-    bool ApplySpend(BlockId block, const COutPoint& outpoint, Coin* copy);
+    bool ApplySpend(BlockId block, const COutPoint& outpoint, Coin* copy, const Coin* known = nullptr);
     //! One of a block's changes, for ApplyBatch(): an unspent coin is the outpoint's creation, a spent one
     //! its spend.
     struct Change {
         COutPoint outpoint;
         Coin coin;
         bool possible_overwrite{false};
+        //! The block was checked to create no outpoint that has a coin (BIP30): a coin met at the apply
+        //! came after that check and is a conflict, also where `possible_overwrite` allows writing over one.
+        bool must_be_new{false};
+        //! For a spend: `coin`, spent, has the height and the coinbase flag of the coin the block validated
+        //! the spend against, and another coin met at the apply is a conflict (`known` of ApplySpend()).
+        bool known_coin{false};
     };
     /**
      * Block `block` makes `changes`, as ApplyCreate() and ApplySpend() would one by one, but grouped by
@@ -374,6 +382,8 @@ private:
     struct WindowBlock {
         std::atomic<BlockStatus> status{BlockStatus::FREE};
         std::atomic<int> height{0};
+        //! The confirmed height when the block was opened: what the block has read since is no older.
+        std::atomic<int> begin_confirmed{-1};
         //! As given to BeginBlock(); the block's applier reads it.
         std::atomic<bool> mark_fresh_spends{false};
         /**
@@ -865,9 +875,8 @@ private:
     void VisitShards(BlockId block, const std::vector<uint32_t>& shard_of, Work work) const;
     //! Erase an entry, keeping the shard's lists and counters right.
     void EraseEntry(Shard& shard, Map::iterator it) const EXCLUSIVE_LOCKS_REQUIRED(shard.mutex);
-    //! The same for an entry reached over a list. Erased by its key, which is never more work than a
-    //! lookup for an iterator and the erase by it: libstdc++ stores no hash in a node when the hasher is
-    //! noexcept, as this one is, so there the two would each hash the key and walk the bucket.
+    //! The same for an entry reached over a list, erased by its key: a cell has no link back, so the erase
+    //! walks the chain from its bucket either way.
     void EraseEntry(Shard& shard, Node& node) const EXCLUSIVE_LOCKS_REQUIRED(shard.mutex);
     //! Erase an entry that is off its list and whose coin's usage is taken off the books already.
     void EraseDetached(Shard& shard, Map::iterator it) const EXCLUSIVE_LOCKS_REQUIRED(shard.mutex);
@@ -885,12 +894,12 @@ private:
     //! ApplyCreate() for the block at `height` with the shard held. The change goes to `undo` and what it
     //! adds to the dirty entries to `delta`, for the caller to hand to Record() before it lets go of the
     //! shard. False: not made, a conflict for the block (the outpoint is another open block's to settle).
-    bool CreateLocked(Shard& shard, int height, const COutPoint& outpoint, uint64_t hash, Coin&& coin, bool possible_overwrite, std::vector<Undo>& undo, int64_t& delta) EXCLUSIVE_LOCKS_REQUIRED(shard.mutex);
+    bool CreateLocked(Shard& shard, int height, const COutPoint& outpoint, uint64_t hash, Coin&& coin, bool possible_overwrite, bool must_be_new, bool base_unseen, std::vector<Undo>& undo, int64_t& delta) EXCLUSIVE_LOCKS_REQUIRED(shard.mutex);
     enum class SpendResult { DONE, CONFLICT, MISS };
     //! ApplySpend() for the block at `height` with the shard held, `undo` and `delta` as for
     //! CreateLocked(). MISS: the entry is not in the tier and `from_base` was not given; the caller reads
     //! the base with the shard unlocked and comes back with the coin. The caller counts a CONFLICT.
-    SpendResult SpendLocked(Shard& shard, int height, bool mark_fresh, const COutPoint& outpoint, uint64_t hash, Coin* copy, const Coin* from_base, std::vector<Undo>& undo, int64_t& delta) EXCLUSIVE_LOCKS_REQUIRED(shard.mutex);
+    SpendResult SpendLocked(Shard& shard, int height, bool mark_fresh, const COutPoint& outpoint, uint64_t hash, Coin* copy, const Coin* from_base, const Coin* known, std::vector<Undo>& undo, int64_t& delta) EXCLUSIVE_LOCKS_REQUIRED(shard.mutex);
     //! One item of the record of the block at `height`, which is being unwound, taken back with the shard held.
     void UnwindItem(Shard& shard, int height, Undo&& item) EXCLUSIVE_LOCKS_REQUIRED(shard.mutex);
     /**
@@ -938,6 +947,10 @@ private:
     //! The height of the block confirmed last (or given with the best block): a block's create or spent
     //! marker above it is an open block's. Read by every lookup that meets one, without a lock.
     std::atomic<int> m_confirmed_height{-1};
+    //! The highest height whose confirmed changes a run or a flush may have written, and the tier dropped
+    //! since: stored before the first entry goes. A block opened below it cannot take the absence of an
+    //! entry for the absence of a coin (CreateLocked()).
+    std::atomic<int> m_dropped_through{-1};
     //! The slots not free, for the readers' check that there is no record to look into.
     std::atomic<int> m_open_slots{0};
     //! See SetBaseWrites().
@@ -968,6 +981,9 @@ public:
     //! The block's changes are taken back; see CoinsStore::UnwindBlock(). The view is reset.
     void Unwind();
     uint32_t Conflicts() const;
+    //! The block's validation checks that none of its outputs has a coin already (BIP30); see
+    //! CoinsStore::Change::must_be_new. Set before the changes are applied.
+    void SetCreatesMustBeNew(bool must_be_new) { m_creates_must_be_new = must_be_new; }
 
     //! Bring the block's inputs that the tier holds into the view, one hold of each shard's lock, so that
     //! the block's validation reads the store once per shard instead of once per input.
@@ -977,6 +993,8 @@ public:
     //! the block's worker once validated (and again after a continuation), so that the work is off the
     //! publisher; Confirm() applies what is left.
     void ApplyChanges();
+    //! As the cache's, and the spend left in the view keeps the height and the coinbase flag of its coin.
+    bool SpendCoin(const COutPoint& outpoint, Coin* moveto = nullptr) override;
     //! Not used: Confirm() applies the changes and makes them confirmed state.
     void Flush(bool reallocate_cache = true) override;
 
@@ -987,6 +1005,7 @@ protected:
 private:
     CoinsStore& m_store;
     CoinsStore::BlockId m_block{CoinsStore::NO_BLOCK};
+    bool m_creates_must_be_new{false};
 };
 
 #endif // BITCOIN_COINSSTORE_H

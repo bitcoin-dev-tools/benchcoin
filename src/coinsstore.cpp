@@ -797,8 +797,9 @@ CoinsStore::SpendResult CoinsStore::SpendLocked(Shard& shard, int height, bool m
         EraseDetached(shard, it);
         --delta;
     } else {
-        // The marker of a never-written coin (BeginBlock()) is as any other from here on: the record has
-        // the flags to put back, and the erase it leaves the database is of a key it does not have.
+        // The marker of a never-written coin (BeginBlock()) is as any other to the open blocks: the record
+        // has the flags to put back. To a run it is nothing to write (Entry::unwritten).
+        const bool unwritten{entry.fresh};
         entry.fresh = false;
         entry.coin.Clear();
         if (!entry.dirty) ++delta;
@@ -808,6 +809,7 @@ CoinsStore::SpendResult CoinsStore::SpendLocked(Shard& shard, int height, bool m
         entry.block_create = false;
         entry.owed = false;
         Touch(entry);
+        entry.unwritten = unwritten;
         Attach(shard, *it);
     }
     undo.push_back(std::move(item));
@@ -974,6 +976,8 @@ void CoinsStore::ConfirmBlock(BlockId block)
     Assert(block < m_window.size());
     WindowBlock& slot{m_window[block]};
     std::vector<Undo> record;
+    const int height{slot.height.load(std::memory_order_relaxed)};
+    const bool marked{slot.mark_fresh_spends.load(std::memory_order_relaxed)};
     {
         LOCK(slot.mutex);
         Assert(slot.status.load(std::memory_order_relaxed) == BlockStatus::APPLIED);
@@ -986,6 +990,19 @@ void CoinsStore::ConfirmBlock(BlockId block)
         slot.status.store(BlockStatus::FREE, std::memory_order_release);
     }
     m_open_slots.fetch_sub(1, std::memory_order_relaxed);
+    if (marked) {
+        // The markers of coins the database never held have no one left to tell: freed here, they do not
+        // wait in the map for a run that a large cache never makes. A run may have met one first.
+        for (const Undo& item : record) {
+            if (!item.spend || !item.fresh || item.dead) continue;
+            Shard& shard{ShardFor(item.outpoint)};
+            LOCK(shard.mutex);
+            const auto it{shard.map.find(item.outpoint)};
+            if (it == shard.map.end()) continue;
+            const Entry& entry{it->second};
+            if (entry.unwritten && entry.height == height) EraseEntry(shard, it);
+        }
+    }
     // The record is freed as it goes out of scope here, outside the slot's mutex.
 }
 
@@ -1379,6 +1396,14 @@ void CoinsStore::CollectChunk(Shard& shard, WriteOutRun& run, uint64_t limit, ui
                 }
                 continue;
             }
+            if (entry.unwritten) {
+                // The marker of a coin the database never held, its block confirmed and ConfirmBlock() not
+                // yet here: nothing to erase there, and nothing left to say here. The lists go with the
+                // shard's last dirty entry.
+                EraseEntry(shard, *node);
+                if (shard.dirty_count == 0) return;
+                continue;
+            }
             writes.push_back({node->first, entry.coin.IsSpent() ? std::nullopt : std::make_optional(entry.coin)});
             nodes.push_back(node);
             size += BatchBytes(writes.back());
@@ -1512,6 +1537,9 @@ int CoinsStore::CollectRecords(int bound_height, bool final, std::vector<CoinWri
                 entry.block_spend = true;
                 Attach(shard, *it);
                 ++added;
+            } else {
+                // The database has the coin now, whatever the marker said.
+                it->second.unwritten = false;
             }
             // The confirmed change is gone from the count, and the marker is the block's.
             slot.dirty_delta.fetch_add(added, std::memory_order_relaxed);
@@ -1721,7 +1749,8 @@ uint64_t CoinsStore::WipeShard(Shard& shard, WipeWorker& worker)
         } else {
             // As EraseEntry(), with the coin's usage taken before the coin is moved out.
             const size_t usage{entry.coin.DynamicMemoryUsage()};
-            if (entry.dirty) {
+            // A marker of a coin the database never held is no erase to write.
+            if (entry.dirty && !entry.unwritten) {
                 add({it->first, entry.coin.IsSpent() ? std::nullopt : std::make_optional(std::move(entry.coin))});
             }
             SubUsage(shard, usage);
@@ -1939,6 +1968,8 @@ void CoinsStore::SanityCheck() const
             assert(!entry.fresh || entry.dirty);
             // What a block left on an entry goes when the entry is written: a clean entry is anyone's.
             assert(entry.dirty || (!entry.block_create && !entry.block_spend && !entry.owed));
+            // Only a block's spent marker says the database never held its coin.
+            assert(!entry.unwritten || (entry.dirty && entry.block_spend && entry.coin.IsSpent() && !entry.collected));
             // An erase is owed under a block's create only.
             assert(!entry.owed || (entry.block_create && !entry.coin.IsSpent()));
             if (entry.dirty && (entry.owed || !Pending(entry))) ++confirmed_dirty;

@@ -1375,4 +1375,69 @@ BOOST_AUTO_TEST_CASE(create_over_a_visible_coin_is_a_conflict)
     }
 }
 
+//! The marker of a never-written coin is no erase: the run after its block's confirmation drops it. If a
+//! run wrote the coin while the block was open, the marker is the erase of it.
+BOOST_AUTO_TEST_CASE(fresh_spend_marker_not_written)
+{
+    CCoinsViewDB db{MemoryDb("store"), {}};
+    CoinsStore store{&db, 4, true};
+    store.SetBestBlock(uint256::ONE, 1);
+    const COutPoint dropped{Txid::FromUint256(uint256{10}), 0};
+    const COutPoint written{Txid::FromUint256(uint256{11}), 0};
+    const COutPoint kept{Txid::FromUint256(uint256{12}), 0};
+    store.AddCoin(dropped, RandomCoin(m_rng, 1), false);
+    store.AddCoin(kept, RandomCoin(m_rng, 1), false);
+
+    // Spent and confirmed before any run: the marker is in the map while the block is open and gone
+    // once it is confirmed, the coin beside it is the one write.
+    auto block{store.BeginBlock(2, /*mark_fresh_spends=*/true)};
+    BOOST_CHECK(store.ApplySpend(block, dropped, nullptr));
+    BOOST_CHECK_EQUAL(store.GetCacheSize(), 2U);
+    store.ConfirmBlock(block);
+    store.SetBestBlock(uint256{2}, 2);
+    BOOST_CHECK_EQUAL(store.GetCacheSize(), 1U);
+    BOOST_CHECK_EQUAL(store.GetDirtyCount(), 1U);
+    store.SanityCheck();
+    auto run{store.PrepareWriteOut(2, 2, uint256{2}, false)};
+    BOOST_REQUIRE(run);
+    BOOST_CHECK_EQUAL(run->writes.size(), 1U); // only the coin kept
+    BOOST_CHECK(run->writes[0].coin.has_value());
+    run->settled_head = uint256{2};
+    store.WriteRun(run->writes, run->new_head, run->old_head, false);
+    store.CommitWriteOut(*run);
+    BOOST_CHECK_EQUAL(store.GetDirtyCount(), 0U);
+    BOOST_CHECK_EQUAL(store.GetCacheSize(), 1U);
+    BOOST_CHECK(!store.HaveCoin(dropped));
+    store.SanityCheck();
+
+    // A run while the spending block is open writes the coin from the block's record: the marker is an
+    // erase from then on.
+    store.SetChangeHeight(2);
+    store.AddCoin(written, RandomCoin(m_rng, 2), false);
+    block = store.BeginBlock(3, /*mark_fresh_spends=*/true);
+    BOOST_CHECK(store.ApplySpend(block, written, nullptr));
+    run = store.PrepareWriteOut(2, 2, uint256{2}, false);
+    BOOST_REQUIRE(run);
+    BOOST_CHECK_EQUAL(run->writes.size(), 1U);
+    BOOST_CHECK(run->writes[0].coin.has_value());
+    run->settled_head = uint256{2};
+    store.WriteRun(run->writes, run->new_head, run->old_head, false);
+    store.CommitWriteOut(*run);
+    BOOST_CHECK(db.PeekCoin(written).has_value());
+    store.ConfirmBlock(block);
+    store.SetBestBlock(uint256{3}, 3);
+    store.SanityCheck();
+    run = store.PrepareWriteOut(3, 3, uint256{3}, false);
+    BOOST_REQUIRE(run);
+    BOOST_CHECK_EQUAL(run->writes.size(), 1U);
+    BOOST_CHECK(!run->writes[0].coin.has_value());
+    run->settled_head = uint256{3};
+    store.WriteRun(run->writes, run->new_head, run->old_head, false);
+    store.CommitWriteOut(*run);
+    BOOST_CHECK(!db.PeekCoin(written).has_value());
+    BOOST_CHECK(db.PeekCoin(kept).has_value());
+    BOOST_CHECK_EQUAL(store.GetDirtyCount(), 0U);
+    store.SanityCheck();
+}
+
 BOOST_AUTO_TEST_SUITE_END()

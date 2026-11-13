@@ -210,7 +210,7 @@ public:
     //! marker like any other spend instead of erasing the entry, so that a lower block that creates the
     //! outpoint again finds the coin (its check fails) or the marker (its create is a conflict). Without
     //! it the lower block would find nothing and overwrite a coin that is unspent at its height. The
-    //! marker costs the database one erase of a key it does not have.
+    //! marker costs the database nothing, and the map nothing once the block is confirmed (ConfirmBlock()).
     BlockId BeginBlock(int height, bool mark_fresh_spends = false);
     //! The coin as block `block` sees it: created by a confirmed or applied block (or long ago), and not spent
     //! by a confirmed or applied block. Brings old coins in from the base.
@@ -254,7 +254,7 @@ public:
     /**
      * The block becomes part of the confirmed state: the confirmed height becomes its height, which is what
      * its creates and its spent markers are told from plain ones by, and the identity is freed. No entry
-     * is visited.
+     * is visited but the markers of coins the database never held (BeginBlock()), which are freed.
      */
     void ConfirmBlock(BlockId block);
     //! The block's changes are taken back from its record, the last first: its creates disappear, the coins
@@ -418,6 +418,10 @@ private:
         //! With block_create: the create went over an erase the database is owed still, whose change
         //! height the entry keeps. A run that passes writes the erase and moves the entry to the coin's height.
         bool owed : 1 {false};
+        //! With block_spend: the spend was of a coin the database never held, and left the entry for other
+        //! open blocks alone (BeginBlock()). There is no erase to write: ConfirmBlock() frees the entry with
+        //! the block. Any change clears the bit (Touch), and so does a run that writes the coin.
+        bool unwritten : 1 {false};
         uint8_t list : 2 {LIST_NONE};
         Node* prev{nullptr};
         Node* next{nullptr};
@@ -795,8 +799,9 @@ private:
     void Attach(Shard& shard, Node& node) const EXCLUSIVE_LOCKS_REQUIRED(shard.mutex);
     //! A lookup found the entry.
     static void Reference(Entry& entry) { if (!entry.referenced) entry.referenced = true; }
-    //! The entry changed: a run that collected it must not settle it.
-    static void Touch(Entry& entry) { entry.collected = false; }
+    //! The entry changed: a run that collected it must not settle it, and what a spend said of the
+    //! database (Entry::unwritten) is said of another value.
+    static void Touch(Entry& entry) { entry.collected = false; entry.unwritten = false; }
     //! Collect the shard's dirty entries at or below the run's bound into `writes` and `nodes` until
     //! `size`, about what the collected changes come to in a database batch, reaches `limit`; note the
     //! oldest change height left behind. An open block's entries are passed over, except for the erase

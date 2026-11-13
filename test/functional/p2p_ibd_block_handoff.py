@@ -51,16 +51,20 @@ class msg_truncated_block:
 
 
 class BlockRequests(P2PInterface):
-    """A peer that records the blocks it is asked for and sends nothing on its own."""
+    """A peer that records the blocks it is asked for and sends none of them on its own, but for the one
+    it is given to answer with."""
 
     def __init__(self):
         super().__init__()
         self.requested = set()
+        self.answered = None
 
     def on_getdata(self, message):
         for inv in message.inv:
             if (inv.type & MSG_TYPE_MASK) == MSG_BLOCK:
                 self.requested.add(inv.hash)
+                if self.answered is not None and inv.hash == self.answered.hash_int:
+                    self.send_without_ping(msg_block(self.answered))
 
     def announce_and_wait_for_requests(self, blocks):
         self.send_without_ping(msg_headers([CBlockHeader(block) for block in blocks]))
@@ -93,6 +97,18 @@ class IBDBlockHandoffTest(BitcoinTestFramework):
     def handed_off(self, blocks, peer_id):
         return [f"block {block.hash_hex} of peer={peer_id} goes to the connect pool" for block in blocks]
 
+    def deliver_first_block(self, peer, tip_hex, height):
+        """A peer is asked for one block at a time until its first has arrived, and then for as many as it
+        delivers in two seconds. The peer answers one request at once, so that the batch after it is asked
+        for as a whole. Returns the new tip."""
+        node = self.nodes[0]
+        block = self.build_blocks(int(tip_hex, 16), height, 1)[0]
+        with p2p_lock:
+            peer.answered = block
+        peer.send_without_ping(msg_headers([CBlockHeader(block)]))
+        self.wait_until(lambda: node.getbestblockhash() == block.hash_hex)
+        return block.hash_hex
+
     def sync_from_new_peer(self, blocks):
         """A fresh peer serves whatever of `blocks` the node still asks for."""
         node = self.nodes[0]
@@ -109,12 +125,12 @@ class IBDBlockHandoffTest(BitcoinTestFramework):
 
     def run_test(self):
         node = self.nodes[0]
-        tip = int(node.getbestblockhash(), 16)
-
         self.log.info("Requested blocks go to the connect pool, and the ping after them is answered once they are connected")
-        blocks = self.build_blocks(tip, 1, BATCH)
         peer = node.add_p2p_connection(BlockRequests())
         peer_id = max(info["id"] for info in node.getpeerinfo())
+        tip_hex = self.deliver_first_block(peer, node.getbestblockhash(), 1)
+        height = 2
+        blocks = self.build_blocks(int(tip_hex, 16), height, BATCH)
         peer.announce_and_wait_for_requests(blocks)
         with node.assert_debug_log(expected_msgs=self.handed_off(blocks, peer_id)):
             for block in blocks:
@@ -125,13 +141,14 @@ class IBDBlockHandoffTest(BitcoinTestFramework):
         assert node.getblockchaininfo()["initialblockdownload"]
 
         self.log.info("A block that was not asked for stays on the message handler")
-        unrequested = self.build_blocks(blocks[-1].hash_int, BATCH + 1, 1)
+        height += BATCH
+        unrequested = self.build_blocks(blocks[-1].hash_int, height, 1)
         with node.assert_debug_log(expected_msgs=[f"received block {unrequested[0].hash_hex}"], unexpected_msgs=["goes to the connect pool"]):
             peer.send_without_ping(msg_block(unrequested[0]))
             peer.sync_with_ping()
         assert_equal(node.getbestblockhash(), unrequested[0].hash_hex)
         tip_hex = unrequested[0].hash_hex
-        height = BATCH + 2
+        height += 1
 
         self.log.info("A mutated block on the connect pool disconnects its peer and is not stored")
         blocks = self.build_blocks(int(tip_hex, 16), height, BATCH)
@@ -153,9 +170,11 @@ class IBDBlockHandoffTest(BitcoinTestFramework):
         height += BATCH
 
         self.log.info("A block on the connect pool that fails when it is connected disconnects its peer")
-        invalid = self.build_blocks(int(tip_hex, 16), height, BATCH, first_coinbase_value=51)
         peer = node.add_p2p_connection(BlockRequests())
         peer_id = max(info["id"] for info in node.getpeerinfo())
+        tip_hex = self.deliver_first_block(peer, tip_hex, height)
+        height += 1
+        invalid = self.build_blocks(int(tip_hex, 16), height, BATCH, first_coinbase_value=51)
         peer.announce_and_wait_for_requests(invalid)
         with node.assert_debug_log(expected_msgs=self.handed_off(invalid[:1], peer_id) + ["bad-cb-amount"]):
             peer.send_all(invalid)
@@ -172,6 +191,8 @@ class IBDBlockHandoffTest(BitcoinTestFramework):
         self.log.info("A requested block that does not deserialize on the connect pool disconnects its peer")
         peer = node.add_p2p_connection(BlockRequests())
         peer_id = max(info["id"] for info in node.getpeerinfo())
+        tip_hex = self.deliver_first_block(peer, tip_hex, height)
+        height += 1
         blocks = self.build_blocks(int(tip_hex, 16), height, BATCH)
         peer.announce_and_wait_for_requests(blocks)
         with node.assert_debug_log(expected_msgs=self.handed_off(blocks[:1], peer_id) + [f"block {blocks[0].hash_hex} of peer={peer_id} does not deserialize, disconnecting"]):

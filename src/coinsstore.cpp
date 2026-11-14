@@ -23,6 +23,10 @@
 #include <utility>
 #include <vector>
 
+#ifndef WIN32
+#include <sys/mman.h>
+#endif
+
 namespace {
 //! How long a waiter retries before it blocks: about what blocking and being woken would cost it.
 constexpr std::chrono::microseconds SHARD_RETRY_TIME{20};
@@ -67,6 +71,17 @@ size_t CoinsStore::SumTotals(std::atomic<int64_t> Totals::* field) const
     for (const Totals& totals : m_totals) total += (totals.*field).load(std::memory_order_relaxed);
     // Read beside a change under way, an addition can be missed whose removal is seen.
     return static_cast<size_t>(std::max<int64_t>(0, total));
+}
+
+void* CoinsStore::HintedRegion(size_t bytes)
+{
+    assert(bytes != 0 && bytes % HUGE_PAGE_BYTES == 0);
+    void* region{::operator new(bytes, std::align_val_t{HUGE_PAGE_BYTES})};
+#ifdef MADV_HUGEPAGE
+    // Advice the system is free to ignore, as it does where transparent huge pages are off.
+    (void)madvise(region, bytes, MADV_HUGEPAGE);
+#endif
+    return region;
 }
 
 int64_t CoinsStore::NodeBytes()

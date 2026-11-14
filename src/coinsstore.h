@@ -436,46 +436,88 @@ private:
         Node* prev{nullptr};
         Node* next{nullptr};
     };
+    //! The huge page size the hint below is made for (x86-64's; elsewhere the hint is as harmless as none).
+    static constexpr size_t HUGE_PAGE_BYTES{size_t{2} << 20};
+    //! Memory of a multiple of HUGE_PAGE_BYTES, aligned to it, that the system is asked to back with huge
+    //! pages where it can (Linux's transparent huge pages, in their "madvise" or "always" mode): a lookup
+    //! lands on a random node of a map of many gigabytes, and with 4 KiB pages nearly every one misses the
+    //! TLB for the bucket and again for the node. Only a hint; without it the memory is as any other. Freed
+    //! with FreeRegion().
+    static void* HintedRegion(size_t bytes);
+    static void FreeRegion(void* region) noexcept { ::operator delete(region, std::align_val_t{HUGE_PAGE_BYTES}); }
     //! A shard's entries are inserted and erased by whichever thread holds its mutex, so a node is often freed
     //! by another thread than the one that allocated it, which the general allocator pays for with a lock. A
     //! thread therefore keeps the nodes it frees for its own next insertions: a list of up to MAX_KEPT nodes
     //! and one full list beside it. A block's changes are lopsided (a batch of spends frees thousands of
     //! nodes in a row, a batch of creates takes as many), so a thread with two full lists gives one to the
     //! depot, and a thread with none takes one from there: a lock for every MAX_KEPT nodes, held for the
-    //! exchange of a pointer. Only when the depot is full or empty does the general allocator serve.
+    //! exchange of a pointer.
+    //!
+    //! The nodes' memory is not the general allocator's, which hands out single nodes from wherever it has
+    //! room: the depot carves new lists from regions of REGION_BYTES, asked for with the huge page hint
+    //! (HintedRegion()). A node is therefore never given back: one that is freed waits, with its thread or
+    //! in the depot, for the next insertion, and the regions stay with the process.
     template <typename T>
     struct NodeAllocator {
         using value_type = T;
         static constexpr size_t MAX_KEPT{1024};
-        //! The full lists the depot holds at most.
-        static constexpr size_t MAX_DEPOT{64};
-        //! Full lists, each MAX_KEPT nodes, for whichever thread next runs out. Never destroyed, so that a
-        //! thread may end at any time; the nodes it holds at exit are the process's last.
+        static constexpr size_t REGION_BYTES{size_t{32} << 20};
+        //! The next full list after this one in the depot: the second word of a list's first node.
+        static void*& NextList(void* list) { return static_cast<void**>(list)[1]; }
+        //! Full lists, each MAX_KEPT nodes, for whichever thread next runs out, and the region new ones are
+        //! carved from. Never destroyed, so that a thread may end at any time.
         struct Depot {
             Mutex mutex;
-            std::array<void*, MAX_DEPOT> lists GUARDED_BY(mutex){};
-            //! Changed under the mutex. Read without it first: a thread that only inserts finds the depot
-            //! empty at every node, and one that only erases finds it full, and neither should take a lock
-            //! to learn it.
-            std::atomic<size_t> count{0};
-            bool Give(void* list) EXCLUSIVE_LOCKS_REQUIRED(!mutex)
+            void* lists GUARDED_BY(mutex){nullptr};
+            //! The nodes of threads that ended, fewer than MAX_KEPT: a full list once there are as many.
+            void* loose GUARDED_BY(mutex){nullptr};
+            size_t loose_count GUARDED_BY(mutex){0};
+            //! What is left of the newest region.
+            std::byte* fresh GUARDED_BY(mutex){nullptr};
+            size_t fresh_bytes GUARDED_BY(mutex){0};
+            void Give(void* list) EXCLUSIVE_LOCKS_REQUIRED(!mutex)
             {
-                if (count.load(std::memory_order_relaxed) == MAX_DEPOT) return false;
                 LOCK(mutex);
-                const size_t held{count.load(std::memory_order_relaxed)};
-                if (held == MAX_DEPOT) return false;
-                lists[held] = list;
-                count.store(held + 1, std::memory_order_relaxed);
-                return true;
+                NextList(list) = lists;
+                lists = list;
             }
+            void GiveLoose(void* nodes) EXCLUSIVE_LOCKS_REQUIRED(!mutex)
+            {
+                LOCK(mutex);
+                while (nodes) {
+                    void* next{*static_cast<void**>(nodes)};
+                    *static_cast<void**>(nodes) = loose;
+                    loose = nodes;
+                    if (++loose_count == MAX_KEPT) {
+                        NextList(loose) = lists;
+                        lists = std::exchange(loose, nullptr);
+                        loose_count = 0;
+                    }
+                    nodes = next;
+                }
+            }
+            //! A full list: one that was given, else MAX_KEPT nodes no one has used yet.
             void* Take() EXCLUSIVE_LOCKS_REQUIRED(!mutex)
             {
-                if (count.load(std::memory_order_relaxed) == 0) return nullptr;
-                LOCK(mutex);
-                const size_t held{count.load(std::memory_order_relaxed)};
-                if (held == 0) return nullptr;
-                count.store(held - 1, std::memory_order_relaxed);
-                return lists[held - 1];
+                static constexpr size_t LIST_BYTES{MAX_KEPT * sizeof(T)};
+                std::byte* nodes;
+                {
+                    LOCK(mutex);
+                    if (lists) return std::exchange(lists, NextList(lists));
+                    if (fresh_bytes < LIST_BYTES) {
+                        // The remainder, less than a list, is left behind.
+                        fresh = static_cast<std::byte*>(HintedRegion(REGION_BYTES));
+                        fresh_bytes = REGION_BYTES;
+                    }
+                    nodes = fresh;
+                    fresh += LIST_BYTES;
+                    fresh_bytes -= LIST_BYTES;
+                }
+                // Linked outside the lock: the first touch of the memory is where the system supplies it.
+                for (size_t i{0}; i < MAX_KEPT; ++i) {
+                    *reinterpret_cast<void**>(nodes + i * sizeof(T)) = i + 1 < MAX_KEPT ? nodes + (i + 1) * sizeof(T) : nullptr;
+                }
+                return nodes;
             }
         };
         static Depot& Shared()
@@ -490,18 +532,13 @@ private:
             void* spare{nullptr};
             ~Kept()
             {
-                for (void* list : {head, spare}) {
-                    while (list) {
-                        void* next{*static_cast<void**>(list)};
-                        std::allocator<T>{}.deallocate(static_cast<T*>(list), 1);
-                        list = next;
-                    }
-                }
+                if (spare) Shared().Give(spare);
+                if (head) Shared().GiveLoose(head);
             }
         };
         static Kept& Mine()
         {
-            static_assert(sizeof(T) >= sizeof(void*));
+            static_assert(sizeof(T) >= 2 * sizeof(void*) && sizeof(T) % alignof(T) == 0 && alignof(T) <= HUGE_PAGE_BYTES);
             thread_local Kept kept;
             return kept;
         }
@@ -510,39 +547,31 @@ private:
         NodeAllocator(const NodeAllocator<U>&) noexcept {}
         T* allocate(size_t n)
         {
-            if (n == 1) {
-                Kept& kept{Mine()};
-                if (!kept.head) {
-                    // The full list beside, else one of the depot's.
-                    kept.head = kept.spare ? std::exchange(kept.spare, nullptr) : Shared().Take();
-                    if (kept.head) kept.count = MAX_KEPT;
-                }
-                if (kept.head) {
-                    void* node{kept.head};
-                    kept.head = *static_cast<void**>(node);
-                    --kept.count;
-                    return static_cast<T*>(node);
-                }
+            if (n != 1) return std::allocator<T>{}.allocate(n);
+            Kept& kept{Mine()};
+            if (!kept.head) {
+                // The full list beside, else one of the depot's.
+                kept.head = kept.spare ? std::exchange(kept.spare, nullptr) : Shared().Take();
+                kept.count = MAX_KEPT;
             }
-            return std::allocator<T>{}.allocate(n);
+            void* node{kept.head};
+            kept.head = *static_cast<void**>(node);
+            --kept.count;
+            return static_cast<T*>(node);
         }
         void deallocate(T* p, size_t n) noexcept
         {
-            if (n == 1) {
-                Kept& kept{Mine()};
-                if (kept.count == MAX_KEPT && (!kept.spare || Shared().Give(kept.spare))) {
-                    // The full list goes beside, where the one the depot took was, and a new one begins.
-                    kept.spare = std::exchange(kept.head, nullptr);
-                    kept.count = 0;
-                }
-                if (kept.count < MAX_KEPT) {
-                    *reinterpret_cast<void**>(p) = kept.head;
-                    kept.head = p;
-                    ++kept.count;
-                    return;
-                }
+            if (n != 1) return std::allocator<T>{}.deallocate(p, n);
+            Kept& kept{Mine()};
+            if (kept.count == MAX_KEPT) {
+                // The full list goes beside, the one that was there to the depot, and a new one begins.
+                if (kept.spare) Shared().Give(kept.spare);
+                kept.spare = std::exchange(kept.head, nullptr);
+                kept.count = 0;
             }
-            std::allocator<T>{}.deallocate(p, n);
+            *reinterpret_cast<void**>(p) = kept.head;
+            kept.head = p;
+            ++kept.count;
         }
         friend bool operator==(const NodeAllocator&, const NodeAllocator&) noexcept { return true; }
     };
@@ -694,7 +723,12 @@ private:
         }
         void Rebucket(size_t count)
         {
-            std::unique_ptr<Cell*[]> buckets{count == 0 ? nullptr : new Cell*[count]()};
+            Buckets buckets{nullptr, BucketsDeleter{count * sizeof(Cell*) >= HUGE_PAGE_BYTES}};
+            if (count != 0) {
+                // An array of a huge page or more (a power of two, so a multiple of it) asks for huge pages.
+                void* array{buckets.get_deleter().hinted ? HintedRegion(count * sizeof(Cell*)) : ::operator new(count * sizeof(Cell*))};
+                buckets.reset(new (array) Cell*[count]());
+            }
             for (size_t b{0}; b < m_bucket_count; ++b) {
                 for (Cell* cell{m_buckets[b]}; cell;) {
                     Cell* next{cell->chain};
@@ -708,7 +742,19 @@ private:
             m_bucket_count = count;
         }
 
-        std::unique_ptr<Cell*[]> m_buckets;
+        struct BucketsDeleter {
+            bool hinted;
+            void operator()(Cell** array) const noexcept
+            {
+                if (hinted) {
+                    FreeRegion(array);
+                } else {
+                    ::operator delete(array);
+                }
+            }
+        };
+        using Buckets = std::unique_ptr<Cell*[], BucketsDeleter>;
+        Buckets m_buckets{nullptr, BucketsDeleter{false}};
         size_t m_bucket_count{0};
         size_t m_size{0};
     };

@@ -426,6 +426,28 @@ void BlockManager::FindFilesToPrune(
              min_block_to_prune, last_block_can_prune, count);
 }
 
+bool BlockManager::AtPruneTarget(const Chainstate& chain, ChainstateManager& chainman)
+{
+    AssertLockHeld(::cs_main);
+    const int num_chainstates{chainman.HistoricalChainstate() ? 2 : 1};
+    const auto target = std::max(
+        MIN_DISK_SPACE_FOR_BLOCK_FILES, GetPruneTarget() / num_chainstates);
+    if (chain.m_chain.Height() < 0 || target == 0) return false;
+    if (static_cast<uint64_t>(chain.m_chain.Height()) <= chainman.GetParams().PruneAfterHeight()) return false;
+    return CalculateCurrentUsage() + BLOCKFILE_CHUNK_SIZE + UNDOFILE_CHUNK_SIZE >= target;
+}
+
+bool BlockManager::HasBlockFileEndingWithin(int above, int upto) const
+{
+    AssertLockHeld(::cs_main);
+    for (int fileNumber = 0; fileNumber < this->MaxBlockfileNum(); fileNumber++) {
+        const auto& fileinfo = m_blockfile_info[fileNumber];
+        if (fileinfo.nSize == 0) continue;
+        if (int64_t{fileinfo.nHeightLast} > above && int64_t{fileinfo.nHeightLast} <= upto) return true;
+    }
+    return false;
+}
+
 void BlockManager::UpdatePruneLock(const std::string& name, const PruneLockInfo& lock_info) {
     AssertLockHeld(::cs_main);
     m_prune_locks[name] = lock_info;

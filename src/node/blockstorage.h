@@ -274,6 +274,13 @@ private:
         const Chainstate& chain,
         ChainstateManager& chainman);
 
+    //! Whether automatic pruning would take files now: the conditions under which FindFilesToPrune() looks
+    //! for any (a prune target, a chain past the height pruning starts at, the block files at the target).
+    bool AtPruneTarget(const Chainstate& chain, ChainstateManager& chainman) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+    //! Whether a block file that holds data ends above the first height and at or below the second: a file
+    //! pruning could take if it were allowed up to the second height and is not while held at the first.
+    bool HasBlockFileEndingWithin(int above, int upto) const EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+
     //! Since assumedvalid chainstates may be syncing a range of the chain that is very
     //! far away from the normal/background validation process, we should segment blockfiles
     //! for assumed chainstates. Otherwise, we might have wildly different height ranges

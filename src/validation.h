@@ -894,12 +894,6 @@ public:
     bool StartWriteOutRun(BlockValidationState& state, int bound_height, bool final, std::optional<size_t> evict_to = {}) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
     //! Wait for a write-out run in flight (and every effect queued before it) and apply its completion.
     void SettleWriteOut() EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
-    /**
-     * The most blocks the written head may lag the tip. On a pruned node the replay after a crash reads
-     * the lagged blocks, so they must stay inside what pruning keeps; otherwise there is no ceiling and the
-     * memory budget alone drives the write-out.
-     */
-    std::optional<int> LagCeiling() const EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
 
     //! Resize the CoinsViews caches dynamically and flush state to disk.
     //! @returns true unless an error occurred during the flush.

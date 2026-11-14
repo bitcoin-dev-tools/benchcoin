@@ -1958,15 +1958,6 @@ void Chainstate::SettleWriteOut()
     m_blockman.m_effects.ApplyCompletions();
 }
 
-std::optional<int> Chainstate::LagCeiling() const
-{
-    AssertLockHeld(::cs_main);
-    if (!m_blockman.IsPruneMode()) return std::nullopt;
-    // A replay after a crash reads every block above the written head; pruning keeps MIN_BLOCKS_TO_KEEP
-    // below the tip, so the lag stays well inside that, with room for the blocks a window connects ahead.
-    return static_cast<int>(MIN_BLOCKS_TO_KEEP) - 32;
-}
-
 bool Chainstate::StartWriteOutRun(BlockValidationState& state, int bound_height, bool final, std::optional<size_t> evict_to)
 {
     AssertLockHeld(::cs_main);
@@ -3218,6 +3209,33 @@ bool Chainstate::FlushStateToDisk(
                 LogDebug(BCLog::PRUNE, "%s limited pruning to height %d\n", limiting_lock.value(), last_prune);
             }
 
+            // The coins database lags: after a crash it is replayed from its written head, which reads every
+            // block between that head and the tip, on both branches when the head is on one the chain has
+            // left. Pruning stays at or below the block the two have in common, as it stays below a prune
+            // lock. Where that holds back a file pruning could take, a write-out run first brings the database
+            // up to the height pruning may reach; it is on disk before the block index records a pruned file.
+            // The run is made only when pruning would take files: for a request, or with the block files at
+            // the prune target. Below the target the written head holds nothing back that would go.
+            {
+                CoinsStore& store{CoinsStoreTip()};
+                const auto written_fork_height{[&]() EXCLUSIVE_LOCKS_REQUIRED(::cs_main) {
+                    const CBlockIndex* written{store.WrittenHead().IsNull() ? nullptr : m_blockman.LookupBlockIndex(store.WrittenHead())};
+                    const CBlockIndex* fork{written ? m_chain.FindFork(*written) : nullptr};
+                    return fork ? fork->nHeight : 0;
+                }};
+                const int can_prune{GetPruneRange(nManualPruneHeight > 0 ? std::min(last_prune, nManualPruneHeight) : last_prune).second};
+                const bool prunes{nManualPruneHeight > 0 || m_blockman.AtPruneTarget(*this, m_chainman)};
+                if (prunes && m_blockman.HasBlockFileEndingWithin(written_fork_height(), can_prune)) {
+                    // The run commits the block index.
+                    if (!CheckDiskSpace(m_blockman.m_opts.blocks_dir)) {
+                        return FatalError(m_chainman.GetNotifications(), state, _("Disk space is too low!"));
+                    }
+                    if (!StartWriteOutRun(state, can_prune, /*final=*/false)) return false;
+                    SettleWriteOut();
+                }
+                last_prune = std::min(last_prune, written_fork_height());
+            }
+
             if (nManualPruneHeight > 0) {
                 LOG_TIME_MILLIS_WITH_CATEGORY("find files to prune (manual)", BCLog::BENCH);
 
@@ -3247,14 +3265,11 @@ bool Chainstate::FlushStateToDisk(
         // It's been a while since we wrote the block index and chain state to disk. Do this frequently, so we don't need to redownload or reindex after a crash.
         bool fPeriodicWrite = mode == FlushStateMode::PERIODIC && nNow >= m_next_write;
         CoinsStore& store{CoinsStoreTip()};
-        // The written head may not lag the tip by more than the ceiling (pruned nodes).
-        const std::optional<int> lag_ceiling{LagCeiling()};
-        const bool lag_over_ceiling{lag_ceiling && store.WrittenHeight() >= 0 && m_chain.Height() - store.WrittenHeight() > *lag_ceiling};
         // A forced flush writes everything and waits, as it always did. Everything else is a write-out run
         // of the young tier's oldest changes on the executor: the flush became a lag.
         const bool synchronous{mode == FlushStateMode::FORCE_FLUSH || mode == FlushStateMode::FORCE_SYNC};
         const bool test_every_block{m_chainman.m_options.test_write_out_every_block && mode == FlushStateMode::IF_NEEDED && m_chain.Height() >= 2};
-        const bool lag_run{!synchronous && (fCacheLarge || fCacheCritical || fPeriodicWrite || lag_over_ceiling || fFlushForPrune || test_every_block)};
+        const bool lag_run{!synchronous && (fCacheLarge || fCacheCritical || fPeriodicWrite || fFlushForPrune || test_every_block)};
         bool should_write = synchronous || lag_run;
         // Whether anything went to disk: a lag run that found nothing to write does not count.
         bool wrote{synchronous};
@@ -3262,8 +3277,8 @@ bool Chainstate::FlushStateToDisk(
         bool prune_recorded{false};
         // Write blocks, block index and best chain related state to disk.
         if (should_write) {
-            LogDebug(BCLog::COINDB, "Writing chainstate to disk: flush mode=%s, prune=%d, large=%d, critical=%d, periodic=%d, over_ceiling=%d",
-                     FlushStateModeNames[size_t(mode)], fFlushForPrune, fCacheLarge, fCacheCritical, fPeriodicWrite, lag_over_ceiling);
+            LogDebug(BCLog::COINDB, "Writing chainstate to disk: flush mode=%s, prune=%d, large=%d, critical=%d, periodic=%d",
+                     FlushStateModeNames[size_t(mode)], fFlushForPrune, fCacheLarge, fCacheCritical, fPeriodicWrite);
             // A flush that lost changes to a failed write (the fatal error is raised already) is followed
             // by no write at all, the shutdown's included: the database stays under the marker of that
             // flush, and the next start replays from its old head.
@@ -3352,15 +3367,8 @@ bool Chainstate::FlushStateToDisk(
                         final = true;
                     } else if (pressure && usage > target) {
                         bound = store.BoundForBytes(usage - target, tip_height);
-                    } else if (lag_over_ceiling) {
-                        bound = tip_height - *lag_ceiling / 2;
                     } else if (test_every_block) {
                         bound = tip_height - 2;
-                    }
-                    if (fFlushForPrune) {
-                        // Pruned files must lie below the written head, so that a replay never needs them.
-                        const auto [unused_min, last_block_can_prune]{GetPruneRange(m_chain.Height())};
-                        if (store.WrittenHeight() < last_block_can_prune) bound = std::max(bound.value_or(0), last_block_can_prune);
                     }
                     const uint64_t failed_runs{m_write_out_runs_failed};
                     if (bound) {

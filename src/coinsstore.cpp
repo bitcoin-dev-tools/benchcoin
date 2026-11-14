@@ -1631,7 +1631,7 @@ void CoinsStore::StreamWriteOut(WriteOutRun& run, const std::function<uint256(in
     }
     // The database now holds the settled head's state, with every outpoint the run wrote at its value in
     // new_head: the pair the next run starts from. On disk before the tier counts the run as written, so
-    // that the old head recorded there is never below what pruning and the lag ceiling go by.
+    // that the old head recorded there is never below what pruning goes by.
     run.settled_head = block_at(run.settled_height);
     base->WriteRun({}, run.new_head, run.settled_head, /*final=*/false);
 }

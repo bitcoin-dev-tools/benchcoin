@@ -358,7 +358,7 @@ public:
     explicit CTransaction(const CMutableTransaction& tx);
     explicit CTransaction(CMutableTransaction&& tx);
 
-    /** The hashes were computed from the bytes the transaction was deserialised from (txhashing.h,
+    /** The hashes were computed from the bytes the transaction was deserialised from (primitives/txsegments.h,
      *  TxSegmentRecorder), and whether it has a witness was seen in the serialisation; they are what
      *  ComputeHash(), ComputeWitnessHash() and ComputeHasWitness() would return. */
     struct PrecomputedHashes {};

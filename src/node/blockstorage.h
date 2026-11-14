@@ -24,7 +24,6 @@
 #include <util/fs.h>
 #include <util/hasher.h>
 #include <util/obfuscation.h>
-#include <util/threadpool.h>
 
 #include <algorithm>
 #include <array>
@@ -350,10 +349,6 @@ public:
     explicit BlockManager(const util::SignalInterrupt& interrupt, Options opts);
     ~BlockManager();
 
-    //! Hashes the transactions of blocks read from disk, received from the network or loaded from external files
-    //! (txhashing.h). ChainstateManager starts it with the script verification worker count; while it has no
-    //! workers the reading thread hashes, as a task of the connect pool always does for its own block.
-    mutable ThreadPool m_hash_pool{"blockhash"};
     const util::SignalInterrupt& m_interrupt;
     std::atomic<bool> m_importing{false};
 
@@ -583,9 +578,7 @@ public:
     void UnlinkPrunedFiles(const std::set<int>& setFilesToPrune) const;
 
     /** Functions for disk access for blocks */
-    //! @param[in] hash_on_pool  Whether a large block's transactions are hashed on the hashing pool's workers,
-    //!                          or by the caller when it is one of many that read side by side.
-    bool ReadBlock(CBlock& block, const FlatFilePos& pos, const std::optional<uint256>& expected_hash, bool hash_on_pool = true) const;
+    bool ReadBlock(CBlock& block, const FlatFilePos& pos, const std::optional<uint256>& expected_hash) const;
     bool ReadBlock(CBlock& block, const CBlockIndex& index) const;
     ReadRawBlockResult ReadRawBlock(const FlatFilePos& pos, std::optional<std::pair<size_t, size_t>> block_part = std::nullopt) const;
 

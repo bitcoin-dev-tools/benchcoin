@@ -10,9 +10,7 @@
 #include <serialize.h>
 #include <streams.h>
 #include <test/util/setup_common.h>
-#include <txhashing.h>
 #include <uint256.h>
-#include <util/threadpool.h>
 
 #include <boost/test/unit_test.hpp>
 
@@ -23,10 +21,9 @@
 #include <vector>
 
 /**
- * DeserializeBlock() computes every transaction's txid and wtxid from the bytes it was read from instead of by
- * serialising it again. These tests hold it equal to the generic deserialiser, which does serialise again, on
- * random transactions, on mutated and truncated bytes, and on whole blocks with and without the hashing shared
- * over a thread pool.
+ * A transaction deserialised from a buffer has its txid and wtxid computed from the bytes it was read from instead
+ * of by serialising it again. These tests hold that equal to the deserialisation from a stream without a buffer,
+ * which does serialise again, on random transactions, on mutated and truncated bytes, and on whole blocks.
  */
 BOOST_FIXTURE_TEST_SUITE(txhashing_tests, BasicTestingSetup)
 
@@ -95,49 +92,6 @@ std::vector<std::byte> BlockAround(std::span<const std::byte> tx_bytes)
     return bytes;
 }
 
-//! Deserialise `bytes` as a block with the generic path and with DeserializeBlock (with and without a pool); the
-//! paths must fail together or agree on everything. Returns whether they parsed.
-bool CheckBlockBytes(std::span<const std::byte> bytes, ThreadPool* pool)
-{
-    bool generic_ok{true};
-    CBlock generic;
-    size_t generic_consumed{0};
-    try {
-        SpanReader reader{bytes};
-        reader >> TX_WITH_WITNESS(generic);
-        generic_consumed = bytes.size() - reader.size();
-    } catch (const std::ios_base::failure&) {
-        generic_ok = false;
-    }
-
-    for (ThreadPool* p : {static_cast<ThreadPool*>(nullptr), pool}) {
-        bool hashed_ok{true};
-        CBlock hashed;
-        size_t hashed_consumed{0};
-        try {
-            hashed_consumed = DeserializeBlock(bytes, hashed, p);
-        } catch (const std::ios_base::failure&) {
-            hashed_ok = false;
-        }
-        BOOST_CHECK_EQUAL(generic_ok, hashed_ok);
-        if (!generic_ok || !hashed_ok) continue;
-        BOOST_CHECK_EQUAL(generic_consumed, hashed_consumed);
-        BOOST_CHECK(hashed.GetHash() == generic.GetHash());
-        BOOST_CHECK_EQUAL(hashed.vtx.size(), generic.vtx.size());
-        for (size_t i{0}; i < std::min(hashed.vtx.size(), generic.vtx.size()); ++i) {
-            BOOST_CHECK(hashed.vtx[i]->GetHash() == generic.vtx[i]->GetHash());
-            BOOST_CHECK(hashed.vtx[i]->GetWitnessHash() == generic.vtx[i]->GetWitnessHash());
-            BOOST_CHECK(hashed.vtx[i]->GetHash() == ReserializedTxid(*hashed.vtx[i]));
-            BOOST_CHECK(hashed.vtx[i]->GetWitnessHash() == ReserializedWtxid(*hashed.vtx[i]));
-            BOOST_CHECK_EQUAL(hashed.vtx[i]->HasWitness(), generic.vtx[i]->HasWitness());
-        }
-        // What was parsed serialises back to what was consumed.
-        const std::vector<std::byte> again{Bytes(TX_WITH_WITNESS(hashed))};
-        BOOST_CHECK(std::equal(again.begin(), again.end(), bytes.begin(), bytes.begin() + hashed_consumed));
-    }
-    return generic_ok;
-}
-
 //! A stream that hides its buffer: the deserialising constructor must fall back to serialise-and-hash.
 struct OpaqueReader {
     SpanReader& inner;
@@ -152,6 +106,51 @@ struct OpaqueReader {
 static_assert(ContiguousInputStream<SpanReader>);
 static_assert(ContiguousInputStream<DataStream>);
 static_assert(!ContiguousInputStream<OpaqueReader>);
+
+//! Deserialise `bytes` as a block over an opaque stream, whose transactions are hashed by serialising them again,
+//! and over a SpanReader, whose transactions are hashed from the bytes; the two must fail together or agree on
+//! everything. Returns whether they parsed.
+bool CheckBlockBytes(std::span<const std::byte> bytes)
+{
+    bool generic_ok{true};
+    CBlock generic;
+    size_t generic_consumed{0};
+    try {
+        SpanReader inner{bytes};
+        OpaqueReader reader{inner};
+        reader >> TX_WITH_WITNESS(generic);
+        generic_consumed = bytes.size() - inner.size();
+    } catch (const std::ios_base::failure&) {
+        generic_ok = false;
+    }
+
+    bool hashed_ok{true};
+    CBlock hashed;
+    size_t hashed_consumed{0};
+    try {
+        SpanReader reader{bytes};
+        reader >> TX_WITH_WITNESS(hashed);
+        hashed_consumed = bytes.size() - reader.size();
+    } catch (const std::ios_base::failure&) {
+        hashed_ok = false;
+    }
+    BOOST_CHECK_EQUAL(generic_ok, hashed_ok);
+    if (!generic_ok || !hashed_ok) return generic_ok;
+    BOOST_CHECK_EQUAL(generic_consumed, hashed_consumed);
+    BOOST_CHECK(hashed.GetHash() == generic.GetHash());
+    BOOST_CHECK_EQUAL(hashed.vtx.size(), generic.vtx.size());
+    for (size_t i{0}; i < std::min(hashed.vtx.size(), generic.vtx.size()); ++i) {
+        BOOST_CHECK(hashed.vtx[i]->GetHash() == generic.vtx[i]->GetHash());
+        BOOST_CHECK(hashed.vtx[i]->GetWitnessHash() == generic.vtx[i]->GetWitnessHash());
+        BOOST_CHECK(hashed.vtx[i]->GetHash() == ReserializedTxid(*hashed.vtx[i]));
+        BOOST_CHECK(hashed.vtx[i]->GetWitnessHash() == ReserializedWtxid(*hashed.vtx[i]));
+        BOOST_CHECK_EQUAL(hashed.vtx[i]->HasWitness(), generic.vtx[i]->HasWitness());
+    }
+    // What was parsed serialises back to what was consumed.
+    const std::vector<std::byte> again{Bytes(TX_WITH_WITNESS(hashed))};
+    BOOST_CHECK(std::equal(again.begin(), again.end(), bytes.begin(), bytes.begin() + hashed_consumed));
+    return true;
+}
 
 //! Deserialise one transaction's bytes with the hook-free path (hashes by serialising again) and through the
 //! deserialising constructor over a SpanReader, a DataStream and an opaque stream; all must fail together or agree.
@@ -198,7 +197,7 @@ BOOST_AUTO_TEST_CASE(transaction_hashes_from_bytes)
     size_t parsed_with_witness{0}, parsed_without{0}, misparsed{0};
     for (int i{0}; i < 1500; ++i) {
         const CMutableTransaction tx{RandomTransaction(m_rng, /*with_witness=*/m_rng.randbool())};
-        if (CheckBlockBytes(BlockAround(Bytes(TX_WITH_WITNESS(tx))), nullptr)) {
+        if (CheckBlockBytes(BlockAround(Bytes(TX_WITH_WITNESS(tx))))) {
             if (tx.HasWitness()) ++parsed_with_witness; else ++parsed_without;
         } else {
             // An input-less transaction with outputs is misread as segwit framing by both paths alike.
@@ -228,7 +227,7 @@ BOOST_AUTO_TEST_CASE(transaction_hashes_on_damaged_bytes)
         } else {
             bytes.resize(m_rng.randrange(bytes.size()));
         }
-        CheckBlockBytes(BlockAround(bytes), nullptr);
+        CheckBlockBytes(BlockAround(bytes));
         CheckTransactionBytes(bytes, TX_WITH_WITNESS);
     }
 }
@@ -239,29 +238,26 @@ BOOST_AUTO_TEST_CASE(transaction_hashes_fixed_cases)
     // and a zero flag, and they are the vin and vout counts of the txid preimage.
     const std::vector<std::byte> empty_tx{Bytes(TX_WITH_WITNESS(CMutableTransaction{}))};
     BOOST_CHECK_EQUAL(empty_tx.size(), 10U);
-    BOOST_CHECK(CheckBlockBytes(BlockAround(empty_tx), nullptr));
+    BOOST_CHECK(CheckBlockBytes(BlockAround(empty_tx)));
 
     // One input with a witness, no outputs; and one input without a witness next to one with.
     CMutableTransaction one_in;
     one_in.vin.emplace_back(COutPoint{Txid::FromUint256(m_rng.rand256()), 0});
     one_in.vin.back().scriptWitness.stack.push_back(m_rng.randbytes(33));
-    BOOST_CHECK(CheckBlockBytes(BlockAround(Bytes(TX_WITH_WITNESS(one_in))), nullptr));
+    BOOST_CHECK(CheckBlockBytes(BlockAround(Bytes(TX_WITH_WITNESS(one_in)))));
     one_in.vin.emplace_back(COutPoint{Txid::FromUint256(m_rng.rand256()), 1});
     one_in.vout.emplace_back(1, CScript{} << OP_TRUE);
-    BOOST_CHECK(CheckBlockBytes(BlockAround(Bytes(TX_WITH_WITNESS(one_in))), nullptr));
+    BOOST_CHECK(CheckBlockBytes(BlockAround(Bytes(TX_WITH_WITNESS(one_in)))));
 
     // A witness serialisation whose witness stacks are all empty is rejected by both paths alike.
     std::vector<std::byte> superfluous{Bytes(TX_NO_WITNESS(one_in))};
     superfluous.insert(superfluous.begin() + 4, {std::byte{0}, std::byte{1}});
     for (size_t i{0}; i < one_in.vin.size(); ++i) superfluous.insert(superfluous.end() - 4, std::byte{0});
-    BOOST_CHECK(!CheckBlockBytes(BlockAround(superfluous), nullptr));
+    BOOST_CHECK(!CheckBlockBytes(BlockAround(superfluous)));
 }
 
 BOOST_AUTO_TEST_CASE(block_hashes_from_bytes)
 {
-    ThreadPool pool{"test"};
-    pool.Start(3);
-
     for (const size_t tx_count : {1, 10, 127, 128, 129, 300, 1000}) {
         CBlock block;
         block.nVersion = m_rng.rand32();
@@ -281,18 +277,20 @@ BOOST_AUTO_TEST_CASE(block_hashes_from_bytes)
         const size_t block_size{bytes.size()};
         bytes.insert(bytes.end(), {std::byte{0xde}, std::byte{0xad}}); // trailing bytes are left unread
 
-        BOOST_CHECK(CheckBlockBytes(bytes, &pool));
+        BOOST_CHECK(CheckBlockBytes(bytes));
         CBlock hashed;
-        BOOST_CHECK_EQUAL(DeserializeBlock(bytes, hashed, &pool), block_size);
+        SpanReader reader{bytes};
+        reader >> TX_WITH_WITNESS(hashed);
+        BOOST_CHECK_EQUAL(bytes.size() - reader.size(), block_size);
         BOOST_CHECK_EQUAL(hashed.vtx.size(), tx_count);
         for (size_t i{0}; i < tx_count; ++i) {
             BOOST_CHECK(hashed.vtx[i]->GetHash() == block.vtx[i]->GetHash());
             BOOST_CHECK(hashed.vtx[i]->GetWitnessHash() == block.vtx[i]->GetWitnessHash());
         }
 
-        // Short input fails as the generic path does, also while workers hold chunks of it.
+        // Short input fails as the generic path does.
         for (int i{0}; i < 10; ++i) {
-            CheckBlockBytes(std::span<const std::byte>{bytes.data(), m_rng.randrange(block_size)}, &pool);
+            CheckBlockBytes(std::span<const std::byte>{bytes.data(), m_rng.randrange(block_size)});
         }
     }
 }

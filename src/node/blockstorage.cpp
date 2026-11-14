@@ -23,7 +23,6 @@
 #include <serialize.h>
 #include <signet.h>
 #include <streams.h>
-#include <txhashing.h>
 #include <sync.h>
 #include <tinyformat.h>
 #include <uint256.h>
@@ -1187,7 +1186,7 @@ void BlockManager::ApplyEffectCompletions()
     m_effects.ApplyCompletions();
 }
 
-bool BlockManager::ReadBlock(CBlock& block, const FlatFilePos& pos, const std::optional<uint256>& expected_hash, bool hash_on_pool) const
+bool BlockManager::ReadBlock(CBlock& block, const FlatFilePos& pos, const std::optional<uint256>& expected_hash) const
 {
     block.SetNull();
 
@@ -1198,8 +1197,8 @@ bool BlockManager::ReadBlock(CBlock& block, const FlatFilePos& pos, const std::o
     }
 
     try {
-        // Read block, hashing its transactions from the bytes: on the hashing pool's workers, or here.
-        DeserializeBlock(std::as_bytes(std::span{*block_data}), block, hash_on_pool ? &m_hash_pool : nullptr);
+        // Read block
+        SpanReader{*block_data} >> TX_WITH_WITNESS(block);
     } catch (const std::exception& e) {
         LogError("Deserialize or I/O error - %s at %s while reading block", e.what(), pos.ToString());
         return false;

@@ -49,7 +49,6 @@
 #include <signet.h>
 #include <tinyformat.h>
 #include <txdb.h>
-#include <txhashing.h>
 #include <txmempool.h>
 #include <uint256.h>
 #include <undo.h>
@@ -3813,9 +3812,7 @@ void Chainstate::RunConnectTask(StagedConnect& staged) noexcept
         bool read;
         {
             const auto timer{staged.Time(StagedConnect::READ)};
-            // The task hashes the transactions itself: the blocks beside it are the parallelism, and a
-            // wait for the hashing pool would put this worker to sleep with a core of its own to use.
-            read = m_blockman.ReadBlock(*block, staged.pos, staged.pindex->GetBlockHash(), /*hash_on_pool=*/false);
+            read = m_blockman.ReadBlock(*block, staged.pos, staged.pindex->GetBlockHash());
         }
         if (!read) {
             staged.read_failed = true;
@@ -6631,12 +6628,13 @@ void ChainstateManager::LoadExternalBlockFile(
                         blkdat.SetPos(nBlockPos);
                         pblock = NewBlock();
                         {
-                            // Read the block's bytes and hash its transactions from them, on the pool's workers.
+                            // Read the block's bytes, so that its transactions are hashed from them.
                             std::vector<std::byte> block_bytes(nSize);
                             blkdat.read(block_bytes);
-                            const size_t consumed{DeserializeBlock(block_bytes, *pblock, &m_blockman.m_hash_pool)};
+                            SpanReader reader{block_bytes};
+                            reader >> TX_WITH_WITNESS(*pblock);
                             // The size field is what WriteBlock wrote; if a file disagrees, continue after the block as read.
-                            if (consumed != nSize) blkdat.SetPos(nBlockPos + consumed);
+                            if (reader.size() > 0) blkdat.SetPos(nBlockPos + nSize - reader.size());
                         }
                         nRewind = blkdat.GetPos();
 
@@ -7766,10 +7764,6 @@ ChainstateManager::ChainstateManager(const util::SignalInterrupt& interrupt, Opt
       m_connect_pool{std::make_shared<ThreadPool>("connect")},
       m_block_bins{std::make_unique<BlockBins>()}
 {
-    if (const int hash_threads{std::clamp(m_options.worker_threads_num, 0, MAX_BLOCKHASH_THREADS)}; hash_threads > 0) {
-        m_blockman.m_hash_pool.Start(hash_threads);
-        LogInfo("Block transaction hashing uses %d additional threads", hash_threads);
-    }
     if (const int connect_threads{std::clamp(m_options.prevoutfetch_threads_num, 0, MAX_PREVOUTFETCH_THREADS)}; connect_threads > 0) {
         m_connect_pool->Start(connect_threads);
         LogInfo("Block connection uses %d additional threads (window of %d blocks in initial block download)", connect_threads, ConnectWindow());

@@ -54,7 +54,6 @@
 #include <streams.h>
 #include <sync.h>
 #include <tinyformat.h>
-#include <txhashing.h>
 #include <txmempool.h>
 #include <uint256.h>
 #include <util/check.h>
@@ -3799,15 +3798,7 @@ bool PeerManagerImpl::ProcessBlock(const std::shared_ptr<const CBlock>& block, b
 void PeerManagerImpl::ProcessBlockMessage(Peer& peer, CNode* node, std::span<const std::byte> bytes)
 {
     std::shared_ptr<CBlock> pblock{m_chainman.NewBlock(/*on_pool=*/!node)};
-    {
-        // Hash the transactions from the wire bytes: on the hashing pool's workers for a large block when this
-        // is the message handler, in the task itself for a block on the connect pool, where the blocks beside
-        // it are the parallelism.
-        const auto time_start{SteadyClock::now()};
-        DeserializeBlock(bytes, *pblock, node ? &m_chainman.m_blockman.m_hash_pool : nullptr);
-        LogDebug(BCLog::BENCH, "- Deserialize block %s (%u txs): %.2fms\n", pblock->GetHash().ToString(), pblock->vtx.size(),
-                 Ticks<MillisecondsDouble>(SteadyClock::now() - time_start));
-    }
+    SpanReader{bytes} >> TX_WITH_WITNESS(*pblock);
 
     LogDebug(BCLog::NET, "received block %s peer=%d\n", pblock->GetHash().ToString(), peer.m_id);
 

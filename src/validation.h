@@ -96,8 +96,6 @@ inline constexpr uint64_t MIN_DISK_SPACE_FOR_BLOCK_FILES{550_MiB};
 
 /** Maximum number of dedicated script-checking threads allowed */
 inline constexpr int MAX_SCRIPTCHECK_THREADS{15};
-//! The most threads that hash the transactions of a received block, however many -par allows.
-inline constexpr int MAX_BLOCKHASH_THREADS{4};
 
 /** Maximum number of dedicated threads allowed for prefetching block input prevouts */
 inline constexpr int32_t MAX_PREVOUTFETCH_THREADS{1024};

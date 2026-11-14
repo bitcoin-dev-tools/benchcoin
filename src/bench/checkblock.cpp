@@ -10,9 +10,7 @@
 #include <primitives/transaction.h>
 #include <serialize.h>
 #include <streams.h>
-#include <txhashing.h>
 #include <util/check.h>
-#include <util/threadpool.h>
 #include <validation.h>
 
 #include <memory>
@@ -48,30 +46,6 @@ static void DeserializeBlockParseOnlyTest(benchmark::Bench& bench)
     });
 }
 
-//! The block deserialiser of txhashing.h, hashing from the bytes on the reading thread.
-static void DeserializeBlockHashedTest(benchmark::Bench& bench)
-{
-    const auto block_data{benchmark::data::block413567};
-    bench.unit("block").run([&] {
-        CBlock block;
-        DeserializeBlock(std::as_bytes(std::span{block_data}), block, nullptr);
-        assert(block.vtx.size() == 1557);
-    });
-}
-
-//! The same with the hashing shared over four worker threads.
-static void DeserializeBlockHashedParallelTest(benchmark::Bench& bench)
-{
-    const auto block_data{benchmark::data::block413567};
-    ThreadPool pool{"bench"};
-    pool.Start(4);
-    bench.unit("block").run([&] {
-        CBlock block;
-        DeserializeBlock(std::as_bytes(std::span{block_data}), block, &pool);
-        assert(block.vtx.size() == 1557);
-    });
-}
-
 static void CheckBlockTest(benchmark::Bench& bench)
 {
     const auto& chain_params{CChainParams::Main()};
@@ -93,6 +67,4 @@ static void CheckBlockTest(benchmark::Bench& bench)
 
 BENCHMARK(DeserializeBlockTest);
 BENCHMARK(DeserializeBlockParseOnlyTest);
-BENCHMARK(DeserializeBlockHashedTest);
-BENCHMARK(DeserializeBlockHashedParallelTest);
 BENCHMARK(CheckBlockTest);

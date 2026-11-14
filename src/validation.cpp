@@ -7,7 +7,6 @@
 
 #include <validation.h>
 #include <deque>
-#include <unordered_set>
 #include <future>
 
 #include <arith_uint256.h>
@@ -2714,8 +2713,8 @@ bool ConnectBlock(const CBlock& block, const BlockValidationContext& ctx, const 
     if (check_queue && check_queue->HasThreads() && fScriptChecks) control.emplace(*check_queue);
 
     std::vector<int> prevheights;
-    //! This block's transaction ids, built when the first transaction is deferred.
-    std::optional<std::unordered_set<Txid, SaltedTxidHasher>> block_txids;
+    //! This block's transaction ids in sorted order, built when the first transaction is deferred.
+    std::vector<Txid> block_txids;
     CAmount nFees = 0;
     int& nInputs{result.num_inputs};
     int64_t& nSigOpsCost{result.sigops_cost};
@@ -2732,22 +2731,21 @@ bool ConnectBlock(const CBlock& block, const BlockValidationContext& ctx, const 
             // from one of this block's own transactions: it is missing because it is produced later in the
             // block (or is this transaction's own, or was spent earlier), which validating in order rejects
             // at this point, and so does this.
-            if (!block_txids) {
-                block_txids.emplace();
-                for (const auto& block_tx : block.vtx) {
-                    // A transaction the block holds twice. No lower block can make that valid: the second
-                    // copy spends what the first spent. (The merkle root's check for mutation only catches
-                    // copies that are paired in the tree.) Its outputs must not be created a second time.
-                    if (!block_txids->insert(block_tx->GetHash()).second) {
-                        state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-txns-inputs-missingorspent",
-                                      "transaction " + block_tx->GetHash().ToString() + " is in the block twice");
-                        break;
-                    }
+            if (block_txids.empty()) {
+                block_txids.reserve(block.vtx.size());
+                for (const auto& block_tx : block.vtx) block_txids.push_back(block_tx->GetHash());
+                std::sort(block_txids.begin(), block_txids.end());
+                // A transaction the block holds twice. No lower block can make that valid: the second
+                // copy spends what the first spent. (The merkle root's check for mutation only catches
+                // copies that are paired in the tree.) Its outputs must not be created a second time.
+                if (const auto twice{std::adjacent_find(block_txids.begin(), block_txids.end())}; twice != block_txids.end()) {
+                    state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-txns-inputs-missingorspent",
+                                  "transaction " + twice->ToString() + " is in the block twice");
+                    break;
                 }
-                if (!state.IsValid()) break;
             }
             for (const CTxIn& txin : tx.vin) {
-                if (block_txids->contains(txin.prevout.hash) && !view.HaveCoin(txin.prevout)) {
+                if (std::binary_search(block_txids.begin(), block_txids.end(), txin.prevout.hash) && !view.HaveCoin(txin.prevout)) {
                     state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-txns-inputs-missingorspent",
                                   "input from this block missing or spent in transaction " + tx.GetHash().ToString());
                     break;

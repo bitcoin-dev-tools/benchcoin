@@ -4,10 +4,12 @@
 
 #include <core_memusage.h>
 #include <node/blockcache.h>
+#include <node/chainstatemanager_args.h>
 #include <primitives/block.h>
 #include <primitives/transaction.h>
 #include <script/script.h>
 #include <test/util/setup_common.h>
+#include <util/byte_units.h>
 
 #include <boost/test/unit_test.hpp>
 
@@ -89,6 +91,17 @@ BOOST_AUTO_TEST_CASE(disabled)
     const auto [hits, misses]{cache.HitsAndMisses()};
     BOOST_CHECK_EQUAL(hits, 0U);
     BOOST_CHECK_EQUAL(misses, 0U);
+}
+
+BOOST_AUTO_TEST_CASE(default_size)
+{
+    // The size of the coins cache, between 32 MiB and the default.
+    BOOST_CHECK_EQUAL(node::DefaultBlockCacheBytes(0), 32_MiB);
+    BOOST_CHECK_EQUAL(node::DefaultBlockCacheBytes(4_MiB), 32_MiB);
+    BOOST_CHECK_EQUAL(node::DefaultBlockCacheBytes(32_MiB), 32_MiB);
+    BOOST_CHECK_EQUAL(node::DefaultBlockCacheBytes(100_MiB), 100_MiB);
+    BOOST_CHECK_EQUAL(node::DefaultBlockCacheBytes(DEFAULT_BLOCK_CACHE_BYTES), DEFAULT_BLOCK_CACHE_BYTES);
+    BOOST_CHECK_EQUAL(node::DefaultBlockCacheBytes(1024_MiB), DEFAULT_BLOCK_CACHE_BYTES);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

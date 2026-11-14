@@ -23,6 +23,11 @@ namespace node {
  *  download follows the smaller of the two counts, and threads beyond the cores only hold memory: by default the
  *  window of blocks in flight is twice as wide as the pool, up to MAX_CONNECT_WINDOW. */
 int32_t DefaultPrevoutFetchThreads();
+/** The default of -blockcache for a coins cache of `coins_cache_bytes`: DEFAULT_BLOCK_CACHE_BYTES, but no more
+ *  than the coins cache itself and at least 32 MiB. The blocks it holds are on disk, and a block not found in it
+ *  is read back by the worker that validates it, so beside a small coins cache a large block cache holds memory
+ *  the node was told not to use and gains nothing for it. */
+size_t DefaultBlockCacheBytes(size_t coins_cache_bytes);
 [[nodiscard]] util::Result<void> ApplyArgsManOptions(const ArgsManager& args, ChainstateManager::Options& opts);
 } // namespace node
 

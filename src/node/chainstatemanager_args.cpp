@@ -30,6 +30,11 @@ int32_t DefaultPrevoutFetchThreads()
     return std::clamp<int32_t>(GetNumCores(), MIN_DEFAULT_PREVOUTFETCH_THREADS, MAX_PREVOUTFETCH_THREADS);
 }
 
+size_t DefaultBlockCacheBytes(size_t coins_cache_bytes)
+{
+    return std::clamp<size_t>(coins_cache_bytes, 32_MiB, DEFAULT_BLOCK_CACHE_BYTES);
+}
+
 util::Result<void> ApplyArgsManOptions(const ArgsManager& args, ChainstateManager::Options& opts)
 {
     if (auto value{args.GetIntArg("-checkblockindex")}) {

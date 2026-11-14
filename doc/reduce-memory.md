@@ -50,7 +50,7 @@ threads take up 8MiB for the thread stack on a 64-bit system, and 4MiB in a
 - `-par=<n>` - the number of script verification threads, defaults to the number of cores in the system minus one.
 - `-rpcthreads=<n>` - the number of threads used for processing RPC requests, defaults to `16`.
 - `-prevoutfetchthreads=<n>` - the number of connect pool threads, which validate blocks in parallel during initial block download and fetch block input prevouts at the tip, defaults to the number of cores in the system, at least `2`. During initial block download up to twice as many blocks as there are threads are validated at a time (`-connectwindow=<n>`, at most 64), and together they hold up to an eighth of the coins cache in memory (at least 32 MiB), so a lower value also reduces that.
-- `-blockcache=<n>` - accepted blocks are kept in memory until they are connected, up to `<n>` MiB, defaults to `128`. `-blockcache=0` disables it.
+- `-blockcache=<n>` - accepted blocks are kept in memory until they are connected, up to `<n>` MiB, defaults to `128`, or to the size of the coins cache where that is smaller (at least `32`), so a low `-dbcache` also reduces it. `-blockcache=0` disables it.
 
 ## Linux specific
 

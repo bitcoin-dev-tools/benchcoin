@@ -10,6 +10,7 @@
 #include <dbwrapper.h>
 #include <flatfile.h>
 #include <kernel/blockmanager_opts.h>
+#include <kernel/effects.h>
 #include <kernel/chainparams.h>
 #include <kernel/cs_main.h>
 #include <kernel/messagestartchars.h>
@@ -101,6 +102,9 @@ class BlockTreeDB : public CDBWrapper
 public:
     using CDBWrapper::CDBWrapper;
     void WriteBatchSync(const std::vector<std::pair<int, const CBlockFileInfo*>>& fileInfo, int nLastFile, const std::vector<const CBlockIndex*>& blockinfo);
+    //! WriteBatchSync() in two halves: serialise under the lock, commit (synced) without it.
+    std::unique_ptr<CDBBatch> PrepareBatch(const std::vector<std::pair<int, const CBlockFileInfo*>>& fileInfo, int nLastFile, const std::vector<const CBlockIndex*>& blockinfo);
+    void CommitBatch(CDBBatch& batch);
     bool ReadBlockFileInfo(int nFile, CBlockFileInfo& info);
     bool ReadLastBlockFile(int& nFile);
     void WriteReindexing(bool fReindexing);
@@ -223,6 +227,20 @@ private:
      */
     [[nodiscard]] FlatFilePos FindNextBlockPos(uint64_t nAddSize, unsigned int nHeight, uint64_t nTime) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
     [[nodiscard]] bool FlushChainstateBlockFile(int tip_height) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+    /**
+     * FlushChainstateBlockFile() in two halves: the positions up to which the tip's block and undo files
+     * must be synced, read under the lock, and the sync itself (FlushBlockFileAt), which needs no lock.
+     * Nullopt when there is nothing to flush.
+     */
+    std::optional<std::pair<FlatFilePos, FlatFilePos>> ChainstateBlockFileFlushPositions(int tip_height) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+    [[nodiscard]] bool FlushBlockFileAt(const FlatFilePos& block_pos, const FlatFilePos& undo_pos);
+    /**
+     * A block written at `pos` with cs_main released may land in a file the cursor has left meanwhile:
+     * that file was finalized (synced and trimmed) when the cursor moved, before this block's bytes were
+     * there, and no later sync covers it (the run's sync covers the cursor's file). Sync it now, so that a
+     * block the index records as stored is durable before the index is.
+     */
+    void SyncBlockFileIfLeft(const FlatFilePos& pos, int height) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
     [[nodiscard]] bool FindUndoPos(BlockValidationState& state, int nFile, FlatFilePos& pos, uint64_t nAddSize) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
 
     AutoFile OpenUndoFile(const FlatFilePos& pos, bool fReadOnly = false) const;
@@ -254,6 +272,13 @@ private:
         int last_prune,
         const Chainstate& chain,
         ChainstateManager& chainman);
+
+    //! Whether automatic pruning would take files now: the conditions under which FindFilesToPrune() looks
+    //! for any (a prune target, a chain past the height pruning starts at, the block files at the target).
+    bool AtPruneTarget(const Chainstate& chain, ChainstateManager& chainman) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+    //! Whether a block file that holds data ends above the first height and at or below the second: a file
+    //! pruning could take if it were allowed up to the second height and is not while held at the first.
+    bool HasBlockFileEndingWithin(int above, int upto) const EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
 
     //! Since assumedvalid chainstates may be syncing a range of the chain that is very
     //! far away from the normal/background validation process, we should segment blockfiles
@@ -313,11 +338,16 @@ protected:
     /** Dirty block file entries. */
     std::set<int> m_dirty_fileinfo;
 
+    /** Block files with a block write in flight outside cs_main, by the number of such writes. Pruning
+     *  leaves them alone. */
+    std::map<int, int> m_blockfiles_being_written GUARDED_BY(::cs_main);
+
 public:
     using Options = kernel::BlockManagerOpts;
     using ReadRawBlockResult = util::Expected<std::vector<std::byte>, ReadRawError>;
 
     explicit BlockManager(const util::SignalInterrupt& interrupt, Options opts);
+    ~BlockManager();
 
     const util::SignalInterrupt& m_interrupt;
     std::atomic<bool> m_importing{false};
@@ -356,7 +386,23 @@ public:
 
     std::unique_ptr<BlockTreeDB> m_block_tree_db GUARDED_BY(::cs_main);
 
-    void WriteBlockIndexDB() EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+    void WriteBlockIndexDB() EXCLUSIVE_LOCKS_REQUIRED(::cs_main, !m_index_commit_mutex);
+    /**
+     * WriteBlockIndexDB() in two halves: the dirty file info and block index entries are serialised under
+     * the lock (and are no longer dirty afterwards), the batch is committed off the lock
+     * (CommitBlockIndexBatch). Batches are numbered in preparation order, and a batch is only committed
+     * if no later batch has been, so that a batch committed late (on the executor) never overwrites
+     * newer entries written synchronously meanwhile.
+     */
+    struct IndexBatch {
+        std::unique_ptr<CDBBatch> batch;
+        uint64_t generation{0};
+        //! The database the batch is for, read under cs_main when the batch was prepared; the commit may
+        //! run on the executor without the lock (the pointer never changes after start-up).
+        BlockTreeDB* db{nullptr};
+    };
+    IndexBatch PrepareBlockIndexBatch() EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+    void CommitBlockIndexBatch(const IndexBatch& batch) EXCLUSIVE_LOCKS_REQUIRED(!m_index_commit_mutex);
     bool LoadBlockIndexDB(const std::optional<uint256>& snapshot_blockhash)
         EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
 
@@ -383,6 +429,47 @@ public:
     bool WriteBlockUndo(const CBlockUndo& blockundo, BlockValidationState& state, CBlockIndex& block)
         EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
 
+    /**
+     * WriteBlockUndo() in three parts, so the write can run on the effects
+     * executor: ClaimUndoPos() reserves the space under cs_main (the position
+     * returned is that of the storage header), WriteBlockUndoAt() writes the
+     * data there with no lock held, and OnUndoWritten() records the stored
+     * undo in the block index under cs_main. Callers that need the undo data
+     * of a block whose write may still be in flight call SettleUndoWrites()
+     * first; ReadBlockUndo() does so itself when the position is not set yet.
+     */
+    [[nodiscard]] std::optional<FlatFilePos> ClaimUndoPos(BlockValidationState& state, const CBlockIndex& block, uint32_t undo_size) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+    [[nodiscard]] bool WriteBlockUndoAt(const CBlockUndo& blockundo, const uint256& prev_block_hash, FlatFilePos pos);
+    void OnUndoWritten(CBlockIndex& block, const FlatFilePos& data_pos) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+
+    /**
+     * The executor that runs this manager's deferred I/O (undo writes) and
+     * carries the notifications that must follow it. Its completions are
+     * applied under cs_main: by the worker when it can take the lock without
+     * waiting, otherwise by the next SettleUndoWrites() or ApplyEffectCompletions().
+     */
+    uint64_t m_index_batch_generation GUARDED_BY(::cs_main){0};
+    Mutex m_index_commit_mutex;
+    uint64_t m_index_batch_committed GUARDED_BY(m_index_commit_mutex){0};
+
+    kernel::EffectsExecutor m_effects{[this] {
+        // Apply completions if the lock is free; otherwise the next SettleUndoWrites() or
+        // ApplyEffectCompletions() does, and the worker retries shortly. Never block here: a thread
+        // holding cs_main may be waiting for this worker's I/O.
+        TRY_LOCK(::cs_main, locked);
+        if (locked) m_effects.ApplyCompletions();
+    }};
+    //! Set on the executor when a block's undo data could not be written (a fatal error is raised with
+    //! it). The block is connected in memory by then; no chainstate write is made once this is set, so
+    //! that the database never holds a block's coins without the undo data to take them back.
+    std::atomic<bool> m_undo_write_failed{false};
+    //! Wait for every queued effect's I/O and apply the completions. May be called with or without cs_main.
+    void SettleUndoWrites();
+    //! Apply completed effects without waiting for the rest.
+    void ApplyEffectCompletions() EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+    //! Bytes of undo data queued but not yet written; the connect loop waits below MAX_UNDO_BACKLOG_BYTES.
+    static constexpr size_t MAX_UNDO_BACKLOG_BYTES{64 * 1024 * 1024};
+
     /** Store block on disk and update block file statistics.
      *
      * @param[in]  block        the block to be stored
@@ -392,6 +479,26 @@ public:
      *          in case of an error, an empty FlatFilePos
      */
     FlatFilePos WriteBlock(const CBlock& block, int nHeight) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+
+    /**
+     * The two halves of WriteBlock(), for callers that want the file write
+     * outside cs_main: AllocateBlockPos() claims the space (and does the
+     * file bookkeeping) under the lock, WriteBlockAt() writes the block
+     * there without it. On success pos is advanced past the storage header
+     * to the block's data position, as WriteBlock() returns it. The
+     * allocated space is lost if the write fails, which is a fatal error.
+     */
+    FlatFilePos AllocateBlockPos(const CBlock& block, int nHeight) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+    [[nodiscard]] bool WriteBlockAt(const CBlock& block, FlatFilePos& pos);
+    /**
+     * Between the two halves the caller keeps the block's file from being
+     * pruned: the file's heights may all be prunable (a block of the pruned
+     * past, stored again), and a file unlinked under the write would leave
+     * the index pointing at lost bytes. Unpinned under the hold of cs_main
+     * that records the block, or gives it up.
+     */
+    void PinBlockFile(int file) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+    void UnpinBlockFile(int file) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
 
     /** Update blockfile info while processing a block during reindex. The block must be available on disk.
      *

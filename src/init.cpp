@@ -340,6 +340,9 @@ void Shutdown(NodeContext& node)
     // using the other before destroying them.
     if (node.peerman && node.validation_signals) node.validation_signals->UnregisterValidationInterface(node.peerman.get());
     if (node.connman) node.connman->Stop();
+    // Blocks of peers still being processed on the connect pool are finished now that the message handler
+    // hands out no more, while the connector thread and everything else they rely on are still there.
+    if (node.peerman) node.peerman->FinishBlockTasks();
 
     if (node.tor_controller) {
         node.tor_controller->Join();
@@ -347,6 +350,12 @@ void Shutdown(NodeContext& node)
     }
 
     if (node.background_init_thread.joinable()) node.background_init_thread.join();
+
+    // The connector thread may still be connecting blocks it was signalled, several at a time in the
+    // window; it ends its pass now that the node is interrupted. It goes before the scheduler, whose
+    // queue a pass waits on, and before anything that flushes or resets the chainstate.
+    if (node.chainman) node.chainman->StopConnector();
+
     // After everything has been shut down, but before things get flushed, stop the
     // the scheduler. After this point, SyncWithValidationInterfaceQueue() should not be called anymore
     // as this would prevent the shutdown from completing.
@@ -530,9 +539,11 @@ void SetupServerArgs(ArgsManager& argsman, bool can_listen_ipc)
     argsman.AddArg("-maxmempool=<n>", strprintf("Keep the transaction memory pool below <n> megabytes (default: %u)", DEFAULT_MAX_MEMPOOL_SIZE_MB), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     argsman.AddArg("-mempoolexpiry=<n>", strprintf("Do not keep transactions in the mempool longer than <n> hours (default: %u)", DEFAULT_MEMPOOL_EXPIRY_HOURS), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     argsman.AddArg("-minimumchainwork=<hex>", strprintf("Minimum work assumed to exist on a valid chain in hex (default: %s, testnet3: %s, testnet4: %s, signet: %s)", defaultChainParams->GetConsensus().nMinimumChainWork.GetHex(), testnetChainParams->GetConsensus().nMinimumChainWork.GetHex(), testnet4ChainParams->GetConsensus().nMinimumChainWork.GetHex(), signetChainParams->GetConsensus().nMinimumChainWork.GetHex()), ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::OPTIONS);
-    argsman.AddArg("-par=<n>", strprintf("Set the number of script verification threads (0 = auto, up to %d, <0 = leave that many cores free, default: %d)",
+    argsman.AddArg("-par=<n>", strprintf("Set the number of script verification threads (0 = auto, up to %d, <0 = leave that many cores free, default: %d). Blocks validated in parallel during initial block download have their scripts verified on the connect pool threads (-prevoutfetchthreads), which this option does not bound.",
         MAX_SCRIPTCHECK_THREADS, DEFAULT_SCRIPTCHECK_THREADS), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
-    argsman.AddArg("-prevoutfetchthreads=<n>", strprintf("Set the number of threads used to prefetch block input prevouts from the chainstate database (0 disables, up to %d, default: %d). Negative values are rejected.", MAX_PREVOUTFETCH_THREADS, DEFAULT_PREVOUTFETCH_THREADS), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
+    argsman.AddArg("-blockcache=<n>", strprintf("Keep accepted blocks in memory until they are connected, up to <n> MiB, so that a block that arrived before its parent is connected from the object received rather than read from disk and deserialized again (0 disables, default: %d, or the size of the coins cache where that is smaller, at least 32).", DEFAULT_BLOCK_CACHE_BYTES / 1_MiB), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
+    argsman.AddArg("-prevoutfetchthreads=<n>", strprintf("Set the number of connect pool threads, which process the blocks received from peers and validate blocks in parallel during initial block download, and prefetch block input prevouts from the chainstate database at the tip (0 = no pool threads: nothing is prefetched, received blocks are processed by the message handler and the blocks of a -connectwindow are validated one after another, up to %d, default: the number of cores, at least %d). Negative values are rejected.", MAX_PREVOUTFETCH_THREADS, MIN_DEFAULT_PREVOUTFETCH_THREADS), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
+    argsman.AddArg("-connectwindow=<n>", strprintf("Set how many blocks are validated at the same time during initial block download, each on a connect pool thread, with the blocks confirmed in order (0 = twice as many as there are connect pool threads, 1 = one at a time, up to %d, default: 0; the blocks in flight are further bounded to an eighth of the coins cache in memory)", MAX_CONNECT_WINDOW), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     argsman.AddArg("-persistmempool", strprintf("Whether to save the mempool on shutdown and load on restart (default: %u)", DEFAULT_PERSIST_MEMPOOL), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     argsman.AddArg("-pid=<file>", strprintf("Specify pid file. Relative paths will be prefixed by a net-specific datadir location. (default: %s)", BITCOIN_PID_FILENAME), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     argsman.AddArg("-prune=<n>", strprintf("Reduce storage requirements by enabling pruning (deleting) of old blocks. This allows the pruneblockchain RPC to be called to delete specific blocks and enables automatic pruning of old blocks if a target size in MiB is provided. This mode is incompatible with -txindex. "
@@ -1431,6 +1442,7 @@ static ChainstateLoadResult InitAndLoadChainstate(
         .signals = node.validation_signals.get(),
     };
     Assert(ApplyArgsManOptions(args, chainman_opts)); // no error can happen, already checked in AppInitParameterInteraction
+    if (!args.GetArg<int64_t>("-blockcache")) chainman_opts.block_cache_bytes = node::DefaultBlockCacheBytes(cache_sizes.coins);
 
     BlockManager::Options blockman_opts{
         .chainparams = chainman_opts.chainparams,

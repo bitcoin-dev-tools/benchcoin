@@ -31,6 +31,21 @@ static void DeserializeBlockTest(benchmark::Bench& bench)
     });
 }
 
+//! The parse alone, into mutable transactions: the deserialisation cost without any hashing.
+static void DeserializeBlockParseOnlyTest(benchmark::Bench& bench)
+{
+    const auto block_data{benchmark::data::block413567};
+    bench.unit("block").run([&] {
+        SpanReader reader{block_data};
+        CBlockHeader header;
+        reader >> header;
+        const size_t count{ReadCompactSize(reader)};
+        std::vector<CMutableTransaction> txs(count);
+        for (auto& tx : txs) UnserializeTransaction(tx, reader, TX_WITH_WITNESS);
+        assert(txs.size() == 1557);
+    });
+}
+
 static void CheckBlockTest(benchmark::Bench& bench)
 {
     const auto& chain_params{CChainParams::Main()};
@@ -51,4 +66,5 @@ static void CheckBlockTest(benchmark::Bench& bench)
 }
 
 BENCHMARK(DeserializeBlockTest);
+BENCHMARK(DeserializeBlockParseOnlyTest);
 BENCHMARK(CheckBlockTest);

@@ -87,6 +87,15 @@ void MockableSteadyClock::ClearMockTime()
 
 int64_t GetTime() { return GetTime<std::chrono::seconds>().count(); }
 
+std::chrono::nanoseconds ThreadCpuTime()
+{
+#ifdef CLOCK_THREAD_CPUTIME_ID
+    timespec ts;
+    if (clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ts) == 0) return std::chrono::seconds{ts.tv_sec} + std::chrono::nanoseconds{ts.tv_nsec};
+#endif
+    return {};
+}
+
 std::string FormatISO8601DateTime(int64_t nTime)
 {
     const std::chrono::sys_seconds secs{std::chrono::seconds{nTime}};

@@ -100,6 +100,7 @@ add_library(bitcoin_common STATIC EXCLUDE_FROM_ALL
   chainparams.cpp
   chainparamsbase.cpp
   coins.cpp
+  coinsstore.cpp
   common/args.cpp
   common/bloom.cpp
   common/bip352.cpp
@@ -210,6 +211,7 @@ add_library(bitcoin_node STATIC EXCLUDE_FROM_ALL
   kernel/context.cpp
   kernel/cs_main.cpp
   kernel/disconnected_transactions.cpp
+  kernel/effects.cpp
   kernel/mempool_removal_reason.cpp
   mapport.cpp
   net.cpp
@@ -218,6 +220,7 @@ add_library(bitcoin_node STATIC EXCLUDE_FROM_ALL
   node/abort.cpp
   node/block_template_manager.cpp
   node/blockmanager_args.cpp
+  node/blockcache.cpp
   node/blockstorage.cpp
   node/caches.cpp
   node/chainstate.cpp

@@ -21,6 +21,7 @@ add_executable(bench_bitcoin
   checkqueue.cpp
   cluster_linearize.cpp
   connectblock.cpp
+  connectblock_mainnet.cpp
   crypto_hash.cpp
   descriptors.cpp
   disconnected_transactions.cpp
@@ -42,6 +43,7 @@ add_executable(bench_bitcoin
   peer_eviction.cpp
   poly1305.cpp
   pool.cpp
+  threadpool.cpp
   prevector.cpp
   random.cpp
   readwriteblock.cpp

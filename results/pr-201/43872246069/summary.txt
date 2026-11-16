@@ -1,0 +1,2 @@
+dbcache=32000MiB: 28 min (nightly median of 7: 35 min, 2026-10-30 to 2026-11-13) -> +19.1% faster
+- dbcache=450MiB: 32 min (nightly median of 7: 34 min, 2026-10-30 to 2026-11-13) -> +5.4% faster

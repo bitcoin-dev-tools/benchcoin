@@ -55,6 +55,9 @@ template <typename MutexType>
 void AssertLockNotHeldInternal(const char* pszName, const char* pszFile, int nLine, MutexType* cs) LOCKS_EXCLUDED(cs);
 void DeleteLock(void* cs);
 bool LockStackEmpty();
+void RegisterNoWaitLock(const char* name, void* cs);
+void AssertNoWaitLockHeld(const char* waiting_for, const char* file, int line);
+const char* SetWaitedWork(const char* what);
 
 /**
  * Call abort() if a potential lock order deadlock bug is detected, instead of
@@ -73,7 +76,52 @@ template <typename MutexType>
 void AssertLockNotHeldInternal(const char* pszName, const char* pszFile, int nLine, MutexType* cs) LOCKS_EXCLUDED(cs) {}
 inline void DeleteLock(void* cs) {}
 inline bool LockStackEmpty() { return true; }
+inline void RegisterNoWaitLock(const char* name, void* cs) {}
+inline void AssertNoWaitLockHeld(const char* waiting_for, const char* file, int line) {}
+inline const char* SetWaitedWork(const char* what) { return nullptr; }
 #endif
+
+/**
+ * The wait rule. A thread that waits for another thread's queue to drain (the
+ * validation signal queue, a worker pool) must not hold a lock that the work
+ * it waits for may take: the lock-order check cannot see such a deadlock,
+ * because the two threads never take two locks in opposite orders.
+ *
+ * NO_WAIT_LOCK(cs) puts a lock on the list of locks that queued work takes.
+ * AssertMayWait(what) goes in front of a wait; with DEBUG_LOCKORDER it stops
+ * the node if the calling thread holds a lock on the list. Without it both
+ * do nothing.
+ *
+ * The check knows the listed locks only: cs_main, the mempool's lock and a
+ * loaded wallet's. Queued work takes others (another subscriber of the
+ * signal queue its own), and a wait under one of those is not seen. A queue
+ * that shares its thread with other work (the signal queue runs on the
+ * scheduler's thread in the node) also waits for that work, and a lock such
+ * work takes has to be listed to be covered.
+ *
+ * Not every wait can carry the check: some are made with a listed lock held
+ * on purpose (the tip's connect waits for its input prefetch while it holds
+ * cs_main). Such a wait ends only if the work waited for takes no listed
+ * lock, and the work says so: WAITED_FOR_UNDER_LOCK(what) at its start. With
+ * DEBUG_LOCKORDER, taking a listed lock on that thread before the scope ends
+ * stops the node; a try lock and a lock the thread holds already are let
+ * through, since neither waits.
+ */
+#define NO_WAIT_LOCK(cs) RegisterNoWaitLock(#cs, &cs)
+#define AssertMayWait(waiting_for) AssertNoWaitLockHeld(waiting_for, __FILE__, __LINE__)
+
+/** The scope of WAITED_FOR_UNDER_LOCK. Scopes nest: the inner one's end puts the outer one back. */
+class WaitedWorkScope
+{
+    const char* const m_outer;
+
+public:
+    explicit WaitedWorkScope(const char* what) : m_outer{SetWaitedWork(what)} {}
+    ~WaitedWorkScope() { SetWaitedWork(m_outer); }
+    WaitedWorkScope(const WaitedWorkScope&) = delete;
+    WaitedWorkScope& operator=(const WaitedWorkScope&) = delete;
+};
+#define WAITED_FOR_UNDER_LOCK(what) const WaitedWorkScope BITCOIN_UNIQUE_NAME(waited_work){what}
 
 /*
  * Called when a mutex fails to lock immediately because it is held by another

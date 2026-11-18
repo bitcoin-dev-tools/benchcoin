@@ -2868,9 +2868,11 @@ bool Chainstate::FlushStateToDisk(
             {
                 LOG_TIME_MILLIS_WITH_CATEGORY("write block and undo data to disk", BCLog::BENCH);
 
-                // First make sure all block and undo data is flushed to disk.
-                if (!m_blockman.FlushChainstateBlockFile(m_chain.Height())) {
-                    // FlushChainstateBlockFile() already reported the specific error through flushError()
+                // First make sure all block and undo data is flushed to disk: the file this
+                // chainstate writes to, then every other file written to since its last sync
+                // (an undo file whose block file was left behind, the other chainstate's file).
+                if (!m_blockman.FlushChainstateBlockFile(m_chain.Height()) || !m_blockman.SyncWrittenFiles()) {
+                    // The specific error was already reported through flushError()
                     return state.Error("Failed to flush block or undo file");
                 }
             }
@@ -6172,7 +6174,14 @@ SnapshotCompletionResult ChainstateManager::MaybeValidateSnapshot(Chainstate& va
     };
 
     CCoinsViewDB& validated_coins_db = validated_cs.CoinsDB();
-    validated_cs.ForceFlushStateToDisk();
+    // The hash is taken of the coins on disk: were they not all written, a valid snapshot would be judged
+    // against an older set and discarded. A write that failed (now, or a sync that failed earlier and keeps every
+    // later write from landing) is no verdict on the snapshot.
+    if (BlockValidationState flush_state; !validated_cs.FlushStateToDisk(flush_state, FlushStateMode::FORCE_FLUSH)) {
+        LogWarning("[snapshot] the validated chainstate could not be written (%s); the snapshot is not judged",
+                   flush_state.ToString());
+        return SnapshotCompletionResult::STATS_FAILED;
+    }
 
     const auto& maybe_au_data = m_options.chainparams.AssumeutxoForHeight(validated_cs.m_chain.Height());
     if (!maybe_au_data) {

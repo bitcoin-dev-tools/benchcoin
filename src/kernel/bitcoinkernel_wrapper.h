@@ -1132,6 +1132,8 @@ public:
 
     virtual void WarningUnsetHandler(Warning warning) {}
 
+    //! After it no later write of the block index and the chainstate succeeds in this run: stop processing
+    //! blocks and restart to write again (btck_NotificationInterfaceCallbacks::flush_error).
     virtual void FlushErrorHandler(std::string_view error) {}
 
     virtual void FatalErrorHandler(std::string_view error) {}

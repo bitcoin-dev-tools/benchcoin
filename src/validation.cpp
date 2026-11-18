@@ -2717,10 +2717,7 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
              Ticks<SecondsDouble>(m_chainman.time_undo),
              Ticks<MillisecondsDouble>(m_chainman.time_undo) / m_chainman.num_blocks_total);
 
-    if (!pindex->IsValid(BLOCK_VALID_SCRIPTS)) {
-        pindex->RaiseValidity(BLOCK_VALID_SCRIPTS);
-        m_blockman.m_dirty_blockindex.insert(pindex);
-    }
+    m_chainman.MarkBlockScriptsValid(*pindex);
 
     // add this block to the view's block chain
     view.SetBestBlock(pindex->GetBlockHash());
@@ -3230,25 +3227,7 @@ CBlockIndex* Chainstate::FindMostWorkChain()
             bool fFailedChain = pindexTest->nStatus & BLOCK_FAILED_VALID;
             bool fMissingData = !(pindexTest->nStatus & BLOCK_HAVE_DATA);
             if (fFailedChain || fMissingData) {
-                // Candidate chain is not usable (either invalid or missing data)
-                if (fFailedChain && (m_chainman.m_best_invalid == nullptr || pindexNew->nChainWork > m_chainman.m_best_invalid->nChainWork)) {
-                    m_chainman.m_best_invalid = pindexNew;
-                }
-                // Remove the entire chain from the set.
-                for (CBlockIndex *pindexFailed = pindexNew; pindexFailed != pindexTest; pindexFailed = pindexFailed->pprev) {
-                    // If we're missing data and not a descendant of an invalid block,
-                    // then add back to m_blocks_unlinked, so that if the block arrives in the future
-                    // we can try adding to setBlockIndexCandidates again.
-                    if (fMissingData && !fFailedChain) {
-                        // Avoid duplicate entries in m_blocks_unlinked. If the same entry is
-                        // processed twice in ReceivedBlockTransactions(), it may be re-added to
-                        // setBlockIndexCandidates with a modified nSequenceId, breaking ordering
-                        // guarantees and leading to undefined behavior.
-                        m_blockman.AddUnlinkedBlock(pindexFailed);
-                    }
-                    setBlockIndexCandidates.erase(pindexFailed);
-                }
-                setBlockIndexCandidates.erase(pindexTest);
+                DropUnusableCandidateChain(pindexNew, pindexTest, fFailedChain, fMissingData);
                 fInvalidAncestor = true;
                 break;
             }
@@ -3256,6 +3235,30 @@ CBlockIndex* Chainstate::FindMostWorkChain()
         if (!fInvalidAncestor)
             return pindexNew;
     } while(true);
+}
+
+void Chainstate::DropUnusableCandidateChain(CBlockIndex* top, CBlockIndex* unusable, bool failed, bool missing_data)
+{
+    AssertLockHeld(cs_main);
+    // Candidate chain is not usable (either invalid or missing data)
+    if (failed && (m_chainman.m_best_invalid == nullptr || top->nChainWork > m_chainman.m_best_invalid->nChainWork)) {
+        m_chainman.m_best_invalid = top;
+    }
+    // Remove the entire chain from the set.
+    for (CBlockIndex* pindexFailed = top; pindexFailed != unusable; pindexFailed = pindexFailed->pprev) {
+        // If we're missing data and not a descendant of an invalid block,
+        // then add back to m_blocks_unlinked, so that if the block arrives in the future
+        // we can try adding to setBlockIndexCandidates again.
+        if (missing_data && !failed) {
+            // Avoid duplicate entries in m_blocks_unlinked. If the same entry is
+            // processed twice in ReceivedBlockTransactions(), it may be re-added to
+            // setBlockIndexCandidates with a modified nSequenceId, breaking ordering
+            // guarantees and leading to undefined behavior.
+            m_blockman.AddUnlinkedBlock(pindexFailed);
+        }
+        setBlockIndexCandidates.erase(pindexFailed);
+    }
+    setBlockIndexCandidates.erase(unusable);
 }
 
 /** Delete all entries in setBlockIndexCandidates that are worse than the current tip. */
@@ -3846,6 +3849,15 @@ void Chainstate::TryAddBlockIndexCandidate(CBlockIndex* pindex)
         if (target_block->GetAncestor(pindex->nHeight) == pindex) {
             setBlockIndexCandidates.insert(pindex);
         }
+    }
+}
+
+void ChainstateManager::MarkBlockScriptsValid(CBlockIndex& block)
+{
+    AssertLockHeld(cs_main);
+    if (!block.IsValid(BLOCK_VALID_SCRIPTS)) {
+        block.RaiseValidity(BLOCK_VALID_SCRIPTS);
+        m_blockman.m_dirty_blockindex.insert(&block);
     }
 }
 

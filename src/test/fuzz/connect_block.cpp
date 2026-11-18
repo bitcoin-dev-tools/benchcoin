@@ -400,7 +400,9 @@ CBlock ConsumeBlock(FuzzedDataProvider& fuzzed_data_provider, const CBlock& prev
         block.nVersion = fuzzed_data_provider.ConsumeIntegral<int32_t>();
     }
     if (fuzzed_data_provider.ConsumeBool()) {
-        block.hashPrevBlock = ConsumeUInt256(fuzzed_data_provider);
+        // Consumed and not applied, so that inputs keep their meaning: the block is connected on the active tip,
+        // and ConnectBlock() asserts that the block names that parent, as every block the node connects does.
+        (void)ConsumeUInt256(fuzzed_data_provider);
     }
 
     if (fuzzed_data_provider.ConsumeBool()) {

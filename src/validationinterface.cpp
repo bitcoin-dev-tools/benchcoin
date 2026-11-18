@@ -178,8 +178,9 @@ void ValidationSignals::SyncWithValidationInterfaceQueue()
 
 void ValidationSignals::UpdatedBlockTip(const CBlockIndex *pindexNew, const CBlockIndex *pindexFork, bool fInitialDownload) {
     // Dependencies exist that require UpdatedBlockTip events to be delivered in the order in which
-    // the chain actually updates. One way to ensure this is for the caller to invoke this signal
-    // in the same critical section where the chain is updated
+    // the chain actually updates. The caller invokes this signal in the same critical section
+    // where the chain is updated.
+    AssertLockHeld(cs_main);
 
     auto log_msg = LOG_MSG("%s: new block hash=%s fork block hash=%s (in IBD=%s)", __func__,
                           pindexNew->GetBlockHash().ToString(),
@@ -221,6 +222,7 @@ void ValidationSignals::TransactionRemovedFromMempool(const CTransactionRef& tx,
 
 void ValidationSignals::BlockConnected(const ChainstateRole& role, std::shared_ptr<const CBlock> pblock, const CBlockIndex* pindex)
 {
+    AssertLockHeld(cs_main);
     auto log_msg = LOG_MSG("%s: block hash=%s block height=%d", __func__,
                           pblock->GetHash().ToString(),
                           pindex->nHeight);
@@ -246,6 +248,7 @@ void ValidationSignals::MempoolTransactionsRemovedForBlock(std::shared_ptr<const
 
 void ValidationSignals::BlockDisconnected(std::shared_ptr<const CBlock> pblock, const CBlockIndex* pindex)
 {
+    AssertLockHeld(cs_main);
     auto log_msg = LOG_MSG("%s: block hash=%s block height=%d", __func__,
                           pblock->GetHash().ToString(),
                           pindex->nHeight);

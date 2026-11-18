@@ -210,7 +210,7 @@ private:
     [[nodiscard]] bool FlushBlockFile(int blockfile_num, bool fFinalize, bool finalize_undo) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
 
     /** Return false if undo file flushing fails. */
-    [[nodiscard]] bool FlushUndoFile(int block_file, bool finalize = false);
+    [[nodiscard]] bool FlushUndoFile(int block_file, bool finalize = false) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
 
     /**
      * Helper function performing various preparations before a block can be saved to disk:
@@ -313,6 +313,27 @@ protected:
     /** Dirty block file entries. */
     std::set<int> m_dirty_fileinfo;
 
+    /**
+     * Block files and undo files written to since their last successful sync.
+     * A file enters its set when a position in it is claimed and leaves it
+     * when it is synced or pruned.
+     *
+     * The block index database never records BLOCK_HAVE_DATA or
+     * BLOCK_HAVE_UNDO for bytes a crash could still lose: whatever writes the
+     * index syncs the files of these sets first. An index entry that survives
+     * a crash must never point at bytes that did not. The sets are per file,
+     * so a block whose own bytes were synced counts as unsynced again when a
+     * later block is written into the same file; that errs on the safe side.
+     * The guarantee is per run: a block index written by a version without
+     * the rule is taken as it is, and so are the block files of a reindex.
+     */
+    std::set<int> m_unsynced_block_files GUARDED_BY(::cs_main);
+    std::set<int> m_unsynced_undo_files GUARDED_BY(::cs_main);
+    //! A flush of a block file or undo file failed: at the sync, before it (opening or
+    //! truncating the file) or after it (closing the file). Never reset: see
+    //! SyncWrittenFiles().
+    bool m_sync_failed GUARDED_BY(::cs_main){false};
+
 public:
     using Options = kernel::BlockManagerOpts;
     using ReadRawBlockResult = util::Expected<std::vector<std::byte>, ReadRawError>;
@@ -357,6 +378,15 @@ public:
     std::unique_ptr<BlockTreeDB> m_block_tree_db GUARDED_BY(::cs_main);
 
     void WriteBlockIndexDB() EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+
+    /**
+     * Sync every block file and undo file written to since its last sync,
+     * so that the block index may be written. Returns false if a sync
+     * failed, now or at any earlier point since startup. The failure is
+     * remembered, not the file: a later flush of the file, at the cursor,
+     * may still take it out of the unsynced set.
+     */
+    [[nodiscard]] bool SyncWrittenFiles() EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
     bool LoadBlockIndexDB(const std::optional<uint256>& snapshot_blockhash)
         EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
 

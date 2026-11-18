@@ -537,7 +537,9 @@ typedef struct {
     btck_NotifyProgress progress;           //!< Reports on current block synchronization progress.
     btck_NotifyWarningSet warning_set;      //!< A warning issued by the kernel library during validation.
     btck_NotifyWarningUnset warning_unset;  //!< A previous condition leading to the issuance of a warning is no longer given.
-    btck_NotifyFlushError flush_error;      //!< An error encountered when flushing data to disk.
+    btck_NotifyFlushError flush_error;      //!< An error encountered when flushing data to disk. No later write of the block
+                                            //!< index and the chainstate succeeds in this run: the caller may still read,
+                                            //!< but has to stop processing blocks and restart to write again.
     btck_NotifyFatalError fatal_error;      //!< An unrecoverable system error encountered by the library.
 } btck_NotificationInterfaceCallbacks;
 

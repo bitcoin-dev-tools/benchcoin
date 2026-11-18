@@ -37,6 +37,9 @@ public:
 struct TestBlockManager : public node::BlockManager {
     /** Test-only method to clear internal state for fuzzing */
     void CleanupForFuzzing();
+    /** Whether block file `file`, or its undo file, was written to since its last sync */
+    bool BlockFileUnsynced(int file) const EXCLUSIVE_LOCKS_REQUIRED(::cs_main) { return m_unsynced_block_files.contains(file); }
+    bool UndoFileUnsynced(int file) const EXCLUSIVE_LOCKS_REQUIRED(::cs_main) { return m_unsynced_undo_files.contains(file); }
 };
 
 struct TestChainstateManager : public ChainstateManager {

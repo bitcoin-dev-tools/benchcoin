@@ -8,6 +8,7 @@
 #include <consensus/validation.h>
 #include <node/blockstorage.h>
 #include <node/blockstore_machine.h>
+#include <node/durability_machine.h>
 #include <pow.h>
 #include <primitives/block.h>
 #include <primitives/transaction.h>
@@ -25,8 +26,22 @@
 #include <fstream>
 #include <memory>
 
+using node::FLUSH_TABLE;
+using node::FlushPhase;
+using node::FlushStep;
 
 BOOST_AUTO_TEST_SUITE(durability_machine_tests)
+
+BOOST_AUTO_TEST_CASE(flush_table)
+{
+    using S = FlushPhase;
+    using E = FlushStep;
+    // The order the write-out relies on, by name.
+    BOOST_CHECK(!FLUSH_TABLE.Next(S::Start, E::WriteIndex)); // no index write before the files are synced
+    BOOST_CHECK(!FLUSH_TABLE.Next(S::FilesSynced, E::Unlink)); // no unlink while the index still refers to the file
+    BOOST_CHECK(!FLUSH_TABLE.Next(S::FilesSynced, E::WriteCoins)); // no coins ahead of the index
+    BOOST_CHECK(!FLUSH_TABLE.Next(S::CoinsWritten, E::WriteCoins));
+}
 
 namespace {
 //! The fault chainstate_flush_failure_boundary injects: with a directory in its place, the

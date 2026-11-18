@@ -486,6 +486,19 @@ enum DisconnectResult
     DISCONNECT_FAILED   // Something else went wrong.
 };
 
+/**
+ * Which consensus deployments are active for a block. Evaluated by the node
+ * from the header chain (EvaluateDeploymentFlags()), so that a function given
+ * them needs neither the ChainstateManager nor the version bits cache.
+ */
+struct DeploymentFlags {
+    bool heightincb{false}; //!< BIP34
+    bool dersig{false};     //!< BIP66
+    bool cltv{false};       //!< BIP65
+    bool csv{false};        //!< BIP68, BIP112, BIP113
+    bool segwit{false};     //!< BIP141, BIP143, BIP147
+};
+
 struct ConnectedBlock;
 
 /** @see Chainstate::FlushStateToDisk */
@@ -1469,6 +1482,7 @@ bool DeploymentEnabled(const ChainstateManager& chainman, DEP dep)
 
 /** Identifies blocks that overwrote an existing coinbase output in the UTXO set (see BIP30) */
 bool IsBIP30Repeat(const CBlockIndex& block_index);
+bool IsBIP30Repeat(const uint256& block_hash, int block_height);
 
 /** Identifies blocks which coinbase output was subsequently overwritten in the UTXO set (see BIP30) */
 bool IsBIP30Unspendable(const uint256& block_hash, int block_height);
@@ -1487,8 +1501,18 @@ inline constexpr script_verify_flags CONSENSUS_SCRIPT_VERIFY_FLAGS{
     | SCRIPT_VERIFY_NULLDUMMY
 };
 
-// Returns the script flags which should be checked for a given block
-// (a subset of CONSENSUS_SCRIPT_VERIFY_FLAGS)
+/** Evaluate which deployments are active for the block following `prev` (nullptr for genesis). */
+DeploymentFlags EvaluateDeploymentFlags(const CBlockIndex* prev, const ChainstateManager& chainman);
+
+/**
+ * Returns the script flags which should be checked for a given block
+ * (a subset of CONSENSUS_SCRIPT_VERIFY_FLAGS). Pure function of the block
+ * hash (for the historical exceptions), the active deployments and the
+ * consensus parameters.
+ */
+script_verify_flags GetBlockScriptFlags(const uint256& block_hash, const DeploymentFlags& deployments, const Consensus::Params& params);
+
+// Convenience wrapper evaluating the deployments for `block_index` itself.
 script_verify_flags GetBlockScriptFlags(const CBlockIndex& block_index, const ChainstateManager& chainman);
 
 /** The context CheckInputScripts is called in, which decides how a

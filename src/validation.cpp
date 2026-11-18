@@ -4463,19 +4463,20 @@ static bool ContextualCheckBlockHeader(const CBlockHeader& block, BlockValidatio
  *  in ConnectBlock().
  *  Note that -reindex-chainstate skips the validation that happens here!
  */
-static bool ContextualCheckBlock(const CBlock& block, BlockValidationState& state, const BlockValidationContext& ctx, const CBlockIndex* pindexPrev)
+static bool ContextualCheckBlock(const CBlock& block, BlockValidationState& state, const BlockValidationContext& ctx)
 {
-    const int nHeight = pindexPrev == nullptr ? 0 : pindexPrev->nHeight + 1;
+    // The block's height and its parent's median time past, as the context copied them from the parent.
+    const int nHeight{ctx.height};
 
     // Enforce BIP113 (Median Time Past).
     bool enforce_locktime_median_time_past{false};
     if (ctx.deployments.csv) {
-        assert(pindexPrev != nullptr);
+        assert(ctx.height > 0);
         enforce_locktime_median_time_past = true;
     }
 
     const int64_t nLockTimeCutoff{enforce_locktime_median_time_past ?
-                                      pindexPrev->GetMedianTimePast() :
+                                      ctx.prev_median_time_past :
                                       block.GetBlockTime()};
 
     // Check that all transactions are finalized
@@ -4685,7 +4686,7 @@ bool ChainstateManager::AcceptBlock(const std::shared_ptr<const CBlock>& pblock,
     const CChainParams& params{GetParams()};
 
     if (!CheckBlock(block, state, params.GetConsensus()) ||
-        !ContextualCheckBlock(block, state, MakeBlockValidationContext(pindex->GetBlockHash(), pindex->pprev), pindex->pprev)) {
+        !ContextualCheckBlock(block, state, MakeBlockValidationContext(pindex->GetBlockHash(), pindex->pprev))) {
         if (Assume(state.IsInvalid())) {
             ActiveChainstate().InvalidBlockFound(pindex, state);
         }
@@ -4857,7 +4858,7 @@ BlockValidationState TestBlockValidity(
         return state;
     }
 
-    if (!ContextualCheckBlock(block, state, ctx, tip)) {
+    if (!ContextualCheckBlock(block, state, ctx)) {
         if (state.IsValid()) NONFATAL_UNREACHABLE();
         return state;
     }

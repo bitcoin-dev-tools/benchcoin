@@ -571,8 +571,8 @@ struct DeploymentFlags {
  * block itself and the coins view. The node builds one under cs_main from
  * configuration and the header chain; the validation functions read it and
  * touch no other node state, so they can be called and tested without a
- * ChainstateManager. The contextual header and block checks also take the
- * previous block index entry, for the difficulty calculation.
+ * ChainstateManager. The contextual header check also takes the previous
+ * block index entry, for the difficulty calculation.
  *
  * Every member is a copy, with two exceptions: params refers to the chain's
  * constant parameters, and median_time_past_at is a function, because which

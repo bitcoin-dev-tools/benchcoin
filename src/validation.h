@@ -19,6 +19,7 @@
 #include <kernel/chainstatemanager_opts.h>
 #include <kernel/cs_main.h> // IWYU pragma: export
 #include <node/blockstorage.h>
+#include <node/tip_snapshot.h>
 #include <policy/feerate.h>
 #include <policy/packages.h>
 #include <policy/policy.h>
@@ -591,6 +592,22 @@ bool ConnectBlock(const CBlock& block, const BlockValidationContext& ctx,
 
 struct ConnectedBlock;
 
+/**
+ * Placed in a scope right after cs_main is locked, when the scope may move a
+ * tip: publishes the tip (ChainstateManager::PublishTip()) as the last thing
+ * before the lock is released, on every way out of the scope.
+ */
+class TipPublisher
+{
+    ChainstateManager& m_chainman;
+
+public:
+    explicit TipPublisher(ChainstateManager& chainman) : m_chainman{chainman} {}
+    ~TipPublisher();
+    TipPublisher(const TipPublisher&) = delete;
+    TipPublisher& operator=(const TipPublisher&) = delete;
+};
+
 /** @see Chainstate::FlushStateToDisk */
 inline constexpr std::array FlushStateModeNames{"NONE", "IF_NEEDED", "PERIODIC", "FORCE_FLUSH", "FORCE_SYNC"};
 enum class FlushStateMode: uint8_t {
@@ -1096,6 +1113,17 @@ private:
     /** The last header for which a headerTip notification was issued. */
     CBlockIndex* m_last_notified_header GUARDED_BY(GetMutex()){nullptr};
 
+    node::PublishedTip m_published_tip;
+    //! Counts the tip changes of the current chainstate, and the publications that
+    //! changed nothing but the initial block download state. The number a
+    //! published tip carries.
+    uint64_t m_tip_sequence GUARDED_BY(::cs_main){0};
+    //! A cs_main hold has moved the current chainstate's tip, or changed which
+    //! chainstate is the current one, and has not published yet.
+    std::atomic_bool m_tip_unpublished{false};
+    //! Builds the value for the current chainstate's tip as it is now.
+    node::TipSnapshot CurrentTipSnapshot() const EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+
     bool NotifyHeaderTip() LOCKS_EXCLUDED(GetMutex());
 
     //! Internal helper for ActivateSnapshot().
@@ -1215,6 +1243,50 @@ public:
      * enough work and is recent.
      */
     std::atomic_bool m_cached_is_ibd{true};
+
+    /**
+     * The tip of the current chainstate as one value, see node::TipSnapshot.
+     * For a reader that needs one fact about the tip. The value is what the
+     * reader would find under cs_main: while no hold of cs_main that moved
+     * the tip is open, it is a copy of the published value and cs_main is
+     * not taken; while one is open, the call takes cs_main and reads the
+     * chain. A caller that already holds cs_main inside such a hold
+     * therefore sees the tip of that moment.
+     */
+    node::TipSnapshot PublishedTip() const
+    {
+        if (m_tip_unpublished.load()) {
+            LOCK(::cs_main);
+            return CurrentTipSnapshot();
+        }
+        return m_published_tip.Get();
+    }
+
+    /**
+     * Publish the current chainstate's tip. Called at the end of a cs_main
+     * hold that moved a tip (TipPublisher), and directly wherever the choice
+     * of the current chainstate or the initial block download latch (after
+     * UpdateIBDStatus()) may have changed outside such a hold; does nothing
+     * if nothing changed. The tip being published is the fully connected
+     * frontier.
+     */
+    void PublishTip() EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+
+    /**
+     * Record that a tip is about to move or the current chainstate is
+     * about to change: the tip sequence number rises, and readers of
+     * PublishedTip() take cs_main until the next PublishTip(). Called
+     * before the change, so that no reader sees part of it without waiting
+     * for the hold; UpdateIBDStatus() sets the same flag before it ends
+     * initial block download. If a hold forgets to publish, readers keep
+     * taking cs_main, which is slower and never wrong.
+     */
+    void MarkTipChanged() EXCLUSIVE_LOCKS_REQUIRED(::cs_main)
+    {
+        ++m_tip_sequence;
+        m_tip_unpublished.store(true);
+    }
+    bool TipUnpublished() const { return m_tip_unpublished.load(); }
 
     /**
      * Every received block is assigned a unique and increasing identifier, so we

@@ -146,6 +146,8 @@ void ValidationSignals::CallFunctionInValidationInterfaceQueue(std::function<voi
 void ValidationSignals::SyncWithValidationInterfaceQueue()
 {
     AssertLockNotHeld(cs_main);
+    // The callbacks waited for take cs_main, the mempool's and the wallets' locks.
+    AssertMayWait("the validation signal queue");
     // Block until the validation queue drains
     std::promise<void> promise;
     CallFunctionInValidationInterfaceQueue([&promise] {

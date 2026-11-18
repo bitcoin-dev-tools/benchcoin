@@ -3631,6 +3631,8 @@ bool ChainstateManager::NotifyHeaderTip()
 
 static void LimitValidationInterfaceQueue(ValidationSignals& signals) LOCKS_EXCLUDED(cs_main) {
     AssertLockNotHeld(cs_main);
+    // Checked whether or not the queue is long enough to be waited for this time.
+    AssertMayWait("the validation signal queue");
 
     if (signals.CallbacksPending() > 10) {
         signals.SyncWithValidationInterfaceQueue();
@@ -6508,6 +6510,8 @@ ChainstateManager::ChainstateManager(const util::SignalInterrupt& interrupt, Opt
       m_all_consensus_script_flags{GetAllConsensusScriptFlags(m_options.chainparams.GetConsensus())},
       m_validation_cache{m_options.script_execution_cache_bytes, m_options.signature_cache_bytes}
 {
+    // Signal callbacks take cs_main, so nothing may wait for them while holding it.
+    NO_WAIT_LOCK(::cs_main);
 }
 
 ChainstateManager::~ChainstateManager()

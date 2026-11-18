@@ -4,11 +4,15 @@
 
 #include <sync.h>
 #include <test/util/common.h>
+#include <util/threadnames.h>
 
 #include <boost/test/unit_test.hpp>
 
 #include <mutex>
+#include <optional>
 #include <stdexcept>
+#include <string>
+#include <thread>
 
 namespace {
 template <typename MutexType>
@@ -128,6 +132,82 @@ BOOST_AUTO_TEST_CASE(inconsistent_lock_order_detected)
     // By checking lock order consistency (CheckLastCritical) before any unlocking (LeaveCritical)
     // the lock tracking data must not have been broken by exception.
     TestInconsistentLockOrderDetected(mutex1, mutex2);
+
+#ifdef DEBUG_LOCKORDER
+    g_debug_lockorder_abort = prev;
+#endif // DEBUG_LOCKORDER
+}
+
+BOOST_AUTO_TEST_CASE(wait_under_a_no_wait_lock_detected)
+{
+#ifdef DEBUG_LOCKORDER
+    bool prev = g_debug_lockorder_abort;
+    g_debug_lockorder_abort = false;
+#endif // DEBUG_LOCKORDER
+
+    Mutex taken_by_queued_work, other;
+    NO_WAIT_LOCK(taken_by_queued_work);
+
+    // No lock held, or only a lock the queued work never takes: the wait is fine.
+    BOOST_CHECK_NO_THROW(AssertMayWait("a queue"));
+    {
+        LOCK(other);
+        BOOST_CHECK_NO_THROW(AssertMayWait("a queue"));
+    }
+    {
+        LOCK2(other, taken_by_queued_work);
+#ifdef DEBUG_LOCKORDER
+        BOOST_CHECK_EXCEPTION(AssertMayWait("a queue"), std::logic_error, HasReason{"waiting for a queue while holding taken_by_queued_work"});
+#else
+        BOOST_CHECK_NO_THROW(AssertMayWait("a queue"));
+#endif // DEBUG_LOCKORDER
+    }
+    BOOST_CHECK_NO_THROW(AssertMayWait("a queue"));
+
+    // The registration ends with the lock: another lock at the same address is not on the list.
+    std::optional<Mutex> reused;
+    reused.emplace();
+    NO_WAIT_LOCK(*reused);
+    reused.reset();
+    reused.emplace();
+    {
+        LOCK(*reused);
+        BOOST_CHECK_NO_THROW(AssertMayWait("a queue"));
+    }
+    BOOST_CHECK(LockStackEmpty());
+
+    // Work that is waited for under a listed lock takes none, but for a try lock; other locks are its own.
+    const auto take{[&] { LOCK(taken_by_queued_work); }};
+    BOOST_CHECK_NO_THROW(take());
+    {
+        WAITED_FOR_UNDER_LOCK("a task");
+        {
+            LOCK(other);
+            TRY_LOCK(taken_by_queued_work, tried);
+            BOOST_CHECK(bool{tried});
+        }
+#ifdef DEBUG_LOCKORDER
+        BOOST_CHECK_EXCEPTION(take(), std::logic_error, HasReason{"taking taken_by_queued_work in a task, which is waited for under such a lock"});
+#else
+        BOOST_CHECK_NO_THROW(take());
+#endif // DEBUG_LOCKORDER
+        {
+            WAITED_FOR_UNDER_LOCK("an inner task");
+        }
+#ifdef DEBUG_LOCKORDER
+        BOOST_CHECK_EXCEPTION(take(), std::logic_error, HasReason{"in a task"}); // the outer scope is back
+#endif // DEBUG_LOCKORDER
+    }
+    BOOST_CHECK_NO_THROW(take()); // the scope went with the task
+    {
+        // Held from before the work, as when the waiter runs the work itself: taken again without a wait.
+        RecursiveMutex held_by_the_waiter;
+        NO_WAIT_LOCK(held_by_the_waiter);
+        LOCK(held_by_the_waiter);
+        WAITED_FOR_UNDER_LOCK("a task the waiter runs");
+        BOOST_CHECK_NO_THROW([&] { LOCK(held_by_the_waiter); }());
+    }
+    BOOST_CHECK(LockStackEmpty());
 
 #ifdef DEBUG_LOCKORDER
     g_debug_lockorder_abort = prev;

@@ -9,9 +9,12 @@
 #include <txmempool.h>
 #include <util/time.h>
 
+#include <test/util/common.h>
 #include <test/util/setup_common.h>
+#include <validationinterface.h>
 
 #include <boost/test/unit_test.hpp>
+#include <stdexcept>
 #include <vector>
 
 BOOST_FIXTURE_TEST_SUITE(mempool_tests, TestingSetup)
@@ -531,5 +534,21 @@ BOOST_AUTO_TEST_CASE(MempoolUnbroadcastMemoryUsage)
     pool.RemoveUnbroadcastTx(txid);
     BOOST_CHECK_EQUAL(pool.DynamicMemoryUsage(), usage_before);
 }
+
+#ifdef DEBUG_LOCKORDER
+// The mempool takes its lock in the validation signal callbacks, so a wait for the signal queue under that
+// lock is refused (the wait rule of sync.h), and the diagnostic names the lock.
+BOOST_AUTO_TEST_CASE(wait_for_the_signal_queue_refuses_the_mempool_lock)
+{
+    const bool prev{g_debug_lockorder_abort};
+    g_debug_lockorder_abort = false;
+    {
+        LOCK(m_node.mempool->cs);
+        BOOST_CHECK_EXCEPTION(m_node.validation_signals->SyncWithValidationInterfaceQueue(), std::logic_error,
+                              HasReason{"waiting for the validation signal queue while holding CTxMemPool::cs"});
+    }
+    g_debug_lockorder_abort = prev;
+}
+#endif // DEBUG_LOCKORDER
 
 BOOST_AUTO_TEST_SUITE_END()

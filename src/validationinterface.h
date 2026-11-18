@@ -207,7 +207,8 @@ public:
 
     ~ValidationSignals();
 
-    /** Call any remaining callbacks on the calling thread */
+    /** Call any remaining callbacks on the calling thread. Not a wait: the
+     *  thread that ran the queue has stopped by then. */
     void FlushBackgroundCallbacks();
 
     size_t CallbacksPending();

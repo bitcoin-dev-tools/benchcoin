@@ -868,6 +868,8 @@ protected:
         std::vector<ConnectedBlock>& connected_blocks,
         DisconnectedBlockTransactions& disconnectpool) EXCLUSIVE_LOCKS_REQUIRED(cs_main, m_mempool->cs);
 
+    //! Block-index transition: the block is marked failed (BLOCK_FAILED_VALID) and its entry dirty.
+    void MarkBlockFailed(CBlockIndex& block) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
     void InvalidBlockFound(CBlockIndex* pindex, const BlockValidationState& state) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
     CBlockIndex* FindMostWorkChain() EXCLUSIVE_LOCKS_REQUIRED(cs_main);
     /**

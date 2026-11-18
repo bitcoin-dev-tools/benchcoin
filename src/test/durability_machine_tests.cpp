@@ -43,6 +43,31 @@ BOOST_AUTO_TEST_CASE(flush_table)
     BOOST_CHECK(!FLUSH_TABLE.Next(S::CoinsWritten, E::WriteCoins));
 }
 
+// A block is written with cs_main released, between the claim of its position and the end of the
+// write (PinBlockFile(), UnpinBlockFile()). A sync made in between did not cover its bytes: the
+// file is unsynced again when the write ends, until the next sync.
+BOOST_FIXTURE_TEST_CASE(write_off_the_lock_marks_the_file_again, TestChain100Setup)
+{
+    auto& chainman{*Assert(m_node.chainman)};
+    auto& blockman{static_cast<TestBlockManager&>(chainman.m_blockman)};
+
+    CreateAndProcessBlock({}, CScript() << OP_TRUE);
+    const CBlockIndex* tip{WITH_LOCK(cs_main, return chainman.ActiveChain().Tip())};
+    BOOST_REQUIRE(tip);
+    LOCK(cs_main);
+    BOOST_REQUIRE(blockman.SyncWrittenFiles());
+    BOOST_REQUIRE(!blockman.BlockFileUnsynced(tip->nFile));
+
+    blockman.PinBlockFile(tip->nFile); // a position in the file is claimed
+    BOOST_REQUIRE(blockman.SyncWrittenFiles()); // a sync before the write
+    BOOST_CHECK(!blockman.BlockFileUnsynced(tip->nFile));
+    blockman.UnpinBlockFile(tip->nFile); // the write ended
+    BOOST_CHECK(blockman.BlockFileUnsynced(tip->nFile));
+
+    BOOST_CHECK(blockman.SyncWrittenFiles());
+    BOOST_CHECK(!blockman.BlockFileUnsynced(tip->nFile));
+}
+
 namespace {
 //! The fault chainstate_flush_failure_boundary injects: with a directory in its place, the
 //! next flush of the file fails where it opens it.

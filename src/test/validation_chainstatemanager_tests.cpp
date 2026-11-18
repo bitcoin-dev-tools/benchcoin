@@ -946,6 +946,69 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager_snapshot_completion_hash_mismatch, Sna
     }
 }
 
+// Completion hashes the validated chainstate's coins on disk. Where its forced flush fails, the coins on disk are
+// not the chainstate's, and the snapshot is not judged: no verdict, no invalidation, and the same again once the
+// file can be flushed, since the failed sync is remembered. The flush error does not interrupt here, unlike the
+// fixture's, whose interrupt would stop the hashing (STOP_HASHING) and give STATS_FAILED whether or not completion
+// checks the flush.
+BOOST_FIXTURE_TEST_CASE(chainstatemanager_snapshot_completion_after_failed_flush, SnapshotTestSetup)
+{
+    auto chainstates = this->SetupSnapshot();
+    Chainstate& validation_chainstate = *std::get<0>(chainstates);
+    Chainstate& unvalidated_cs = *std::get<1>(chainstates);
+    ChainstateManager& chainman = *Assert(m_node.chainman);
+    m_node.notifications->m_shutdown_on_fatal_error = false;
+    const std::function<bool()> shutdown_request{m_node.shutdown_request};
+    // The notifications hold the function by reference: from here a flush error interrupts nothing.
+    m_node.shutdown_request = [] { return true; };
+
+    // Coins on disk that are not the chainstate's: a coin written out, then spent in memory only. Hashed from disk
+    // they would not match the assumeutxo value, which the coins in memory do.
+    const COutPoint stale{Txid::FromUint256(m_rng.rand256()), 0};
+    {
+        LOCK(::cs_main);
+        Coin coin;
+        coin.out.nValue = 1;
+        coin.nHeight = 1;
+        validation_chainstate.CoinsTip().AddCoin(stale, std::move(coin), false);
+    }
+    BlockValidationState state;
+    BOOST_REQUIRE(validation_chainstate.FlushStateToDisk(state, FlushStateMode::FORCE_FLUSH));
+    BOOST_REQUIRE(WITH_LOCK(::cs_main, return validation_chainstate.CoinsTip().SpendCoin(stale)));
+
+    // A block file written to since its last sync, which the forced flush syncs and cannot open.
+    const fs::path file{WITH_LOCK(::cs_main, return chainman.m_blockman.GetBlockPosFilename(validation_chainstate.m_chain.Tip()->GetBlockPos()))};
+    const fs::path aside{fs::PathFromString(fs::PathToString(file) + ".aside")};
+    {
+        LOCK(::cs_main);
+        chainman.m_blockman.PinBlockFile(validation_chainstate.m_chain.Tip()->nFile);
+        chainman.m_blockman.UnpinBlockFile(validation_chainstate.m_chain.Tip()->nFile);
+    }
+    fs::rename(file, aside);
+    BOOST_REQUIRE(fs::create_directory(file));
+
+    const fs::path snapshot_chainstate_dir = gArgs.GetDataDirNet() / "chainstate_snapshot";
+    const fs::path snapshot_invalid_dir = gArgs.GetDataDirNet() / "chainstate_snapshot_INVALID";
+    const auto check_not_judged{[&] {
+        LOCK(::cs_main);
+        BOOST_CHECK_EQUAL(chainman.MaybeValidateSnapshot(validation_chainstate, unvalidated_cs), SnapshotCompletionResult::STATS_FAILED);
+        BOOST_CHECK(!chainman.m_interrupt);
+        BOOST_CHECK(unvalidated_cs.m_assumeutxo == Assumeutxo::UNVALIDATED);
+        BOOST_CHECK(validation_chainstate.TargetBlockHash() == unvalidated_cs.m_from_snapshot_blockhash);
+        BOOST_CHECK_EQUAL(chainman.HistoricalChainstate(), &validation_chainstate);
+        BOOST_CHECK(fs::exists(snapshot_chainstate_dir));
+        BOOST_CHECK(!fs::exists(snapshot_invalid_dir));
+    }};
+    check_not_judged();
+
+    // The file back as it was: the failed sync is remembered, and the snapshot is still not judged.
+    BOOST_REQUIRE(fs::remove(file));
+    fs::rename(aside, file);
+    check_not_judged();
+
+    m_node.shutdown_request = shutdown_request;
+}
+
 /** Helper function to parse args into args_man and return the result of applying them to opts */
 template <typename Options>
 util::Result<Options> SetOptsFromArgs(ArgsManager& args_man, Options opts,

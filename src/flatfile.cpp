@@ -10,6 +10,7 @@
 #include <util/log.h>
 #include <util/overflow.h>
 
+#include <cerrno>
 #include <stdexcept>
 
 FlatFileSeq::FlatFileSeq(fs::path dir, const char* prefix, uint64_t chunk_size)
@@ -40,8 +41,12 @@ FILE* FlatFileSeq::Open(const FlatFilePos& pos, bool read_only) const
     fs::path path = FileName(pos);
     fs::create_directories(path.parent_path());
     FILE* file = fsbridge::fopen(path, read_only ? "rb": "rb+");
-    if (!file && !read_only)
-        file = fsbridge::fopen(path, "wb+");
+    if (!file && !read_only) {
+        // Created only if it does not exist, never truncated: files are written and synced on several threads,
+        // and another one may create the file and write to it between the two calls.
+        file = fsbridge::fopen(path, "wb+x");
+        if (!file && errno == EEXIST) file = fsbridge::fopen(path, "rb+");
+    }
     if (!file) {
         LogError("Unable to open file %s", fs::PathToString(path));
         return nullptr;

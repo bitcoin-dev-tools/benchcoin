@@ -2093,4 +2093,38 @@ BOOST_AUTO_TEST_CASE(stored_coin_round_trip)
     }
 }
 
+//! A node's links hold its number, not its address (CoinsStore::NodeAllocator::Number()): with more entries
+//! than one region of nodes holds, numbers of several regions are in the chains and on the lists, and every
+//! entry is still found, spent and listed where it belongs. About 80 MiB of nodes.
+BOOST_AUTO_TEST_CASE(node_numbers_span_regions)
+{
+    CCoinsViewDB db{MemoryDb("store"), {}};
+    CoinsStore store{&db, 4, true};
+    static constexpr uint32_t COINS{700'000};
+    const auto outpoint{[](uint32_t i) { return COutPoint{Txid::FromUint256(uint256{static_cast<uint8_t>(i % 251)}), i}; }};
+    for (uint32_t i{0}; i < COINS; ++i) {
+        const int height{static_cast<int>(1 + i / 100'000)};
+        if (i % 100'000 == 0) store.SetBestBlock(uint256{static_cast<uint8_t>(height)}, height);
+        store.AddCoin(outpoint(i), Coin{CTxOut{CAmount{i + 1}, CScript() << OP_TRUE}, height, false}, false);
+    }
+    BOOST_CHECK_EQUAL(store.GetCacheSize(), COINS);
+    store.SanityCheck();
+    // Spends at a later height move entries between the lists of their heights.
+    store.SetBestBlock(uint256{100}, 100);
+    store.SetChangeHeight(100);
+    for (uint32_t i{0}; i < COINS; i += 3) BOOST_REQUIRE(store.SpendCoin(outpoint(i)));
+    store.SanityCheck();
+    for (uint32_t i{0}; i < COINS; ++i) {
+        const Coin& coin{store.AccessCoin(outpoint(i))};
+        if (i % 3 == 0) {
+            BOOST_REQUIRE(coin.IsSpent());
+        } else {
+            BOOST_REQUIRE_EQUAL(coin.out.nValue, CAmount{i + 1});
+        }
+    }
+    // Written out and evicted, every node goes back.
+    store.Sync();
+    store.SanityCheck();
+}
+
 BOOST_AUTO_TEST_SUITE_END()

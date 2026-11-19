@@ -68,14 +68,14 @@ struct CoinsStore::RegionAhead {
                 if (stop) return;
                 wanted = false;
             }
-            void* next{HintedRegion(NODE_REGION_BYTES)};
+            void* next{HintedRegion(NODE_REGION_BYTES, NODE_REGION_BYTES)};
             // Every small page, for where no huge page was to be had: the first touch of a huge page
             // supplies all of it, and the touches after it cost nothing.
             static constexpr size_t SMALL_PAGE_BYTES{4096};
             for (size_t at{0}; at < NODE_REGION_BYTES; at += SMALL_PAGE_BYTES) static_cast<volatile std::byte*>(next)[at] = std::byte{0};
             LOCK(mutex);
             if (stop) {
-                FreeRegion(next);
+                FreeRegion(next, NODE_REGION_BYTES);
                 return;
             }
             ready = next;
@@ -118,7 +118,7 @@ CoinsStore::~CoinsStore()
     LOCK(ahead.mutex);
     ahead.stop = false;
     ahead.wanted = false;
-    if (void* unused{std::exchange(ahead.ready, nullptr)}) FreeRegion(unused);
+    if (void* unused{std::exchange(ahead.ready, nullptr)}) FreeRegion(unused, NODE_REGION_BYTES);
 }
 
 // ---------------------------------------------------------------------------------------------------------
@@ -140,10 +140,10 @@ size_t CoinsStore::SumTotals(std::atomic<int64_t> Totals::* field) const
     return static_cast<size_t>(std::max<int64_t>(0, total));
 }
 
-void* CoinsStore::HintedRegion(size_t bytes)
+void* CoinsStore::HintedRegion(size_t bytes, size_t align)
 {
-    assert(bytes != 0 && bytes % HUGE_PAGE_BYTES == 0);
-    void* region{::operator new(bytes, std::align_val_t{HUGE_PAGE_BYTES})};
+    assert(bytes != 0 && bytes % HUGE_PAGE_BYTES == 0 && align % HUGE_PAGE_BYTES == 0);
+    void* region{::operator new(bytes, std::align_val_t{align})};
 #ifdef MADV_HUGEPAGE
     // Advice the system is free to ignore, as it does where transparent huge pages are off.
     (void)madvise(region, bytes, MADV_HUGEPAGE);
@@ -153,13 +153,13 @@ void* CoinsStore::HintedRegion(size_t bytes)
 
 void* CoinsStore::NodeRegion()
 {
-    if (NodeRegionBytes() < NODE_REGION_AHEAD_FROM) return HintedRegion(NODE_REGION_BYTES);
+    if (NodeRegionBytes() < NODE_REGION_AHEAD_FROM) return HintedRegion(NODE_REGION_BYTES, NODE_REGION_BYTES);
     RegionAhead& ahead{RegionAheadState()};
     void* region;
     {
         LOCK(ahead.mutex);
         // Nodes outside the life of any store wait for their memory themselves.
-        if (ahead.stores == 0 || ahead.stop) return HintedRegion(NODE_REGION_BYTES);
+        if (ahead.stores == 0 || ahead.stop) return HintedRegion(NODE_REGION_BYTES, NODE_REGION_BYTES);
         if (!ahead.thread.joinable()) {
             try {
                 ahead.thread = std::thread{[&ahead] { ahead.Run(); }};
@@ -167,14 +167,14 @@ void* CoinsStore::NodeRegion()
                 // The caller is in the middle of a batch, under a shard's mutex: it waits for its region
                 // itself, and the next call tries the thread again.
                 LogWarning("Failed to start the coinsahead thread (%s)", e.what());
-                return HintedRegion(NODE_REGION_BYTES);
+                return HintedRegion(NODE_REGION_BYTES, NODE_REGION_BYTES);
             }
         }
         region = std::exchange(ahead.ready, nullptr);
         ahead.wanted = true;
     }
     ahead.cv.notify_one();
-    return region ? region : HintedRegion(NODE_REGION_BYTES);
+    return region ? region : HintedRegion(NODE_REGION_BYTES, NODE_REGION_BYTES);
 }
 
 int64_t CoinsStore::NodeBytes()
@@ -235,7 +235,7 @@ void CoinsStore::Resized(Shard& shard) const
     const int64_t delta{static_cast<int64_t>(entries) - static_cast<int64_t>(shard.entries)};
     int64_t bytes{NodeBytes() * delta};
     if (buckets != shard.buckets) {
-        bytes += static_cast<int64_t>(memusage::MallocUsage(sizeof(void*) * buckets)) - static_cast<int64_t>(memusage::MallocUsage(sizeof(void*) * shard.buckets));
+        bytes += static_cast<int64_t>(memusage::MallocUsage(Map::BUCKET_BYTES * buckets)) - static_cast<int64_t>(memusage::MallocUsage(Map::BUCKET_BYTES * shard.buckets));
     }
     Totals& totals{MyTotals()};
     totals.entries.fetch_add(delta, std::memory_order_relaxed);
@@ -2147,7 +2147,7 @@ void CoinsStore::SanityCheck() const
         assert(dirty == shard.dirty_count);
         assert(shard.map.size() == shard.entries);
         assert(shard.map.bucket_count() == shard.buckets);
-        total_bytes += NodeBytes() * shard.map.size() + memusage::MallocUsage(sizeof(void*) * shard.map.bucket_count()) + memusage::DynamicUsage(shard.dirty_spans) + usage;
+        total_bytes += NodeBytes() * shard.map.size() + memusage::MallocUsage(Map::BUCKET_BYTES * shard.map.bucket_count()) + memusage::DynamicUsage(shard.dirty_spans) + usage;
         total_entries += shard.map.size();
         total_dirty += dirty;
         // The lists hold exactly those entries, properly linked.

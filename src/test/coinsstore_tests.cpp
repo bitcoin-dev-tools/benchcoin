@@ -2037,4 +2037,60 @@ BOOST_AUTO_TEST_CASE(pending_creates_are_announced_until_applied)
     store.SanityCheck();
 }
 
+//! A StoredCoin gives back the coin it was made from, byte for byte, whatever the script's length: inline up to
+//! StoredCoin::INLINE bytes, on the heap beyond; copies, moves and assignments keep it, and it reports heap
+//! memory only for a script on the heap.
+BOOST_AUTO_TEST_CASE(stored_coin_round_trip)
+{
+    const auto make_coin{[](size_t script_size, CAmount value, uint32_t height, bool coinbase) {
+        CScript script;
+        for (size_t i{0}; i < script_size; ++i) script.push_back(static_cast<unsigned char>(i * 7 + script_size));
+        return Coin{CTxOut{value, script}, static_cast<int>(height), coinbase};
+    }};
+    const auto same{[](const Coin& a, const Coin& b) {
+        return a.out == b.out && a.nHeight == b.nHeight && a.fCoinBase == b.fCoinBase && a.IsSpent() == b.IsSpent();
+    }};
+    std::vector<size_t> sizes;
+    for (size_t size{0}; size <= 40; ++size) sizes.push_back(size);
+    sizes.push_back(255);
+    sizes.push_back(256);
+    sizes.push_back(10000);
+    for (const size_t size : sizes) {
+        for (const bool coinbase : {false, true}) {
+            const Coin coin{make_coin(size, 50 * COIN + static_cast<CAmount>(size), (1u << 31) - 1 - static_cast<uint32_t>(size), coinbase)};
+            const StoredCoin stored{coin};
+            BOOST_CHECK(same(stored.ToCoin(), coin));
+            BOOST_CHECK(!stored.IsSpent());
+            BOOST_CHECK_EQUAL(stored.nHeight, coin.nHeight);
+            BOOST_CHECK_EQUAL(stored.fCoinBase, coin.fCoinBase);
+            BOOST_CHECK_EQUAL(stored.DynamicMemoryUsage() == 0, size <= StoredCoin::INLINE);
+            // Copies and moves.
+            StoredCoin copy{stored};
+            BOOST_CHECK(same(copy.ToCoin(), coin));
+            StoredCoin moved{std::move(copy)};
+            BOOST_CHECK(same(moved.ToCoin(), coin));
+            BOOST_CHECK(copy.IsSpent()); // NOLINT(bugprone-use-after-move): the moved-from state is a spent coin
+            // Assignments over a coin with a script of the other kind, inline over heap and heap over inline.
+            StoredCoin other{make_coin(size <= StoredCoin::INLINE ? 100 : 10, 1, 1, false)};
+            other = stored;
+            BOOST_CHECK(same(other.ToCoin(), coin));
+            other = make_coin(size <= StoredCoin::INLINE ? 100 : 10, 2, 2, true);
+            BOOST_CHECK(same(other.ToCoin(), make_coin(size <= StoredCoin::INLINE ? 100 : 10, 2, 2, true)));
+            other = std::move(moved);
+            BOOST_CHECK(same(other.ToCoin(), coin));
+            other.Clear();
+            BOOST_CHECK(other.IsSpent());
+            BOOST_CHECK(same(other.ToCoin(), Coin{}));
+            BOOST_CHECK_EQUAL(other.DynamicMemoryUsage(), 0U);
+        }
+    }
+    // A spent coin, and the default.
+    BOOST_CHECK(StoredCoin{}.IsSpent());
+    BOOST_CHECK(same(StoredCoin{Coin{}}.ToCoin(), Coin{}));
+    // Every standard output script is inline.
+    for (const size_t standard : {size_t{22}, size_t{23}, size_t{25}, size_t{34}, size_t{35}}) {
+        BOOST_CHECK_EQUAL(StoredCoin{make_coin(standard, 1, 1, false)}.DynamicMemoryUsage(), 0U);
+    }
+}
+
 BOOST_AUTO_TEST_SUITE_END()

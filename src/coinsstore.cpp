@@ -922,7 +922,8 @@ bool CoinsStore::CreateLocked(Shard& shard, int height, const COutPoint& outpoin
 
 //! Whether `coin` is the one a block validated its spend against. Two coins of an outpoint are told
 //! apart by where they were made: the outputs of a transaction made twice are the same.
-static bool IsCoin(const Coin& coin, const Coin& known)
+template <typename AnyCoin>
+static bool IsCoin(const AnyCoin& coin, const Coin& known)
 {
     return coin.nHeight == known.nHeight && coin.fCoinBase == known.fCoinBase;
 }

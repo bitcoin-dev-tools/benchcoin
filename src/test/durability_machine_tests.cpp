@@ -247,6 +247,61 @@ BOOST_FIXTURE_TEST_CASE(undo_in_a_left_file_is_synced, FastPruneChain100Setup)
     }
 }
 
+// A block file the write position leaves is trimmed, not synced: it stays unsynced, and the write-out syncs it
+// before the index records its blocks. One that cannot be synced then fails the write-out, and every later one
+// once the file is back, and the index keeps what the write-out before recorded.
+BOOST_FIXTURE_TEST_CASE(left_block_file_synced_by_the_write_out, FastPruneChain100Setup)
+{
+    auto& chainman{*Assert(m_node.chainman)};
+    auto& chainstate{chainman.ActiveChainstate()};
+    auto& blockman{chainman.m_blockman};
+    const auto& params{chainman.GetConsensus()};
+    BlockValidationState baseline;
+    BOOST_REQUIRE(chainstate.FlushStateToDisk(baseline, FlushStateMode::FORCE_FLUSH));
+    const CBlockIndex* flushed{WITH_LOCK(cs_main, return chainstate.GetLastFlushedBlock())};
+    const CBlockHeader tip_header{WITH_LOCK(cs_main, return chainman.ActiveChain().Tip()->GetBlockHeader())};
+    const int height{WITH_LOCK(cs_main, return chainman.ActiveChain().Height())};
+
+    // A small block into the current file, and a block too large for the rest of it: the write position moves on.
+    const auto small{ChildBlock(tip_header, height + 1, 50 * COIN, 1, params)};
+    const auto large{ChildBlock(*small, height + 2, 50 * COIN, 70'000, params)};
+    CBlockIndex* small_index{nullptr};
+    CBlockIndex* large_index{nullptr};
+    {
+        LOCK(cs_main);
+        BlockValidationState state;
+        BOOST_REQUIRE(chainman.AcceptBlock(small, state, &small_index, /*fRequested=*/true, nullptr, nullptr, /*min_pow_checked=*/true));
+        BOOST_REQUIRE(chainman.AcceptBlock(large, state, &large_index, /*fRequested=*/true, nullptr, nullptr, /*min_pow_checked=*/true));
+        BOOST_REQUIRE(small_index && large_index);
+        BOOST_REQUIRE_EQUAL(small_index->nFile, flushed->nFile);
+        BOOST_REQUIRE_LT(small_index->nFile, large_index->nFile);
+    }
+    BlockValidationState connected;
+    BOOST_REQUIRE(chainstate.ActivateBestChain(connected));
+    const fs::path left{WITH_LOCK(cs_main, return blockman.GetBlockPosFilename(small_index->GetBlockPos()))};
+    {
+        LOCK(cs_main);
+        BOOST_REQUIRE(chainman.ActiveChain().Tip() == large_index);
+    }
+
+    InjectOpenFailure(left);
+    BlockValidationState state;
+    BOOST_CHECK(!chainstate.FlushStateToDisk(state, FlushStateMode::FORCE_FLUSH));
+    BOOST_CHECK(state.IsError());
+
+    RemoveOpenFailure(left);
+    BlockValidationState later;
+    BOOST_CHECK(!chainstate.FlushStateToDisk(later, FlushStateMode::FORCE_FLUSH));
+    BOOST_CHECK(later.IsError());
+
+    LOCK(cs_main);
+    BOOST_CHECK(chainstate.GetLastFlushedBlock() == flushed);
+    kernel::CBlockFileInfo file_info;
+    BOOST_REQUIRE(blockman.m_block_tree_db->ReadBlockFileInfo(small_index->nFile, file_info));
+    BOOST_CHECK_EQUAL(file_info.nHeightLast, static_cast<unsigned int>(flushed->nHeight));
+    BOOST_CHECK(!blockman.m_block_tree_db->ReadBlockFileInfo(large_index->nFile, file_info));
+}
+
 // With a snapshot height the block manager writes two files at once, one for the blocks below it and one for the
 // blocks from it on. A write-out syncs the file the other chainstate writes to as well as its own before the index
 // records their blocks, not the one file of its own tip's height (FlushChainstateBlockFile()) alone.

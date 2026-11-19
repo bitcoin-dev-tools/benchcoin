@@ -35,6 +35,7 @@ public:
 };
 
 struct TestBlockManager : public node::BlockManager {
+    using node::BlockManager::BlockManager;
     /** Test-only method to clear internal state for fuzzing */
     void CleanupForFuzzing();
     /** Whether block file `file`, or its undo file, was written to since its last sync */

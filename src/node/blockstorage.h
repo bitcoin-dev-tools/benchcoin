@@ -210,13 +210,17 @@ private:
     /** Return false if block file or undo file flushing fails. */
     [[nodiscard]] bool FlushBlockFile(int blockfile_num, bool fFinalize, bool finalize_undo) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
 
+    /** Trim a block file the write position has left, and its undo file where that is finished too, without a
+     *  sync: both stay marked unsynced until whatever records their blocks in the block index syncs them. */
+    void TrimBlockFile(int blockfile_num, bool trim_undo) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+
     /** Return false if undo file flushing fails. */
     [[nodiscard]] bool FlushUndoFile(int block_file, bool finalize = false) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
 
     /**
      * Helper function performing various preparations before a block can be saved to disk:
      * Returns the correct position for the block to be saved, which may be in the current or a new
-     * block file depending on nAddSize. May flush the previous blockfile to disk if full, updates
+     * block file depending on nAddSize. May trim the previous blockfile if full (TrimBlockFile()), updates
      * blockfile info, and checks if there is enough disk space to save the block.
      *
      * The nAddSize argument passed to this function should include not just the size of the serialized CBlock, but also the size of

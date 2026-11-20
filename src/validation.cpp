@@ -4272,9 +4272,13 @@ bool Chainstate::PublishConnectTip(
         // Only a window block defers transactions, and its continuation has finished them on a worker
         // before the block is published.
         Assert(!validated.ok || validated.result.deferred_txs.empty());
-        // A block connected alone still has its changes in its view (a window block's worker applied its own):
-        // applied here, before the check, so that a conflict at the apply is seen, not dropped by Confirm().
-        if (validated.ok) view.ApplyChanges();
+        // A window block's worker applied its changes; what a continuation left is applied here, before the
+        // check, so that a conflict at the apply is seen, not dropped by Confirm(). A block connected alone has
+        // no lower block to conflict with: its changes are applied once its undo write is queued
+        // (FinishConnectBlock() below), so that the write runs while they are, and not after the tip moved,
+        // where the block's signals wait for it.
+        const bool apply_after_undo{validated.ok && !staged.windowed};
+        if (validated.ok && !apply_after_undo) view.ApplyChanges();
         if (validated.ok && view.Conflicts() != 0) {
             // Another block of lower height spent one of this block's inputs first, or created an output of
             // this block's first (which this block could not see, BIP30), or may have: where outpoints made
@@ -4314,6 +4318,7 @@ bool Chainstate::PublishConnectTip(
             // (CoinsStore::UnwindBlock()).
             return false;
         }
+        if (apply_after_undo) view.ApplyChanges();
         time_3 = SteadyClock::now();
         m_chainman.time_connect_total += time_3 - time_2;
         assert(m_chainman.num_blocks_total > 0);

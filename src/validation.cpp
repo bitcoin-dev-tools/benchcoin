@@ -4889,7 +4889,7 @@ bool Chainstate::ActivateBestChain(BlockValidationState& state, std::shared_ptr<
         std::optional<UniqueLock<RecursiveMutex>> reorg_lock_mempool;
         // A step at the tip that ends with the block that improved the tip keeps both locks into the hold
         // that finishes the step and sends the pass's notifications, so that nothing sees the new tip before
-        // UpdatedBlockTip, the kernel's tip notification and ActiveTipChange. The mempool lock goes before
+        // ActiveTipChange, UpdatedBlockTip and the kernel's tip notification. The mempool lock goes before
         // ActiveTipChange, cs_main at the end of that hold.
         std::optional<UniqueLock<RecursiveMutex>> tip_lock_main;
         std::optional<UniqueLock<RecursiveMutex>> tip_lock_mempool;
@@ -4984,27 +4984,31 @@ bool Chainstate::ActivateBestChain(BlockValidationState& state, std::shared_ptr<
                         if (step->use_window) step->sync = std::make_shared<WindowSync>();
                     }
 
-                    if (pass_over) {
-                        pass_done = true;
-                        const CBlockIndex* pindexFork{notified_tip ? LastCommonAncestor(notified_tip, pindexNewTip)
-                                                                   : starting_tip ? m_chain.FindFork(*starting_tip) : nullptr};
-                        bool still_in_ibd = m_chainman.IsInitialBlockDownload();
-
-                        if (mode == node::SyncMode::Download && !still_in_ibd) {
-                            // Active chainstate has exited IBD.
-                            exited_ibd = true;
-                        }
-
-                        // Notify external listeners about the new tip (a window step notified per block as it
-                        // went; what remains is from the last block it notified).
-                        if (NotifyTipAdvanced(pindexNewTip, pindexFork, still_in_ibd)) interrupted = true;
-                    }
+                    if (pass_over) pass_done = true;
                 } // release MempoolMutex
-                if (pass_done && !interrupted) {
-                    // Notify external listeners about the new tip, even if pindexFork == pindexNewTip.
-                    if (m_chainman.m_options.signals && this == &m_chainman.ActiveChainstate()) {
-                        m_chainman.m_options.signals->ActiveTipChange(*Assert(pindexNewTip), m_chainman.IsInitialBlockDownload());
+                if (pass_done) {
+                    const CBlockIndex* pindexFork{notified_tip ? LastCommonAncestor(notified_tip, pindexNewTip)
+                                                               : starting_tip ? m_chain.FindFork(*starting_tip) : nullptr};
+                    bool still_in_ibd = m_chainman.IsInitialBlockDownload();
+
+                    if (mode == node::SyncMode::Download && !still_in_ibd) {
+                        // Active chainstate has exited IBD.
+                        exited_ibd = true;
                     }
+
+                    // Notify external listeners about the new tip, even if pindexFork == pindexNewTip. First,
+                    // before the signals of the pass's blocks are handed to the validation queue below
+                    // (NotifyTipAdvanced()): a subscriber's callback for them that takes a lock this call
+                    // needs (net processing's BlockConnected, a block's transactions under the transaction
+                    // download lock) would make it wait under cs_main, and the tip unpublished meanwhile.
+                    // The call is synchronous and the queue's callbacks are not, so they could run after it
+                    // with the order of before too. Nothing changes the mempool meanwhile: that takes cs_main.
+                    if (m_chainman.m_options.signals && this == &m_chainman.ActiveChainstate()) {
+                        m_chainman.m_options.signals->ActiveTipChange(*Assert(pindexNewTip), still_in_ibd);
+                    }
+                    // Notify external listeners about the new tip (a window step notified per block as it
+                    // went; what remains is from the last block it notified).
+                    if (NotifyTipAdvanced(pindexNewTip, pindexFork, still_in_ibd)) interrupted = true;
                 }
             } // release cs_main
             if (pass_done) break;

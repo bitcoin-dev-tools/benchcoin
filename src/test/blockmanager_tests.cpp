@@ -13,6 +13,8 @@
 #include <util/chaintype.h>
 #include <validation.h>
 
+#include <algorithm>
+
 #include <boost/test/unit_test.hpp>
 #include <test/util/common.h>
 #include <test/util/logging.h>
@@ -346,6 +348,77 @@ BOOST_FIXTURE_TEST_CASE(blockmanager_add_to_block_index_best_header, TestingSetu
     BOOST_CHECK(second != first);
     BOOST_CHECK(second->nChainWork == first->nChainWork);
     BOOST_CHECK_EQUAL(best_header, first);
+}
+
+//! The write position has left the first of -fastprune's 64 KiB block files: blocks without transactions are
+//! written until one goes to the next file.
+struct LeftBlockFileSetup : public BasicTestingSetup {
+    KernelNotifications notifications{Assert(m_node.shutdown_request), m_node.exit_status, *Assert(m_node.warnings)};
+    BlockManager blockman{*Assert(m_node.shutdown_signal), BlockManager::Options{
+        .chainparams = Params(),
+        .fast_prune = true,
+        .blocks_dir = m_args.GetBlocksDirPath(),
+        .notifications = notifications,
+        .block_tree_db_params = DBParams{
+            .path = m_args.GetDataDirNet() / "blocks" / "index",
+            .cache_bytes = 0,
+        },
+    }};
+    FlatFilePos first;
+
+    LeftBlockFileSetup()
+    {
+        LOCK(::cs_main);
+        const CBlock block;
+        int height{1};
+        first = blockman.WriteBlock(block, height);
+        BOOST_REQUIRE(!first.IsNull());
+        FlatFilePos pos{first};
+        while (pos.nFile == first.nFile) {
+            pos = blockman.WriteBlock(block, ++height);
+            BOOST_REQUIRE(!pos.IsNull());
+        }
+        BOOST_REQUIRE_EQUAL(pos.nFile, first.nFile + 1);
+    }
+
+    //! The durability of a block stored in the left file.
+    node::DurabilityState LeftFileDurability() const EXCLUSIVE_LOCKS_REQUIRED(::cs_main)
+    {
+        CBlockIndex index{CBlockHeader{}};
+        index.nStatus = BLOCK_HAVE_DATA;
+        index.nFile = first.nFile;
+        return blockman.DataDurability(index);
+    }
+
+    //! The left file is trimmed to its blocks and not synced.
+    void CheckLeftFileTrimmedNotSynced() EXCLUSIVE_LOCKS_REQUIRED(::cs_main)
+    {
+        const fs::path left{m_args.GetBlocksDirPath() / fs::u8path(strprintf("blk%05u.dat", first.nFile))};
+        BOOST_CHECK_EQUAL(fs::file_size(left), blockman.GetBlockFileInfo(first.nFile)->nSize);
+        BOOST_CHECK(LeftFileDurability() == node::DurabilityState::Unsynced);
+    }
+};
+
+//! The write position leaving a block file trims it without a sync: the file stays unsynced until the block index
+//! is written, which syncs every written file first.
+BOOST_FIXTURE_TEST_CASE(blockmanager_left_file_synced_before_the_index_records_it, LeftBlockFileSetup)
+{
+    LOCK(::cs_main);
+    CheckLeftFileTrimmedNotSynced();
+    BOOST_CHECK(blockman.SyncWrittenFiles());
+    BOOST_CHECK(LeftFileDurability() == node::DurabilityState::Synced);
+}
+
+//! So does a write-out run's index batch: it owes the left file's sync, makes it, and may then be committed.
+BOOST_FIXTURE_TEST_CASE(blockmanager_left_file_synced_by_the_index_batch, LeftBlockFileSetup)
+{
+    LOCK(::cs_main);
+    CheckLeftFileTrimmedNotSynced();
+    auto batch{blockman.PrepareBlockIndexBatch()};
+    BOOST_CHECK(std::ranges::any_of(batch.block_syncs, [&](const FlatFilePos& owed) { return owed.nFile == first.nFile; }));
+    BOOST_CHECK(blockman.SyncBatchFiles(batch));
+    BOOST_CHECK(batch.block_syncs.empty());
+    blockman.CommitBlockIndexBatch(batch);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

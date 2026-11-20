@@ -49,6 +49,13 @@ public:
     //! perform. Applications can choose to handle the flush error notification
     //! by logging the error, or notifying the user, or triggering an early
     //! shutdown as a precaution against causing more errors.
+    //! After a failed flush of a block file or undo file, no later write-out
+    //! of the block index and the chainstate succeeds in this run: the block
+    //! index must not record a block whose data could be lost. An application
+    //! that goes on after this notification can still read. It has to stop
+    //! processing blocks and restart to write: a write-out that fails while a
+    //! block is being connected or disconnected leaves the coins one block off
+    //! the tip, and connecting a block from there aborts.
     virtual void flushError(const bilingual_str& message) {}
 
     //! The fatal error notification is sent to notify the user when an error

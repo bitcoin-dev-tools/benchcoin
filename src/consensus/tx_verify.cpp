@@ -44,6 +44,13 @@ bool IsFinalTx(const CTransaction &tx, int nBlockHeight, int64_t nBlockTime)
 
 std::pair<int, int64_t> CalculateSequenceLocks(const CTransaction &tx, int flags, std::vector<int>& prevHeights, const CBlockIndex& block)
 {
+    return CalculateSequenceLocks(tx, flags, prevHeights, [&block](int height) {
+        return Assert(block.GetAncestor(height))->GetMedianTimePast();
+    });
+}
+
+std::pair<int, int64_t> CalculateSequenceLocks(const CTransaction &tx, int flags, std::vector<int>& prevHeights, const std::function<int64_t(int)>& median_time_past_at)
+{
     assert(prevHeights.size() == tx.vin.size());
 
     // Will be set to the equivalent height- and time-based nLockTime
@@ -77,7 +84,7 @@ std::pair<int, int64_t> CalculateSequenceLocks(const CTransaction &tx, int flags
         int nCoinHeight = prevHeights[txinIndex];
 
         if (txin.nSequence & CTxIn::SEQUENCE_LOCKTIME_TYPE_FLAG) {
-            const int64_t nCoinTime{Assert(block.GetAncestor(std::max(nCoinHeight - 1, 0)))->GetMedianTimePast()};
+            const int64_t nCoinTime{median_time_past_at(std::max(nCoinHeight - 1, 0))};
             // NOTE: Subtract 1 to maintain nLockTime semantics
             // BIP 68 relative lock times have the semantics of calculating
             // the first block or time at which the transaction would be
@@ -103,8 +110,13 @@ std::pair<int, int64_t> CalculateSequenceLocks(const CTransaction &tx, int flags
 bool EvaluateSequenceLocks(const CBlockIndex& block, std::pair<int, int64_t> lockPair)
 {
     assert(block.pprev);
-    int64_t nBlockTime = block.pprev->GetMedianTimePast();
-    if (lockPair.first >= block.nHeight || lockPair.second >= nBlockTime)
+    return EvaluateSequenceLocks(block.nHeight, block.pprev->GetMedianTimePast(), lockPair);
+}
+
+bool EvaluateSequenceLocks(int height, int64_t prev_median_time_past, std::pair<int, int64_t> lockPair)
+{
+    int64_t nBlockTime = prev_median_time_past;
+    if (lockPair.first >= height || lockPair.second >= nBlockTime)
         return false;
 
     return true;
@@ -174,7 +186,11 @@ bool Consensus::CheckTxInputs(const CTransaction& tx, TxValidationState& state, 
         return state.Invalid(TxValidationResult::TX_MISSING_INPUTS, "bad-txns-inputs-missingorspent",
                          strprintf("%s: inputs missing/spent", __func__));
     }
+    return CheckAvailableTxInputs(tx, state, inputs, nSpendHeight, txfee);
+}
 
+bool Consensus::CheckAvailableTxInputs(const CTransaction& tx, TxValidationState& state, const CCoinsViewCache& inputs, int nSpendHeight, CAmount& txfee)
+{
     CAmount nValueIn = 0;
     for (unsigned int i = 0; i < tx.vin.size(); ++i) {
         const COutPoint &prevout = tx.vin[i].prevout;

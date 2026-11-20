@@ -421,7 +421,11 @@ public:
      * is recorded from `base_coin`'s coin where it gives one: the coin the base holds under the outpoint, as
      * the block read it, which no other block has changed since; else after a read of the base.
      */
-    void ApplyBatch(BlockId block, std::vector<Change>&& changes, const std::function<const Coin*(const COutPoint&)>& base_coin = {});
+    //! With `helpers`, a large batch's shards are applied on its workers beside the calling thread, each shard
+    //! by one thread (VisitShardsShared()): about one worker for every APPLY_CHANGES_PER_HELPER changes.
+    //! `base_coin` is then called from several threads.
+    void ApplyBatch(BlockId block, std::vector<Change>&& changes, const std::function<const Coin*(const COutPoint&)>& base_coin = {}, ThreadPool* helpers = nullptr);
+    static constexpr size_t APPLY_CHANGES_PER_HELPER{1024};
     //! The coins among `outpoints` that block `viewer` sees and the tier holds, read with one hold of each
     //! shard's lock; what is missing, spent or invisible is left out (PeekCoinFor() one by one is the fallback).
     std::vector<std::pair<COutPoint, Coin>> FetchFor(BlockId viewer, std::vector<COutPoint>&& outpoints) const;
@@ -1285,6 +1289,15 @@ private:
      */
     template <typename Work>
     void VisitShards(BlockId block, const std::vector<uint32_t>& shard_of, Work work) const;
+    /**
+     * As VisitShards(), with up to `helpers` tasks of `pool` taking shards beside the calling thread:
+     * `work(shard, items, participant)`, the caller being participant 0 and the helpers 1 to `helpers`, each
+     * shard by one of them. A shard is taken by whoever comes for it next, waiting for its lock. The caller
+     * returns once every shard is done; a helper that starts after that finds none left and touches nothing
+     * of the caller's. With no worker free, the caller does all of it.
+     */
+    template <typename Work>
+    void VisitShardsShared(BlockId block, const std::vector<uint32_t>& shard_of, ThreadPool& pool, size_t helpers, Work work) const;
     //! Erase an entry, keeping the shard's lists and counters right.
     void EraseEntry(Shard& shard, Map::iterator it) const EXCLUSIVE_LOCKS_REQUIRED(shard.mutex);
     //! The same for an entry reached over a list, erased by its key: a cell has no link back, so the erase

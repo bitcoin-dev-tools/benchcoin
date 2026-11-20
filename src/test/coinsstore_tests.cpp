@@ -2127,4 +2127,60 @@ BOOST_AUTO_TEST_CASE(node_numbers_span_regions)
     store.SanityCheck();
 }
 
+//! A large block's changes are applied by shard on the pool's workers beside the calling thread
+//! (CoinsStore::VisitShardsShared()): the result is the one of applying them on the calling thread alone, the
+//! spends of coins the store holds, of coins only the database has and of coins the block made itself, and
+//! the creates, and the block is unwound as completely.
+BOOST_AUTO_TEST_CASE(apply_by_shard_on_workers_matches_alone)
+{
+    static constexpr uint32_t OLD{3000}, NEW{3000};
+    const auto old_outpoint{[](uint32_t i) { return COutPoint{Txid::FromUint256(uint256{static_cast<uint8_t>(1 + i % 200)}), i}; }};
+    const auto new_outpoint{[](uint32_t i) { return COutPoint{Txid::FromUint256(uint256{static_cast<uint8_t>(201 + i % 50)}), i}; }};
+    const auto coin{[](uint32_t i, int height) { return Coin{CTxOut{CAmount{i + 1}, CScript() << OP_TRUE}, height, false}; }};
+    std::vector<COutPoint> universe;
+    for (uint32_t i{0}; i < OLD; ++i) universe.push_back(old_outpoint(i));
+    for (uint32_t i{0}; i < NEW; ++i) universe.push_back(new_outpoint(i));
+
+    // The same block, applied with workers and without; once confirmed, once unwound.
+    const auto run{[&](size_t workers, bool confirm) {
+        CCoinsViewDB db{MemoryDb("store"), {}};
+        CoinsStore store{&db, CoinsStore::DEFAULT_SHARDS, /*deterministic=*/true};
+        store.SetBestBlock(uint256::ONE, 1);
+        for (uint32_t i{0}; i < OLD; ++i) store.AddCoin(old_outpoint(i), coin(i, 1), false);
+        store.Sync();
+        // Half the old coins only in the database: the apply meets their spends as misses.
+        store.EvictClean(0);
+        for (uint32_t i{0}; i < OLD; i += 2) BOOST_REQUIRE(store.AccessCoin(old_outpoint(i)).out.nValue == CAmount{i + 1});
+        auto pool{std::make_shared<ThreadPool>("apply")};
+        if (workers > 0) pool->Start(workers);
+        BlockApplyView view{store, util::NotNull{pool}, /*deterministic=*/true};
+        view.BeginBlock(2);
+        view.SetKeepBaseReads(true);
+        for (uint32_t i{0}; i < OLD; i += 3) BOOST_REQUIRE(view.SpendCoin(old_outpoint(i)));
+        for (uint32_t i{0}; i < NEW; ++i) view.AddCoin(new_outpoint(i), coin(i, 2), false);
+        for (uint32_t i{0}; i < NEW; i += 5) BOOST_REQUIRE(view.SpendCoin(new_outpoint(i)));
+        view.ApplyChanges();
+        BOOST_CHECK_EQUAL(view.Conflicts(), 0U);
+        if (confirm) {
+            view.SetBestBlock(uint256{2});
+            view.Confirm();
+        } else {
+            view.Unwind();
+        }
+        store.SanityCheck();
+        auto visible{Visible(store, universe)};
+        if (workers > 0) pool->Stop();
+        return visible;
+    }};
+    for (const bool confirm : {true, false}) {
+        const auto alone{run(0, confirm)};
+        const auto shared{run(4, confirm)};
+        for (const COutPoint& op : universe) BOOST_CHECK_MESSAGE(Same(alone.at(op), shared.at(op)), "mismatch at " << op.ToString());
+    }
+    // The confirmed state is the block's.
+    const auto confirmed{run(4, true)};
+    for (uint32_t i{0}; i < OLD; ++i) BOOST_CHECK_EQUAL(confirmed.at(old_outpoint(i)).has_value(), i % 3 != 0);
+    for (uint32_t i{0}; i < NEW; ++i) BOOST_CHECK_EQUAL(confirmed.at(new_outpoint(i)).has_value(), i % 5 != 0);
+}
+
 BOOST_AUTO_TEST_SUITE_END()

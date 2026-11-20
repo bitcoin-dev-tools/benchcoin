@@ -771,6 +771,8 @@ private:
     std::vector<std::future<void>> m_futures{};
 
 protected:
+    //! The pool the inputs are fetched on, for a subclass's own work of the same kind.
+    ThreadPool& Pool() const { return *m_thread_pool; }
     //! How a coin is read from the base, by the prefetch workers and by the lookups the prefetch did not
     //! cover. A subclass may read through a view of the base other than its confirmed state.
     virtual std::optional<Coin> ReadBase(const COutPoint& outpoint) const { return base->PeekCoin(outpoint); }

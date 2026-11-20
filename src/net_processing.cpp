@@ -2374,6 +2374,12 @@ void PeerManagerImpl::NewPoWValidBlock(const CBlockIndex *pindex, const std::sha
     const std::shared_future<CSerializedNetMsg> lazy_ser{
         std::async(std::launch::deferred, [&] { return NetMsg::Make(NetMsgType::CMPCTBLOCK, *pcmpctblock); })};
 
+    // The previous block's, replaced below. Its map often holds the last references to that block's
+    // transactions, out of the mempool since it was connected: freeing them takes milliseconds for a large
+    // block, which this block, under cs_main and before it is stored and connected, need not wait for.
+    std::shared_ptr<const CBlock> previous_block;
+    std::shared_ptr<const CBlockHeaderAndShortTxIDs> previous_compact_block;
+    std::shared_ptr<const std::map<GenTxid, CTransactionRef>> previous_block_txs;
     {
         auto most_recent_block_txs = std::make_unique<std::map<GenTxid, CTransactionRef>>();
         for (const auto& tx : pblock->vtx) {
@@ -2383,10 +2389,18 @@ void PeerManagerImpl::NewPoWValidBlock(const CBlockIndex *pindex, const std::sha
 
         LOCK(m_most_recent_block_mutex);
         m_most_recent_block_hash = hashBlock;
-        m_most_recent_block = pblock;
-        m_most_recent_compact_block = pcmpctblock;
-        m_most_recent_block_txs = std::move(most_recent_block_txs);
+        previous_block = std::exchange(m_most_recent_block, pblock);
+        previous_compact_block = std::exchange(m_most_recent_compact_block, pcmpctblock);
+        previous_block_txs = std::exchange(m_most_recent_block_txs, std::move(most_recent_block_txs));
     }
+    // Freed on a worker of the connect pool, or here where the pool takes no task (the task is destroyed with
+    // what it holds).
+    (void)m_chainman.m_connect_pool->Submit([block = std::move(previous_block), compact_block = std::move(previous_compact_block),
+                                             block_txs = std::move(previous_block_txs)]() mutable {
+        block_txs.reset();
+        compact_block.reset();
+        block.reset();
+    });
 
     m_connman.ForEachNode([this, pindex, &lazy_ser, &hashBlock](CNode* pnode) EXCLUSIVE_LOCKS_REQUIRED(::cs_main) {
         AssertLockHeld(::cs_main);

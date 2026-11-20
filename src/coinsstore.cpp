@@ -17,6 +17,7 @@
 #include <condition_variable>
 #include <exception>
 #include <functional>
+#include <unordered_map>
 #include <limits>
 #include <map>
 #include <stdexcept>
@@ -1077,7 +1078,7 @@ void CoinsStore::VisitShards(BlockId block, const std::vector<uint32_t>& shard_o
     }
 }
 
-void CoinsStore::ApplyBatch(BlockId block, std::vector<Change>&& changes)
+void CoinsStore::ApplyBatch(BlockId block, std::vector<Change>&& changes, const std::function<const Coin*(const COutPoint&)>& base_coin)
 {
     assert(block != NO_BLOCK);
     if (changes.empty()) return;
@@ -1121,7 +1122,15 @@ void CoinsStore::ApplyBatch(BlockId block, std::vector<Change>&& changes)
         for (const uint32_t i : items) {
             Change* change{applied[i]};
             if (change->coin.IsSpent()) {
-                switch (SpendLocked(shard, height, mark_fresh, change->outpoint, hashes[i], nullptr, change->known_coin ? &change->coin : nullptr, undo, delta)) {
+                const Coin* known{change->known_coin ? &change->coin : nullptr};
+                SpendResult result{SpendLocked(shard, height, mark_fresh, change->outpoint, hashes[i], nullptr, known, undo, delta)};
+                // Not in the tier: the coin given for it, the one the base holds (see the declaration).
+                if (result == SpendResult::MISS && base_coin) {
+                    if (const Coin* from_base{base_coin(change->outpoint)}) {
+                        result = SpendLocked(shard, height, mark_fresh, change->outpoint, hashes[i], from_base, known, undo, delta);
+                    }
+                }
+                switch (result) {
                 case SpendResult::DONE: break;
                 case SpendResult::CONFLICT: ++conflicts; break;
                 case SpendResult::MISS: misses.push_back(change); break;
@@ -1136,8 +1145,9 @@ void CoinsStore::ApplyBatch(BlockId block, std::vector<Change>&& changes)
         LOCK(mine.mutex);
         mine.conflicts += conflicts;
     }
-    // Spends of coins the tier does not hold: one by one, via the base. For a window block these are the
-    // few evicted since its lookups (BlockApplyView::SetKeepBaseReads()).
+    // Spends of coins the tier does not hold and no coin was given for: one by one, via the base. For a window
+    // block these are the few evicted since its lookups (BlockApplyView::SetKeepBaseReads()); a block connected
+    // alone gives them all (BlockApplyView::ApplyChanges()).
     for (const Change* change : misses) ApplySpend(block, change->outpoint, change->known_coin ? &change->coin : nullptr);
 }
 
@@ -2294,7 +2304,7 @@ void BlockApplyView::AnnounceCreates(const CBlock& block)
     m_store.AnnounceCreates(m_block, block.vtx);
 }
 
-void BlockApplyView::ApplyChanges()
+void BlockApplyView::ApplyChanges(const CBlock* block, const CBlockUndo* undo)
 {
     Assert(HasBlock());
     if (m_dirty_count == 0) {
@@ -2334,7 +2344,25 @@ void BlockApplyView::ApplyChanges()
     cacheCoins.reserve(entries);
     cachedCoinsUsage = 0;
     m_dirty_count = 0;
-    m_store.ApplyBatch(m_block, std::move(changes));
+    if (block && undo && undo->vtxundo.size() + 1 == block->vtx.size()) {
+        // The coins the block spent, by outpoint, made only once a spend misses the store.
+        std::unordered_map<COutPoint, const Coin*, SaltedOutpointHasher> spent;
+        const auto base_coin{[&](const COutPoint& outpoint) -> const Coin* {
+            if (spent.empty()) {
+                for (size_t i{1}; i < block->vtx.size(); ++i) {
+                    const CTransaction& tx{*block->vtx[i]};
+                    const CTxUndo& tx_undo{undo->vtxundo[i - 1]};
+                    if (tx_undo.vprevout.size() != tx.vin.size()) continue;
+                    for (size_t j{0}; j < tx.vin.size(); ++j) spent.emplace(tx.vin[j].prevout, &tx_undo.vprevout[j]);
+                }
+            }
+            const auto it{spent.find(outpoint)};
+            return it == spent.end() ? nullptr : it->second;
+        }};
+        m_store.ApplyBatch(m_block, std::move(changes), base_coin);
+    } else {
+        m_store.ApplyBatch(m_block, std::move(changes));
+    }
     // The block's outputs are in the store, a deferred transaction's too: a higher block reads them there.
     m_store.CreatesApplied(m_block);
 }

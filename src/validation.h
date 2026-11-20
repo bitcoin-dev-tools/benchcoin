@@ -682,6 +682,8 @@ struct BlockValidationContext {
 /** Outputs of the pure ConnectBlock() besides the mutated coins view.
  *  ConnectBlock() resets the object it is given before it fills it. */
 struct ConnectBlockResult {
+    //! `undo` once FinishConnectBlock() queued its write, which moved it here.
+    std::shared_ptr<const CBlockUndo> queued_undo;
     //! Undo data for the connected block; of no meaning when connection failed.
     CBlockUndo undo;
     //! The serialized size of `undo`, when it was measured ahead of FinishConnectBlock() (a window block's

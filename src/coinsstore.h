@@ -10,6 +10,7 @@
 #include <crypto/common.h>
 #include <kernel/caches.h>
 #include <memusage.h>
+#include <undo.h>
 #include <primitives/transaction.h>
 #include <sync.h>
 #include <uint256.h>
@@ -416,9 +417,11 @@ public:
     };
     /**
      * Block `block` makes `changes`, each as it would be made alone (a spend as ApplySpend()), but grouped by
-     * shard so that each shard's lock is taken once for the block.
+     * shard so that each shard's lock is taken once for the block. A spend of a coin the tier does not hold
+     * is recorded from `base_coin`'s coin where it gives one: the coin the base holds under the outpoint, as
+     * the block read it, which no other block has changed since; else after a read of the base.
      */
-    void ApplyBatch(BlockId block, std::vector<Change>&& changes);
+    void ApplyBatch(BlockId block, std::vector<Change>&& changes, const std::function<const Coin*(const COutPoint&)>& base_coin = {});
     //! The coins among `outpoints` that block `viewer` sees and the tier holds, read with one hold of each
     //! shard's lock; what is missing, spent or invisible is left out (PeekCoinFor() one by one is the fallback).
     std::vector<std::pair<COutPoint, Coin>> FetchFor(BlockId viewer, std::vector<COutPoint>&& outpoints) const;
@@ -1425,8 +1428,11 @@ public:
     //! Apply the view's changes so far to the store under the block's identity, grouped by shard, and drop
     //! them from the view; the next lookups read the store, where they are visible to this block. Called by
     //! the block's worker once validated (and again after a continuation), so that the work is off the
-    //! publisher; Confirm() applies what is left.
-    void ApplyChanges();
+    //! publisher; Confirm() applies what is left. A block connected alone, which no other block changes the
+    //! store beside, may give itself and its undo data: a spend of a coin the store does not hold is then
+    //! recorded from the coin the undo data has for it (the one the block read from the base), and not after
+    //! a second read of the base.
+    void ApplyChanges(const CBlock* block = nullptr, const CBlockUndo* undo = nullptr);
     //! As the cache's, and the spend left in the view keeps the height and the coinbase flag of its coin.
     bool SpendCoin(const COutPoint& outpoint, Coin* moveto = nullptr) override;
     //! As Confirm().

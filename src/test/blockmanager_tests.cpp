@@ -232,6 +232,24 @@ BOOST_FIXTURE_TEST_CASE(blockmanager_readblock_hash_mismatch, TestingSetup)
     BOOST_CHECK(!m_node.chainman->m_blockman.ReadBlock(block, index));
 }
 
+//! A block file that ends one byte short of the block its header announces: the block's bytes but its last are there,
+//! and parsing them alone could succeed with whatever the read buffer held. The read fails before any parse.
+BOOST_FIXTURE_TEST_CASE(blockmanager_short_block_is_a_read_error, TestChain100Setup)
+{
+    BlockManager& blockman{m_node.chainman->m_blockman};
+    const FlatFilePos pos{WITH_LOCK(::cs_main, return m_node.chainman->ActiveTip()->GetBlockPos())};
+    const auto raw{blockman.ReadRawBlock(pos)};
+    BOOST_REQUIRE(raw);
+    const fs::path file{WITH_LOCK(::cs_main, return blockman.GetBlockPosFilename(pos))};
+    // The tip is the last block written to its file: what follows it is preallocated space, cut off with its last byte.
+    fs::resize_file(file, pos.nPos + raw->size() - 1);
+    const auto short_raw{blockman.ReadRawBlock(pos)};
+    BOOST_REQUIRE(!short_raw);
+    BOOST_CHECK(short_raw.error() == node::ReadRawError::IO);
+    CBlock block;
+    BOOST_CHECK(!blockman.ReadBlock(block, pos, {}));
+}
+
 BOOST_AUTO_TEST_CASE(blockmanager_flush_block_file)
 {
     KernelNotifications notifications{Assert(m_node.shutdown_request), m_node.exit_status, *Assert(m_node.warnings)};

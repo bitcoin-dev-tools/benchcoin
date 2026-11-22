@@ -1051,16 +1051,22 @@ bool BlockManager::ReadBlock(CBlock& block, const FlatFilePos& pos, const std::o
 {
     block.SetNull();
 
-    // Open history file to read
-    const auto block_data{ReadRawBlock(pos)};
-    if (!block_data) {
+    // Open history file to read. Every byte of the buffer is read from the file before one is parsed (a short
+    // read fails), so the buffer is not zeroed first: a write pass over the block's size saved.
+    std::unique_ptr<std::byte[]> buffer;
+    std::span<const std::byte> block_data;
+    if (!ReadRawBlockInto(pos, std::nullopt, [&](size_t size) {
+            buffer = std::make_unique_for_overwrite<std::byte[]>(size);
+            block_data = {buffer.get(), size};
+            return std::span<std::byte>{buffer.get(), size};
+        })) {
         return false;
     }
 
     try {
         // Read block
-        SpanReader{*block_data} >> TX_WITH_WITNESS(block);
-    } catch (const std::exception& e) {
+        SpanReader{block_data} >> TX_WITH_WITNESS(block);
+    } catch (const std::runtime_error& e) {
         LogError("Deserialize or I/O error - %s at %s while reading block", e.what(), pos.ToString());
         return false;
     }
@@ -1095,6 +1101,18 @@ bool BlockManager::ReadBlock(CBlock& block, const CBlockIndex& index) const
 }
 
 BlockManager::ReadRawBlockResult BlockManager::ReadRawBlock(const FlatFilePos& pos, std::optional<std::pair<size_t, size_t>> block_part) const
+{
+    std::vector<std::byte> data;
+    const auto read{ReadRawBlockInto(pos, block_part, [&](size_t size) {
+        data.resize(size); // Zeroing of memory is intentional here
+        return std::span<std::byte>{data};
+    })};
+    if (!read) return util::Unexpected{read.error()};
+    return data;
+}
+
+util::Expected<void, ReadRawError> BlockManager::ReadRawBlockInto(const FlatFilePos& pos, std::optional<std::pair<size_t, size_t>> block_part,
+                                                                  const std::function<std::span<std::byte>(size_t)>& buffer_for) const
 {
     if (pos.nPos < STORAGE_HEADER_BYTES) {
         // If nPos is less than STORAGE_HEADER_BYTES, we can't read the header that precedes the block data
@@ -1136,10 +1154,9 @@ BlockManager::ReadRawBlockResult BlockManager::ReadRawBlock(const FlatFilePos& p
             blk_size = size;
         }
 
-        std::vector<std::byte> data(blk_size); // Zeroing of memory is intentional here
-        filein.read(data);
-        return data;
-    } catch (const std::exception& e) {
+        filein.read(buffer_for(blk_size));
+        return {};
+    } catch (const std::ios_base::failure& e) {
         LogError("Read from block file failed: %s for %s while reading raw block", e.what(), pos.ToString());
         return util::Unexpected{ReadRawError::IO};
     }

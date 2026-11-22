@@ -474,6 +474,11 @@ public:
     bool ReadBlock(CBlock& block, const FlatFilePos& pos, const std::optional<uint256>& expected_hash) const;
     bool ReadBlock(CBlock& block, const CBlockIndex& index) const;
     ReadRawBlockResult ReadRawBlock(const FlatFilePos& pos, std::optional<std::pair<size_t, size_t>> block_part = std::nullopt) const;
+private:
+    //! Read a block's bytes (or the part of them) into the buffer `buffer_for` returns for their number.
+    util::Expected<void, ReadRawError> ReadRawBlockInto(const FlatFilePos& pos, std::optional<std::pair<size_t, size_t>> block_part,
+                                                        const std::function<std::span<std::byte>(size_t)>& buffer_for) const;
+public:
 
     bool ReadBlockUndo(CBlockUndo& blockundo, const CBlockIndex& index) const;
 

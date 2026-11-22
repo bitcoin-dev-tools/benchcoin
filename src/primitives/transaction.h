@@ -237,7 +237,6 @@ void UnserializeTransaction(TxType& tx, Stream& s, const TransactionSerParams& p
     }
     s >> tx.nLockTime;
 }
-
 template<typename Stream, typename TxType>
 void SerializeTransaction(const TxType& tx, Stream& s, const TransactionSerParams& params)
 {

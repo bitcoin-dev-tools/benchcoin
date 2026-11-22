@@ -4495,8 +4495,7 @@ bool ChainstateManager::ProcessNewBlock(const std::shared_ptr<const CBlock>& blo
     AssertLockNotHeld(cs_main);
 
     {
-        CBlockIndex *pindex = nullptr;
-        if (new_block) *new_block = false;
+            if (new_block) *new_block = false;
         BlockValidationState state;
 
         // CheckBlock() does not support multi-threaded block validation because CBlock::fChecked can cause data race.

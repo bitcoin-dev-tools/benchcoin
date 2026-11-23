@@ -20,10 +20,12 @@
 #include <sync.h>
 #include <uint256.h>
 #include <util/byte_units.h>
+#include <util/check.h>
 #include <util/expected.h>
 #include <util/fs.h>
 #include <util/hasher.h>
 #include <util/obfuscation.h>
+#include <util/threadpool.h>
 
 #include <algorithm>
 #include <array>
@@ -39,6 +41,7 @@
 #include <set>
 #include <span>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -389,9 +392,11 @@ public:
     using ReadRawBlockResult = util::Expected<std::vector<std::byte>, ReadRawError>;
 
     explicit BlockManager(const util::SignalInterrupt& interrupt, Options opts);
+    ~BlockManager();
 
     const util::SignalInterrupt& m_interrupt;
     std::atomic<bool> m_importing{false};
+    ThreadPool m_block_io{"blockio"};
 
     /**
      * Whether all blockfiles have been added to the block tree database.
@@ -581,6 +586,24 @@ public:
         size_t size{0};
     };
     BlockBytes ReadBlockBytes(const FlatFilePos& pos) const;
+    //! The threads that make the block file I/O for which no order is needed (RunBlockIO()).
+    static constexpr int BLOCK_IO_THREADS{4};
+    /**
+     * Run `io` on one of the block I/O threads, in no order with anything else. Block file work blocks the
+     * thread it is made on, so it is given threads that do nothing else, and what nothing waits for is not
+     * made under cs_main: the removal of pruned files.
+     *
+     * `io` hands its result on itself. It never takes cs_main: a thread that holds it may be waiting for
+     * another `io` queued behind this one. It lets no exception leave it (the pool would keep it in a future
+     * nobody reads).
+     */
+    template <typename F>
+    void RunBlockIO(F&& io)
+    {
+        static_assert(std::is_nothrow_invocable_v<std::decay_t<F>&>, "a block I/O task lets no exception leave it");
+        // Refused only by a pool that has stopped, where it would never run.
+        Assert(m_block_io.Submit(std::forward<F>(io)));
+    }
     //! The other half of ReadBlock(): parse and check the block read from `pos`.
     bool ParseBlock(CBlock& block, std::span<const std::byte> block_data, const FlatFilePos& pos, const std::optional<uint256>& expected_hash) const;
     ReadRawBlockResult ReadRawBlock(const FlatFilePos& pos, std::optional<std::pair<size_t, size_t>> block_part = std::nullopt) const;

@@ -578,12 +578,15 @@ struct DeploymentFlags {
  *  - A block's write is the work between "being stored" and stored (O2): on
  *    the caller's thread, where only that block waits. The write allocates
  *    the file space it needs; the claim of its position is arithmetic.
+ *  - Pruned files are removed on a block I/O thread
+ *    (BlockManager::RunBlockIO()) once the block index no longer records
+ *    them.
  *
  * Still made under cs_main, by a caller that waits for the result itself: a
  * block's undo write and the read of a block to connect, the trim of a file
- * that is finished, the syncs of a flush, the removal of pruned files, the
- * reads of DisconnectTip(), the external block loader, and loading and
- * verifying at the start.
+ * that is finished, the syncs of a flush, the removal of files for
+ * pruneblockchain, the reads of DisconnectTip(), the external block loader,
+ * and loading and verifying at the start.
  */
 
 /**

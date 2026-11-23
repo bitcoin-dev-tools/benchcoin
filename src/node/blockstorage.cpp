@@ -335,7 +335,8 @@ void BlockManager::FindFilesToPruneManual(
         if (m_blockfiles_being_written.contains(fileNumber)) continue;
 
         PruneOneBlockFile(fileNumber);
-        // a write position in the file moves to an unclaimed number (m_blockfile_info may grow)
+        // a write position in the file moves to an unclaimed number (m_blockfile_info may grow): the files
+        // of a prune are removed later (UnlinkPrunedFiles() on a block I/O thread)
         LeaveCursorFile(fileNumber);
         setFilesToPrune.insert(fileNumber);
         count++;
@@ -414,7 +415,8 @@ void BlockManager::FindFilesToPrune(
             if (m_blockfiles_being_written.contains(fileNumber)) continue;
 
             PruneOneBlockFile(fileNumber);
-            // a write position in the file moves to an unclaimed number (m_blockfile_info may grow)
+            // a write position in the file moves to an unclaimed number (m_blockfile_info may grow): the files
+            // of a prune are removed later (UnlinkPrunedFiles() on a block I/O thread)
             LeaveCursorFile(fileNumber);
             // Queue up the files for removal
             setFilesToPrune.insert(fileNumber);
@@ -1394,6 +1396,12 @@ static auto InitBlocksdirXorKey(const BlockManager::Options& opts)
     return Obfuscation{obfuscation};
 }
 
+BlockManager::~BlockManager()
+{
+    // Runs what is still queued, on this thread as well.
+    m_block_io.Stop();
+}
+
 BlockManager::BlockManager(const util::SignalInterrupt& interrupt, Options opts)
     : m_prune_mode{opts.prune_target > 0},
       m_obfuscation{InitBlocksdirXorKey(opts)},
@@ -1402,6 +1410,7 @@ BlockManager::BlockManager(const util::SignalInterrupt& interrupt, Options opts)
       m_undo_file_seq{FlatFileSeq{m_opts.blocks_dir, "rev", UNDOFILE_CHUNK_SIZE}},
       m_interrupt{interrupt}
 {
+    m_block_io.Start(BLOCK_IO_THREADS);
     m_block_tree_db = std::make_unique<BlockTreeDB>(m_opts.block_tree_db_params);
 
     if (m_opts.block_tree_db_params.wipe_data) {

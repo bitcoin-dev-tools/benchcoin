@@ -22,7 +22,6 @@ from test_framework.script import (
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     assert_equal,
-    assert_greater_than,
     assert_raises_rpc_error,
     try_rpc,
 )
@@ -62,7 +61,15 @@ def mine_large_blocks(node, n):
         mine_large_blocks.nTime += 1
 
 def calc_usage(blockdir):
-    return sum(os.path.getsize(blockdir + f) for f in os.listdir(blockdir) if os.path.isfile(os.path.join(blockdir, f))) / (1024. * 1024.)
+    total = 0
+    for f in os.listdir(blockdir):
+        try:
+            if os.path.isfile(os.path.join(blockdir, f)):
+                total += os.path.getsize(blockdir + f)
+        except FileNotFoundError:
+            # Pruned files are unlinked on a block I/O thread: one may go between the listing and its size.
+            pass
+    return total / (1024. * 1024.)
 
 class PruneTest(BitcoinTestFramework):
     def set_test_params(self):
@@ -148,9 +155,9 @@ class PruneTest(BitcoinTestFramework):
         self.wait_until(lambda: not os.path.isfile(os.path.join(self.prunedir, "blk00000.dat")), timeout=30)
 
         self.log.info("Success")
-        usage = calc_usage(self.prunedir)
-        self.log.info(f"Usage should be below target: {usage}")
-        assert_greater_than(550, usage)
+        self.log.info("Usage should be below target")
+        # The other files of the prune may still be being unlinked on a block I/O thread.
+        self.wait_until(lambda: calc_usage(self.prunedir) < 550)
 
     def create_chain_with_staleblocks(self):
         # Create stale blocks in manageable sized chunks
@@ -217,9 +224,9 @@ class PruneTest(BitcoinTestFramework):
         mine_large_blocks(self.nodes[0], 220)
         self.sync_blocks(self.nodes[0:3], timeout=120)
 
-        usage = calc_usage(self.prunedir)
-        self.log.info(f"Usage should be below target: {usage}")
-        assert_greater_than(550, usage)
+        self.log.info("Usage should be below target")
+        # Files of the last prune may still be being unlinked on a block I/O thread.
+        self.wait_until(lambda: calc_usage(self.prunedir) < 550)
 
     def reorg_back(self):
         # Verify that a block on the old main chain fork has been pruned away

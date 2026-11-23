@@ -3020,7 +3020,13 @@ bool Chainstate::FlushStateToDisk(
                 LOG_TIME_MILLIS_WITH_CATEGORY("unlink pruned files", BCLog::BENCH);
 
                 step(node::FlushStep::Unlink);
-                m_blockman.UnlinkPrunedFiles(setFilesToPrune);
+                if (nManualPruneHeight > 0) {
+                    // A request (pruneblockchain) returns once its files are gone.
+                    m_blockman.UnlinkPrunedFiles(setFilesToPrune);
+                } else {
+                    // Nothing waits for the files to go: removed on a block I/O thread, not under cs_main.
+                    m_blockman.RunBlockIO([&blockman = m_blockman, files = std::move(setFilesToPrune)]() noexcept { blockman.UnlinkPrunedFiles(files); });
+                }
             }
 
             if (!CoinsTip().GetBestBlock().IsNull()) {
@@ -3029,8 +3035,14 @@ bool Chainstate::FlushStateToDisk(
                 // twice (once in the log, and once in the tables). This is already
                 // an overestimation, as most will delete an existing entry or
                 // overwrite one. Still, use a conservative safety factor of 2.
+                // The block files earlier prunes recorded are removed on a block I/O thread, which may not have
+                // got to them yet. On a nearly full disk that holds the blocks too, the check could then fail for
+                // the room those files hold: they are removed here and the check made again.
                 if (!CheckDiskSpace(m_chainman.m_options.datadir, 48 * 2 * 2 * CoinsTip().GetDirtyCount())) {
-                    return FatalError(m_chainman.GetNotifications(), state, _("Disk space is too low!"));
+                    m_blockman.ScanAndUnlinkAlreadyPrunedFiles();
+                    if (!CheckDiskSpace(m_chainman.m_options.datadir, 48 * 2 * 2 * CoinsTip().GetDirtyCount())) {
+                        return FatalError(m_chainman.GetNotifications(), state, _("Disk space is too low!"));
+                    }
                 }
                 // Flush the chainstate (which may refer to block index entries).
                 step(node::FlushStep::WriteCoins);

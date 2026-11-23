@@ -90,6 +90,33 @@ uint64_t FlatFileSeq::Allocate(const FlatFilePos& pos, uint64_t add_size, bool& 
     return 0;
 }
 
+uint64_t FlatFileSeq::Chunks(uint64_t size) const
+{
+    return CeilDiv(size, m_chunk_size);
+}
+
+uint64_t FlatFileSeq::AllocateChunks(int file, uint64_t from, uint64_t to, bool& out_of_space) const
+{
+    out_of_space = false;
+    if (to <= from) return 0;
+    const FlatFilePos pos(file, from * m_chunk_size);
+    const uint64_t new_size{to * m_chunk_size};
+    const uint64_t inc_size{new_size - pos.nPos};
+    if (!CheckDiskSpace(m_dir, inc_size)) {
+        out_of_space = true;
+        return 0;
+    }
+    FILE* file_handle{Open(pos)};
+    if (!file_handle) return 0;
+    LogDebug(BCLog::VALIDATION, "Pre-allocating up to position 0x%x in %s%05u.dat\n", new_size, m_prefix, pos.nFile);
+    AllocateFileRange(file_handle, pos.nPos, inc_size);
+    if (fclose(file_handle) != 0) {
+        LogError("Cannot close file %s%05u.dat after extending it with %u bytes", m_prefix, pos.nFile, new_size);
+        return 0;
+    }
+    return inc_size;
+}
+
 bool FlatFileSeq::Flush(const FlatFilePos& pos, bool finalize) const
 {
     FILE* file = Open(FlatFilePos(pos.nFile, 0)); // Avoid fseek to nPos

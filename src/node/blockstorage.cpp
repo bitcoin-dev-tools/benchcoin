@@ -1104,19 +1104,32 @@ bool BlockManager::WriteBlockUndo(const CBlockUndo& blockundo, BlockValidationSt
 
 bool BlockManager::ReadBlock(CBlock& block, const FlatFilePos& pos, const std::optional<uint256>& expected_hash) const
 {
-    block.SetNull();
-
-    // Open history file to read. Every byte of the buffer is read from the file before one is parsed (a short
-    // read fails), so the buffer is not zeroed first: a write pass over the block's size saved.
-    std::unique_ptr<std::byte[]> buffer;
-    std::span<const std::byte> block_data;
-    if (!ReadRawBlockInto(pos, std::nullopt, [&](size_t size) {
-            buffer = std::make_unique_for_overwrite<std::byte[]>(size);
-            block_data = {buffer.get(), size};
-            return std::span<std::byte>{buffer.get(), size};
-        })) {
+    const BlockBytes bytes{ReadBlockBytes(pos)};
+    if (!bytes.data) {
+        block.SetNull();
         return false;
     }
+    return ParseBlock(block, {bytes.data.get(), bytes.size}, pos, expected_hash);
+}
+
+BlockManager::BlockBytes BlockManager::ReadBlockBytes(const FlatFilePos& pos) const
+{
+    // Open history file to read. Every byte of the buffer is read from the file before one is parsed (a short
+    // read fails), so the buffer is not zeroed first: a write pass over the block's size saved.
+    BlockBytes bytes;
+    if (!ReadRawBlockInto(pos, std::nullopt, [&](size_t size) {
+            bytes.data = std::make_unique_for_overwrite<std::byte[]>(size);
+            bytes.size = size;
+            return std::span<std::byte>{bytes.data.get(), size};
+        })) {
+        return {};
+    }
+    return bytes;
+}
+
+bool BlockManager::ParseBlock(CBlock& block, std::span<const std::byte> block_data, const FlatFilePos& pos, const std::optional<uint256>& expected_hash) const
+{
+    block.SetNull();
 
     try {
         // Read block

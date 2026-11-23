@@ -533,6 +533,15 @@ public:
     /** Functions for disk access for blocks */
     bool ReadBlock(CBlock& block, const FlatFilePos& pos, const std::optional<uint256>& expected_hash) const;
     bool ReadBlock(CBlock& block, const CBlockIndex& index) const;
+    //! A block's serialization as read from its file: the I/O half of ReadBlock(), for a caller that makes
+    //! the two halves on different threads. Without data if the read failed.
+    struct BlockBytes {
+        std::unique_ptr<std::byte[]> data;
+        size_t size{0};
+    };
+    BlockBytes ReadBlockBytes(const FlatFilePos& pos) const;
+    //! The other half of ReadBlock(): parse and check the block read from `pos`.
+    bool ParseBlock(CBlock& block, std::span<const std::byte> block_data, const FlatFilePos& pos, const std::optional<uint256>& expected_hash) const;
     ReadRawBlockResult ReadRawBlock(const FlatFilePos& pos, std::optional<std::pair<size_t, size_t>> block_part = std::nullopt) const;
 private:
     //! Read a block's bytes (or the part of them) into the buffer `buffer_for` returns for their number.

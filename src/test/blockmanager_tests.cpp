@@ -407,6 +407,51 @@ struct LeftBlockFileSetup : public BasicTestingSetup {
     }
 };
 
+//! A pruned file's number is never claimed again: the finder moves a write position in the file to a number above
+//! every file's (LeaveCursorFile()) before the file is removed, so a block claimed after the prune is written to a
+//! new file, which the removal of the pruned one leaves alone.
+BOOST_FIXTURE_TEST_CASE(blockmanager_pruned_cursor_file_is_not_claimed_again, BasicTestingSetup)
+{
+    KernelNotifications notifications{Assert(m_node.shutdown_request), m_node.exit_status, *Assert(m_node.warnings)};
+    TestBlockManager blockman{*Assert(m_node.shutdown_signal), BlockManager::Options{
+        .chainparams = Params(),
+        .blocks_dir = m_args.GetBlocksDirPath(),
+        .notifications = notifications,
+        .block_tree_db_params = DBParams{
+            .path = m_args.GetDataDirNet() / "blocks" / "index",
+            .cache_bytes = 0,
+        },
+    }};
+    CMutableTransaction tx;
+    tx.vin.emplace_back();
+    tx.vout.emplace_back(1, CScript() << OP_TRUE);
+    CBlock block;
+    block.vtx.push_back(MakeTransactionRef(std::move(tx)));
+    int pruned;
+    FlatFilePos claimed;
+    {
+        LOCK(::cs_main);
+        const FlatFilePos first{blockman.WriteBlock(block, /*nHeight=*/1)};
+        BOOST_REQUIRE(!first.IsNull());
+        pruned = first.nFile;
+        const int old_max{blockman.MaxBlockfileNum()};
+        // As the finders do: the file is pruned, and the write position in it moves on.
+        blockman.PruneOneBlockFile(pruned);
+        blockman.LeaveCursorFile(pruned);
+        claimed = blockman.AllocateBlockPos(block, /*nHeight=*/2);
+        BOOST_REQUIRE(!claimed.IsNull());
+        BOOST_CHECK_GT(claimed.nFile, old_max);
+    }
+    BOOST_REQUIRE(blockman.WriteBlockAt(block, claimed));
+    blockman.UnlinkPrunedFiles({pruned});
+    BOOST_CHECK(blockman.OpenBlockFile(FlatFilePos{pruned, 0}, /*fReadOnly=*/true).IsNull());
+    DataStream expected;
+    expected << TX_WITH_WITNESS(block);
+    const auto read{blockman.ReadRawBlock(claimed)};
+    BOOST_REQUIRE(read);
+    BOOST_CHECK(std::equal(read->begin(), read->end(), expected.begin(), expected.end()));
+}
+
 //! The write position leaving a block file trims it without a sync: the file stays unsynced until the block index
 //! is written, which syncs every written file first.
 BOOST_FIXTURE_TEST_CASE(blockmanager_left_file_synced_before_the_index_records_it, LeftBlockFileSetup)

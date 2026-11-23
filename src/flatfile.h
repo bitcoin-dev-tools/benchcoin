@@ -72,6 +72,10 @@ public:
      */
     uint64_t Allocate(const FlatFilePos& pos, uint64_t add_size, bool& out_of_space) const;
 
+    /** The number of chunks that hold the first `size` bytes of a file. */
+    uint64_t Chunks(uint64_t size) const;
+    uint64_t ChunkSize() const { return m_chunk_size; }
+
     /**
      * Commit a file to disk, and optionally truncate off extra pre-allocated bytes if final.
      *

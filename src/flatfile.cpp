@@ -90,6 +90,11 @@ uint64_t FlatFileSeq::Allocate(const FlatFilePos& pos, uint64_t add_size, bool& 
     return 0;
 }
 
+uint64_t FlatFileSeq::Chunks(uint64_t size) const
+{
+    return CeilDiv(size, m_chunk_size);
+}
+
 bool FlatFileSeq::Flush(const FlatFilePos& pos, bool finalize) const
 {
     FILE* file = Open(FlatFilePos(pos.nFile, 0)); // Avoid fseek to nPos

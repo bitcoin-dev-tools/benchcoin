@@ -2499,13 +2499,13 @@ BlockValidationContext ChainstateManager::MakeBlockValidationContext(const uint2
 {
     AssertLockHeld(::cs_main);
     const DeploymentFlags deployments{EvaluateDeploymentFlags(prev, *this)};
+    // The flags ConnectBlock() will derive for the block are consensus flags.
     const script_verify_flags script_flags{GetBlockScriptFlags(block_hash, deployments, GetConsensus())};
     Assume((m_all_consensus_script_flags & script_flags) == script_flags);
     return BlockValidationContext{
         .params = GetConsensus(),
         .now = NodeClock::now(),
         .deployments = deployments,
-        .script_flags = script_flags,
         .check_scripts = true,
         .block_hash = block_hash,
         .prev_block_hash = prev ? prev->GetBlockHash() : uint256{},
@@ -2517,6 +2517,73 @@ BlockValidationContext ChainstateManager::MakeBlockValidationContext(const uint2
     };
 }
 
+
+//! Add a transaction's signature operations to the block's and check the block's limit. One copy of the rule,
+//! for a coinbase and for any other transaction.
+static bool AddBlockSigOps(const CTransaction& tx, const CCoinsViewCache& view, script_verify_flags flags,
+                           int64_t& sigops_cost, BlockValidationState& state)
+{
+    // GetTransactionSigOpCost counts 3 types of sigops:
+    // * legacy (always)
+    // * p2sh (when P2SH enabled in flags and excludes coinbase)
+    // * witness (when witness enabled in flags and excludes coinbase)
+    sigops_cost += GetTransactionSigOpCost(tx, view, flags);
+    if (sigops_cost > MAX_BLOCK_SIGOPS_COST) {
+        return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-blk-sigops", "too many sigops");
+    }
+    return true;
+}
+
+//! The consensus checks of one transaction that is not a coinbase against the coins in `view`, in their order:
+//! its inputs and fee, the block's accumulated fee, BIP68, the block's signature operations, and, if
+//! `check_scripts`, its scripts, run here or appended to `checks` for a check queue. The block's totals `fees`
+//! and `sigops_cost` grow by the transaction's. False, with `state` set, on a failure, which is the block's.
+static bool CheckBlockTransaction(const CTransaction& tx, const BlockValidationContext& ctx, const CCoinsViewCache& view,
+                                  script_verify_flags flags, int lock_time_flags, bool check_scripts, bool cache_results,
+                                  PrecomputedTransactionData& txdata, ValidationCache& validation_cache,
+                                  std::vector<CScriptCheck>* checks, std::vector<int>& prevheights,
+                                  CAmount& fees, int64_t& sigops_cost, BlockValidationState& state)
+{
+    CAmount txfee = 0;
+    TxValidationState tx_state;
+    if (!Consensus::CheckTxInputs(tx, tx_state, view, ctx.height, txfee)) {
+        // Any transaction validation failure in ConnectBlock is a block consensus failure
+        return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS,
+                             tx_state.GetRejectReason(),
+                             tx_state.GetDebugMessage() + " in transaction " + tx.GetHash().ToString());
+    }
+    fees += txfee;
+    if (!MoneyRange(fees)) {
+        return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-txns-accumulated-fee-outofrange",
+                             "accumulated fee in the block out of range");
+    }
+
+    // Check that transaction is BIP68 final
+    // BIP68 lock checks (as opposed to nLockTime checks) must
+    // be in ConnectBlock because they require the UTXO set
+    prevheights.resize(tx.vin.size());
+    for (size_t j = 0; j < tx.vin.size(); j++) {
+        prevheights[j] = view.AccessCoin(tx.vin[j].prevout).nHeight;
+    }
+    if (!EvaluateSequenceLocks(ctx.height, ctx.prev_median_time_past, CalculateSequenceLocks(tx, lock_time_flags, prevheights, ctx.median_time_past_at))) {
+        return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-txns-nonfinal",
+                             "contains a non-BIP68-final transaction " + tx.GetHash().ToString());
+    }
+
+    if (!AddBlockSigOps(tx, view, flags, sigops_cost, state)) return false;
+
+    if (check_scripts) {
+        TxValidationState script_state;
+        // If CheckInputScripts is called with a pointer to a checks vector, the resulting checks are appended to it. In that case
+        // they need to be added to control which runs them asynchronously. Otherwise, CheckInputScripts runs the checks before returning.
+        if (!CheckInputScripts(tx, script_state, view, flags, CheckInputScriptsFor::Block, cache_results, cache_results, txdata, validation_cache, checks)) {
+            // Any transaction validation failure in ConnectBlock is a block consensus failure
+            return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS,
+                                 script_state.GetRejectReason(), script_state.GetDebugMessage());
+        }
+    }
+    return true;
+}
 
 /** Apply the effects of this block on the UTXO set represented by coins.
  *  Validity checks that depend on the UTXO set are also done; ConnectBlock()
@@ -2580,7 +2647,7 @@ bool ConnectBlock(const CBlock& block, const BlockValidationContext& ctx,
     }
 
     // Get the script flags for this block
-    const script_verify_flags flags{ctx.script_flags};
+    const script_verify_flags flags{GetBlockScriptFlags(ctx.block_hash, ctx.deployments, ctx.params)};
 
     result.time_forks = SteadyClock::now();
 
@@ -2592,10 +2659,15 @@ bool ConnectBlock(const CBlock& block, const BlockValidationContext& ctx,
     // until after `control` has run the script checks (potentially
     // in multiple threads). Preallocate the vector size so a new allocation
     // doesn't invalidate pointers into the vector, and keep txsdata in scope
-    // for as long as `control`.
-    std::vector<PrecomputedTransactionData> txsdata(block.vtx.size());
+    // for as long as `control`. Without a control a transaction's checks have run when
+    // CheckBlockTransaction() returns: its data is then the loop's own, and no block-sized
+    // vector is made, zeroed and freed.
+    std::vector<PrecomputedTransactionData> txsdata;
     std::optional<CCheckQueueControl<CScriptCheck>> control;
-    if (check_queue && check_queue->HasThreads() && fScriptChecks) control.emplace(*check_queue);
+    if (check_queue && check_queue->HasThreads() && fScriptChecks) {
+        control.emplace(*check_queue);
+        txsdata.resize(block.vtx.size());
+    }
 
     std::vector<int> prevheights;
     CAmount nFees = 0;
@@ -2609,69 +2681,18 @@ bool ConnectBlock(const CBlock& block, const BlockValidationContext& ctx,
 
         nInputs += tx.vin.size();
 
-        if (!tx.IsCoinBase())
-        {
-            CAmount txfee = 0;
-            TxValidationState tx_state;
-            if (!Consensus::CheckTxInputs(tx, tx_state, view, ctx.height, txfee)) {
-                // Any transaction validation failure in ConnectBlock is a block consensus failure
-                state.Invalid(BlockValidationResult::BLOCK_CONSENSUS,
-                              tx_state.GetRejectReason(),
-                              tx_state.GetDebugMessage() + " in transaction " + tx.GetHash().ToString());
+        if (!tx.IsCoinBase()) {
+            const bool fCacheResults = just_check; /* Don't cache results if we're actually connecting blocks (still consult the cache, though) */
+            std::vector<CScriptCheck> vChecks;
+            PrecomputedTransactionData own_txdata;
+            if (!CheckBlockTransaction(tx, ctx, view, flags, nLockTimeFlags, fScriptChecks, fCacheResults, control ? txsdata[i] : own_txdata, validation_cache,
+                                       control ? &vChecks : nullptr, prevheights, nFees, nSigOpsCost, state)) {
                 break;
             }
-            nFees += txfee;
-            if (!MoneyRange(nFees)) {
-                state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-txns-accumulated-fee-outofrange",
-                              "accumulated fee in the block out of range");
-                break;
-            }
-
-            // Check that transaction is BIP68 final
-            // BIP68 lock checks (as opposed to nLockTime checks) must
-            // be in ConnectBlock because they require the UTXO set
-            prevheights.resize(tx.vin.size());
-            for (size_t j = 0; j < tx.vin.size(); j++) {
-                prevheights[j] = view.AccessCoin(tx.vin[j].prevout).nHeight;
-            }
-
-            if (!EvaluateSequenceLocks(ctx.height, ctx.prev_median_time_past, CalculateSequenceLocks(tx, nLockTimeFlags, prevheights, ctx.median_time_past_at))) {
-                state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-txns-nonfinal",
-                              "contains a non-BIP68-final transaction " + tx.GetHash().ToString());
-                break;
-            }
-        }
-
-        // GetTransactionSigOpCost counts 3 types of sigops:
-        // * legacy (always)
-        // * p2sh (when P2SH enabled in flags and excludes coinbase)
-        // * witness (when witness enabled in flags and excludes coinbase)
-        nSigOpsCost += GetTransactionSigOpCost(tx, view, flags);
-        if (nSigOpsCost > MAX_BLOCK_SIGOPS_COST) {
-            state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-blk-sigops", "too many sigops");
-            break;
-        }
-
-        if (!tx.IsCoinBase() && fScriptChecks)
-        {
-            bool fCacheResults = just_check; /* Don't cache results if we're actually connecting blocks (still consult the cache, though) */
-            bool tx_ok;
-            TxValidationState tx_state;
-            // If CheckInputScripts is called with a pointer to a checks vector, the resulting checks are appended to it. In that case
-            // they need to be added to control which runs them asynchronously. Otherwise, CheckInputScripts runs the checks before returning.
-            if (control) {
-                std::vector<CScriptCheck> vChecks;
-                tx_ok = CheckInputScripts(tx, tx_state, view, flags, CheckInputScriptsFor::Block, fCacheResults, fCacheResults, txsdata[i], validation_cache, &vChecks);
-                if (tx_ok) control->Add(std::move(vChecks));
-            } else {
-                tx_ok = CheckInputScripts(tx, tx_state, view, flags, CheckInputScriptsFor::Block, fCacheResults, fCacheResults, txsdata[i], validation_cache);
-            }
-            if (!tx_ok) {
-                // Any transaction validation failure in ConnectBlock is a block consensus failure
-                state.Invalid(BlockValidationResult::BLOCK_CONSENSUS,
-                              tx_state.GetRejectReason(), tx_state.GetDebugMessage());
-                break;
-            }
+            if (control) control->Add(std::move(vChecks));
+        } else {
+            // A coinbase has legacy sigops only.
+            if (!AddBlockSigOps(tx, view, flags, nSigOpsCost, state)) break;
         }
 
         CTxUndo undoDummy;
@@ -2682,10 +2703,10 @@ bool ConnectBlock(const CBlock& block, const BlockValidationContext& ctx,
     }
     result.time_connected = SteadyClock::now();
 
-    CAmount blockReward = nFees + GetBlockSubsidy(ctx.height, ctx.params);
-    if (block.vtx[0]->GetValueOut() > blockReward && state.IsValid()) {
+    const CAmount block_reward{nFees + GetBlockSubsidy(ctx.height, ctx.params)};
+    if (block.vtx[0]->GetValueOut() > block_reward && state.IsValid()) {
         state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-cb-amount",
-                      strprintf("coinbase pays too much (actual=%d vs limit=%d)", block.vtx[0]->GetValueOut(), blockReward));
+                      strprintf("coinbase pays too much (actual=%d vs limit=%d)", block.vtx[0]->GetValueOut(), block_reward));
     }
     if (control) {
         auto parallel_result = control->Complete();

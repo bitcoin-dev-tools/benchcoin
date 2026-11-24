@@ -606,9 +606,9 @@ struct BlockValidationContext {
     const Consensus::Params& params;
     //! Clock reading used for the future-timestamp check of the header.
     NodeClock::time_point now;
+    //! The deployments in force for this block; its script flags follow from them and its hash
+    //! (GetBlockScriptFlags()), which ConnectBlock() derives itself.
     DeploymentFlags deployments;
-    //! Script flags to enforce for this block, see GetBlockScriptFlags().
-    script_verify_flags script_flags;
     //! Whether to verify input scripts at all. False only under -assumevalid.
     bool check_scripts{true};
     //! The block's hash.

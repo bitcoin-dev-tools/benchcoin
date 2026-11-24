@@ -5245,6 +5245,10 @@ void Chainstate::DrainWindow(ConnectStep& step)
     // each one's view back. A block is in the store only by a commit, and every block of a commit is
     // published in the hold that made it, unless the node stops there.
     //
+    // The wait is made under cs_main, so the wait rule's check (AssertMayWait, sync.h) is not made here or
+    // where the tip waits for its prefetch: the work waited for takes no cs_main and says so
+    // (WAITED_FOR_UNDER_LOCK).
+    //
     // A commit is made and its blocks are published in one hold of the connector, so none runs here.
     if (step.sync) {
         WindowSync& sync{*step.sync};
@@ -7215,7 +7219,8 @@ bool ChainstateManager::AcceptBlock(const std::shared_ptr<const CBlock>& pblock,
 bool ChainstateManager::ProcessNewBlock(const std::shared_ptr<const CBlock>& block, bool force_processing, bool min_pow_checked, bool* new_block, bool activate_async)
 {
     AssertLockNotHeld(cs_main);
-    // The three steps in a row on this thread.
+    // The three steps in a row on this thread; a receive task makes the write on a block I/O thread
+    // (PeerManagerImpl::ProcessBlockInStages()).
     NewBlockInProcess in;
     bool ret{false};
     if (AcceptNewBlock(in, block, force_processing, min_pow_checked, activate_async)) {
@@ -7272,7 +7277,7 @@ bool ChainstateManager::AcceptNewBlock(NewBlockInProcess& in, const std::shared_
 
 void ChainstateManager::WriteNewBlock(NewBlockInProcess& in)
 {
-    // No lock held, and none taken, so that another thread may make the write.
+    // No lock held, and none taken: on a block I/O thread for a receive task.
     if (!in.prepared.store || !in.prepared.write) return;
     try {
         in.written = m_blockman.WriteBlockAt(*in.block, in.prepared.pos);
@@ -7351,28 +7356,27 @@ void ChainstateManager::SignalConnector(std::shared_ptr<const CBlock> block, boo
         // the node's own shutdown order (an interface client) may still hand over a block.
         if (!m_connector_life.Running()) return;
         // The thread first: if it cannot be started nothing was handed over, and nobody waits for a block
-        // no connector will take. The failure is a std::system_error, which nothing here catches: it ends
-        // the node, as running out of memory does.
+        // no connector will take. The failure is a std::system_error, which nothing here catches: on a
+        // receive task it ends the node, as running out of memory does.
         if (!m_connector_thread.joinable()) {
             m_connector_thread = std::thread(&util::TraceThread, "connect", std::function<void()>{[this] { ConnectorLoop(); }});
         }
-        ++m_connector_signals;
-        if (for_active) ++m_connector_active_signals;
+        m_connector_handoffs.Hand(for_active);
         if (block) m_connector_block = std::move(block);
     }
     m_connector_cv.notify_all();
 }
 
-uint64_t ChainstateManager::ConnectorSignals() const
+node::HandOffTicket ChainstateManager::LatestHandOff() const
 {
     LOCK(m_connector_mutex);
-    return m_connector_signals;
+    return m_connector_handoffs.Latest();
 }
 
-bool ChainstateManager::ConnectorReached(uint64_t signals) const
+bool ChainstateManager::HandOffsDone(const node::HandOffTicket& ticket) const
 {
     LOCK(m_connector_mutex);
-    return m_connector_done >= signals;
+    return m_connector_handoffs.ActiveChainAttempted(ticket);
 }
 
 void ChainstateManager::WaitForPendingBlocks(bool in_ibd)
@@ -7381,68 +7385,58 @@ void ChainstateManager::WaitForPendingBlocks(bool in_ibd)
     AssertMayWait("the connector");
     if (in_ibd) return;
     WAIT_LOCK(m_connector_mutex, lock);
-    const uint64_t signals{m_connector_active_signals};
-    m_connector_cv.wait(lock, [&]() EXCLUSIVE_LOCKS_REQUIRED(m_connector_mutex) { return m_connector_stop || m_connector_active_done >= signals; });
+    const node::HandOffTicket ticket{m_connector_handoffs.Latest()};
+    m_connector_cv.wait(lock, [&]() EXCLUSIVE_LOCKS_REQUIRED(m_connector_mutex) {
+        return m_connector_handoffs.Stopped() || m_connector_handoffs.ActiveChainAttempted(ticket);
+    });
 }
 
-bool ChainstateManager::ConnectorBusy() const
+bool ChainstateManager::AnyHandOffPending() const
 {
     LOCK(m_connector_mutex);
-    return m_connector_signals > m_connector_done;
+    return m_connector_handoffs.AnyActiveUnattempted();
 }
 
 bool ChainstateManager::YieldHistoricalActivation(bool in_ibd) const
 {
     if (in_ibd) return false;
     LOCK(m_connector_mutex);
-    return !m_connector_stop && m_connector_active_signals > m_connector_active_done;
+    return !m_connector_handoffs.Stopped() && m_connector_handoffs.AnyActiveQueued();
 }
 
 void ChainstateManager::ConnectorLoop()
 {
     while (true) {
-        uint64_t attempting;
-        uint64_t attempting_active;
         std::shared_ptr<const CBlock> block;
         {
             WAIT_LOCK(m_connector_mutex, lock);
-            m_connector_cv.wait(lock, [&]() EXCLUSIVE_LOCKS_REQUIRED(m_connector_mutex) { return m_connector_stop || m_connector_signals > m_connector_done; });
-            if (m_connector_stop) return;
-            attempting = m_connector_signals;
-            attempting_active = m_connector_active_signals;
+            m_connector_cv.wait(lock, [&]() EXCLUSIVE_LOCKS_REQUIRED(m_connector_mutex) { return m_connector_handoffs.Stopped() || m_connector_handoffs.AnyQueued(); });
+            if (m_connector_handoffs.Stopped()) return;
+            m_connector_handoffs.Take();
             block = std::exchange(m_connector_block, nullptr);
         }
         // Once the node is interrupted no new pass starts: a pass begins by waiting on the validation
         // interface queue, which the scheduler serves, and the scheduler stops at shutdown.
         if (m_interrupt) {
             LOCK(m_connector_mutex);
-            m_connector_done = attempting;
-            m_connector_active_done = attempting_active;
+            m_connector_handoffs.ActiveAttempted();
             m_connector_cv.notify_all();
             continue;
         }
-        // One activation covers every signal so far: ActivateBestChain() runs until the tip is the best known.
+        // One activation covers every block taken: ActivateBestChain() runs until the tip is the best known.
         // The block accepted last is in hand for it (at the tip, the one block to connect).
         BlockValidationState state;
         if (!ActiveChainstate().ActivateBestChain(state, block)) {
             LogError("%s: ActivateBestChain failed (%s)", __func__, state.ToString());
         }
         // The blocks handed over are connected: a transaction waiting for them goes on (WaitForPendingBlocks()).
-        WITH_LOCK(m_connector_mutex, m_connector_active_done = attempting_active);
+        WITH_LOCK(m_connector_mutex, m_connector_handoffs.ActiveAttempted());
         m_connector_cv.notify_all();
         Chainstate* bg_chain{WITH_LOCK(cs_main, return HistoricalChainstate())};
         BlockValidationState bg_state;
         if (bg_chain && !bg_chain->ActivateBestChain(bg_state, nullptr)) {
             LogError("%s: [background] ActivateBestChain failed (%s)", __func__, bg_state.ToString());
         }
-        // Where the historical activation gave way to a block handed over meanwhile, the signals of this
-        // pass are not done: that block brings the next pass at once, which comes back to the historical
-        // chainstate.
-        if (!(bg_chain && YieldHistoricalActivation(IsInitialBlockDownload()))) {
-            LOCK(m_connector_mutex);
-            m_connector_done = attempting;
-        }
-        m_connector_cv.notify_all();
     }
 }
 
@@ -7451,7 +7445,7 @@ void ChainstateManager::StopConnector()
     {
         LOCK(m_connector_mutex);
         if (!m_connector_life.DrainIfRunning()) return;
-        m_connector_stop = true;
+        m_connector_handoffs.Stop();
     }
     m_connector_cv.notify_all();
     if (m_connector_thread.joinable()) {

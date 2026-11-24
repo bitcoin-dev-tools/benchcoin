@@ -738,8 +738,9 @@ public:
     /**
      * Run `io` on one of the block I/O threads, in no order with anything else. Reading or writing a block's
      * bytes blocks the thread it is made on, so it is given threads that do nothing else: the caller's
-     * workers stay on the processor, and several of them are in flight at once: the read of a window block
-     * that is not in memory, and the removal of pruned files.
+     * workers stay on the processor, and several reads and writes are in flight at once: the read of a
+     * window block that is not in memory, the write of a block received in the initial block download, and
+     * the removal of pruned files.
      * The ordered I/O, undo writes and what must follow them, is the executor's (m_effects), not theirs.
      *
      * `io` hands its result on itself. It never takes cs_main: a thread that holds it may be waiting for

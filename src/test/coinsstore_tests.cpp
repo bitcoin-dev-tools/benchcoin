@@ -631,9 +631,8 @@ public:
     }
 };
 
-//! A flush whose helpers' pool is busy with tasks that wait (as the connect pool's receive tasks wait for
-//! cs_main, which the flush's caller may hold) writes every range itself and returns; the helper tasks that come
-//! up later find their ranges taken and return at once.
+//! A flush whose helpers' pool is busy with tasks that wait writes every range itself and returns; the helper
+//! tasks that come up later find their ranges taken and return at once.
 BOOST_AUTO_TEST_CASE(flush_with_a_busy_pool_writes_every_range_itself)
 {
     if (std::thread::hardware_concurrency() < 2) return; // one core: the flush has one worker and no helpers

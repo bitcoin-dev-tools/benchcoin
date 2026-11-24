@@ -94,18 +94,20 @@ inline const char* SetWaitedWork(const char* what) { return nullptr; }
  *
  * The check knows the listed locks only: cs_main, the mempool's lock and a
  * loaded wallet's. Queued work takes others (another subscriber of the
- * signal queue its own), and a wait under one of those is not seen. A queue
- * that shares its thread with other work (the signal queue runs on the
- * scheduler's thread in the node) also waits for that work, and a lock such
- * work takes has to be listed to be covered.
+ * signal queue its own, net processing the transaction download's and a
+ * peer's misbehaviour lock from the connector's callbacks), and a wait under
+ * one of those is not seen. A queue that shares its thread with other work
+ * (the signal queue runs on the scheduler's thread in the node) also waits
+ * for that work, and a lock such work takes has to be listed to be covered.
  *
  * Not every wait can carry the check: some are made with a listed lock held
- * on purpose (the tip's connect waits for its input prefetch while it holds
- * cs_main). Such a wait ends only if the work waited for takes no listed
- * lock, and the work says so: WAITED_FOR_UNDER_LOCK(what) at its start. With
- * DEBUG_LOCKORDER, taking a listed lock on that thread before the scope ends
- * stops the node; a try lock and a lock the thread holds already are let
- * through, since neither waits.
+ * on purpose (the connector waits for connect pool workers and for the
+ * effects executor while it holds cs_main). Such a wait
+ * ends only if the work waited for takes no listed lock, and the work says
+ * so: WAITED_FOR_UNDER_LOCK(what) at its start. With DEBUG_LOCKORDER, taking
+ * a listed lock on that thread before the scope ends stops the node; a try
+ * lock and a lock the thread holds already are let through, since neither
+ * waits.
  */
 #define NO_WAIT_LOCK(cs) RegisterNoWaitLock(#cs, &cs)
 #define AssertMayWait(waiting_for) AssertNoWaitLockHeld(waiting_for, __FILE__, __LINE__)

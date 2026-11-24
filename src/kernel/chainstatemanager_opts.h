@@ -12,8 +12,10 @@
 #include <script/sigcache.h>
 #include <txdb.h>
 #include <uint256.h>
+#include <util/byte_units.h>
 #include <util/time.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <functional>
 #include <optional>
@@ -22,9 +24,21 @@ class CChainParams;
 class ValidationSignals;
 
 inline constexpr auto DEFAULT_MAX_TIP_AGE{24h};
+//! The connect pool's threads when nothing derives them from the machine. bitcoind does: see
+//! node::DefaultPrevoutFetchThreads().
 inline constexpr int32_t DEFAULT_PREVOUTFETCH_THREADS{8};
+inline constexpr size_t DEFAULT_BLOCK_CACHE_BYTES{128_MiB};
 
 namespace kernel {
+/** The block cache budget for a coins cache of `coins_cache_bytes`, where none is given (-blockcache, or
+ *  btck_chainstate_manager_options_set_block_cache_bytes()): DEFAULT_BLOCK_CACHE_BYTES, but no more than the coins
+ *  cache itself and at least 32 MiB. The blocks it holds are on disk, and a block not found in it is read back by
+ *  the worker that validates it, so beside a small coins cache a large block cache holds memory the node was told
+ *  not to use and gains nothing for it. */
+inline size_t DefaultBlockCacheBytes(uint64_t coins_cache_bytes)
+{
+    return static_cast<size_t>(std::clamp<uint64_t>(coins_cache_bytes, 32_MiB, DEFAULT_BLOCK_CACHE_BYTES));
+}
 
 /**
  * An options struct for `ChainstateManager`, more ergonomically referred to as
@@ -47,8 +61,20 @@ struct ChainstateManagerOpts {
     ValidationSignals* signals{nullptr};
     //! Number of script check worker threads. Zero means no parallel verification.
     int worker_threads_num{0};
-    //! Number of worker threads used for prefetching block input prevouts. Zero means no parallel fetching.
+    //! Number of worker threads of the connect pool: they validate the blocks of the connect window during
+    //! initial block download and prefetch block input prevouts at the tip. Zero means no prefetch, and the
+    //! blocks of a connect window that was asked for are validated one after another.
     int32_t prevoutfetch_threads_num{DEFAULT_PREVOUTFETCH_THREADS};
+    //! Blocks validated at the same time during initial block download (-connectwindow). Zero means
+    //! twice as many as the connect pool has workers; one disables the window.
+    int connect_window{0};
+    //! Budget of the connect-side block cache (node::BlockCache), on top of the database and coins caches.
+    //! Zero disables it. bitcoind and the kernel library set it from their options, or else from their coins
+    //! cache (DefaultBlockCacheBytes()).
+    size_t block_cache_bytes{DEFAULT_BLOCK_CACHE_BYTES};
+    //! Test only (-test=write_out_every_block): start a coins write-out run after every connected block,
+    //! two blocks behind the tip, so that the database carries its head marker for the whole run.
+    bool test_write_out_every_block{false};
     size_t script_execution_cache_bytes{DEFAULT_SCRIPT_EXECUTION_CACHE_BYTES};
     size_t signature_cache_bytes{DEFAULT_SIGNATURE_CACHE_BYTES};
 };

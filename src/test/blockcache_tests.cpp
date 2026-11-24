@@ -4,7 +4,7 @@
 
 #include <core_memusage.h>
 #include <node/blockcache.h>
-#include <node/chainstatemanager_args.h>
+#include <kernel/chainstatemanager_opts.h>
 #include <primitives/block.h>
 #include <primitives/transaction.h>
 #include <script/script.h>
@@ -148,6 +148,17 @@ BOOST_AUTO_TEST_CASE(take_reports_measured_bytes)
     bytes = 7;
     BOOST_CHECK(!cache.Take(6, MakeBlock(6)->GetHash(), &bytes));
     BOOST_CHECK_EQUAL(bytes, 7U);
+}
+
+BOOST_AUTO_TEST_CASE(default_size)
+{
+    // The size of the coins cache, between 32 MiB and the default.
+    BOOST_CHECK_EQUAL(kernel::DefaultBlockCacheBytes(0), 32_MiB);
+    BOOST_CHECK_EQUAL(kernel::DefaultBlockCacheBytes(4_MiB), 32_MiB);
+    BOOST_CHECK_EQUAL(kernel::DefaultBlockCacheBytes(32_MiB), 32_MiB);
+    BOOST_CHECK_EQUAL(kernel::DefaultBlockCacheBytes(100_MiB), 100_MiB);
+    BOOST_CHECK_EQUAL(kernel::DefaultBlockCacheBytes(DEFAULT_BLOCK_CACHE_BYTES), DEFAULT_BLOCK_CACHE_BYTES);
+    BOOST_CHECK_EQUAL(kernel::DefaultBlockCacheBytes(1024_MiB), DEFAULT_BLOCK_CACHE_BYTES);
 }
 
 //! With the budget used up by blocks the tip has not passed, a block above every one kept is neither measured

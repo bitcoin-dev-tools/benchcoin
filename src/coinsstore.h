@@ -197,8 +197,15 @@ public:
         //! For a create: the coin's script, where `coin` holds all but it.
         const CScript* script{nullptr};
     };
-    //! The shard of an outpoint: what a commit groups a block's changes by.
-    size_t ShardIndexOf(const COutPoint& outpoint) const { return ShardIndex(outpoint); }
+    /**
+     * The shard of an outpoint, by the leading bytes of its txid as the database's key begins with them:
+     * the shards are consecutive ranges of the database's keys in the order of their index
+     * (SetBaseWrites()), and a commit groups a block's changes by it. A transaction's outputs share a shard.
+     * Whoever makes a transaction can pick its shard by grinding, which buys contention on that shard and a
+     * larger share of a forced flush's scratch memory (WipeShard() stages a whole shard's changes), and
+     * nothing else: an entry's place in the shard's map is by the salted hash.
+     */
+    size_t ShardIndex(const COutPoint& outpoint) const { return (uint64_t{ReadBE32(outpoint.hash.ToUint256().data())} * m_shards.size()) >> 32; }
     //! What ApplyConfirmed() tells of a call, for the caller that takes its changes back.
     struct ConfirmedReport {
         //! The changes that were not made, by the address of their outpoint.
@@ -845,15 +852,6 @@ private:
     //! may not overwrite never comes here: ApplyConfirmed() reports it as a conflict instead.
     void CreateLocked(Shard& shard, const COutPoint& outpoint, uint64_t hash, Coin&& coin, const CScript* script, bool possible_overwrite, int height) EXCLUSIVE_LOCKS_REQUIRED(shard.mutex);
     void SpendEntryAt(Shard& shard, Map::iterator it, int height) EXCLUSIVE_LOCKS_REQUIRED(shard.mutex);
-    /**
-     * The shard of an outpoint, by the leading bytes of its txid as the database's key begins with them:
-     * the shards are consecutive ranges of the database's keys in the order of their index
-     * (SetBaseWrites()). A transaction's outputs share a shard. Whoever makes a transaction can pick its
-     * shard by grinding, which buys contention on that shard and a larger share of a forced flush's scratch
-     * memory (WipeShard() stages a whole shard's changes), and nothing else: an entry's place in the
-     * shard's map is by the salted hash.
-     */
-    size_t ShardIndex(const COutPoint& outpoint) const { return (uint64_t{ReadBE32(outpoint.hash.ToUint256().data())} * m_shards.size()) >> 32; }
 
     /**
      * The change height an unspent coin arriving one by one is tagged with (AddCoin(), BatchWrite()). A coin

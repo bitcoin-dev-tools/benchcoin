@@ -44,6 +44,7 @@
 #include <validationinterface.h>
 
 #include <atomic>
+#include <algorithm>
 #include <cstddef>
 #include <cstring>
 #include <exception>
@@ -463,6 +464,8 @@ struct ChainstateManagerOptions {
     std::shared_ptr<const Context> m_context;
     node::ChainstateLoadOptions m_chainstate_load_options GUARDED_BY(m_mutex);
     uint64_t m_db_cache_bytes GUARDED_BY(m_mutex){DEFAULT_KERNEL_CACHE};
+    //! Unset: derived from the coins cache when the manager is made (kernel::DefaultBlockCacheBytes()).
+    std::optional<size_t> m_block_cache_bytes GUARDED_BY(m_mutex);
 
     ChainstateManagerOptions(const std::shared_ptr<const Context>& context, const fs::path& data_dir, const fs::path& blocks_dir)
         : m_chainman_options{ChainstateManager::Options{
@@ -484,11 +487,13 @@ struct ChainstateManagerOptions {
 };
 
 struct ChainMan {
-    std::unique_ptr<ChainstateManager> m_chainman;
+    //! Declared before the manager, which is destroyed first: its destructor finishes the queued effects,
+    //! whose completions call the context's signals and notifications.
     std::shared_ptr<const Context> m_context;
+    std::unique_ptr<ChainstateManager> m_chainman;
 
     ChainMan(std::unique_ptr<ChainstateManager> chainman, std::shared_ptr<const Context> context)
-        : m_chainman(std::move(chainman)), m_context(std::move(context)) {}
+        : m_context(std::move(context)), m_chainman(std::move(chainman)) {}
 };
 
 struct UserDataDeleter {
@@ -1260,6 +1265,13 @@ int btck_chainstate_manager_options_set_database_cache_bytes(btck_ChainstateMana
     return 0;
 }
 
+void btck_chainstate_manager_options_set_block_cache_bytes(btck_ChainstateManagerOptions* chainman_opts, uint64_t block_cache_bytes)
+{
+    auto& opts{btck_ChainstateManagerOptions::get(chainman_opts)};
+    LOCK(opts.m_mutex);
+    opts.m_block_cache_bytes = static_cast<size_t>(std::min<uint64_t>(block_cache_bytes, std::numeric_limits<size_t>::max()));
+}
+
 void btck_chainstate_manager_options_destroy(btck_ChainstateManagerOptions* options)
 {
     delete options;
@@ -1303,7 +1315,9 @@ btck_ChainstateManager* btck_chainstate_manager_create(
     std::unique_ptr<ChainstateManager> chainman;
     try {
         LOCK(opts.m_mutex);
-        chainman = std::make_unique<ChainstateManager>(*opts.m_context->m_interrupt, opts.m_chainman_options, opts.m_blockman_options);
+        auto chainman_options{opts.m_chainman_options};
+        chainman_options.block_cache_bytes = opts.m_block_cache_bytes.value_or(kernel::DefaultBlockCacheBytes(kernel::CacheSizes{opts.m_db_cache_bytes}.coins));
+        chainman = std::make_unique<ChainstateManager>(*opts.m_context->m_interrupt, chainman_options, opts.m_blockman_options);
     } catch (const std::exception& e) {
         LogError("Failed to create chainstate manager: %s", e.what());
         return nullptr;
@@ -1327,6 +1341,9 @@ btck_ChainstateManager* btck_chainstate_manager_create(
             LogError("%s", util::ErrorString(result).original);
             return nullptr;
         }
+        // As after btck_chainstate_manager_process_block: the callbacks of the blocks connected at start have
+        // run when the call returns.
+        chainman->m_blockman.SettleUndoWrites();
     } catch (const std::exception& e) {
         LogError("Failed to load chainstate: %s", e.what());
         return nullptr;
@@ -1379,12 +1396,10 @@ int btck_chainstate_manager_import_blocks(btck_ChainstateManager* chainman, cons
         }
         auto& chainman_ref{*btck_ChainstateManager::get(chainman).m_chainman};
         node::ImportBlocks(chainman_ref, import_files);
-        {
-            LOCK(::cs_main);
-            chainman_ref.UpdateIBDStatus();
-            chainman_ref.PublishTip();
-        }
-    } catch (const std::exception& e) {
+        // As after btck_chainstate_manager_process_block: the undo data of the blocks connected is
+        // written, and their signals have left the queue, when the call returns.
+        node::FinishImport(chainman_ref);
+    } catch (const std::runtime_error& e) {
         LogError("Failed to import blocks: %s", e.what());
         return -1;
     }
@@ -1608,7 +1623,13 @@ int btck_chainstate_manager_process_block(
     int* _new_block)
 {
     bool new_block;
-    auto result = btck_ChainstateManager::get(chainman).m_chainman->ProcessNewBlock(btck_Block::get(block), /*force_processing=*/true, /*min_pow_checked=*/true, /*new_block=*/&new_block);
+    auto& manager{*btck_ChainstateManager::get(chainman).m_chainman};
+    auto result = manager.ProcessNewBlock(btck_Block::get(block), /*force_processing=*/true, /*min_pow_checked=*/true, /*new_block=*/&new_block);
+    // The notifications of what the call connected leave with the effects executor's completions (undo data is
+    // written there): settled here, so that the callbacks have run when the call returns, as they always had.
+    manager.m_blockman.SettleUndoWrites();
+    // A block's undo data that could not be written is a failure of the call, as it was when the connect wrote it.
+    if (manager.m_blockman.m_undo_write_failed) result = false;
     if (_new_block) {
         *_new_block = new_block ? 1 : 0;
     }

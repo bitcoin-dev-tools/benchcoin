@@ -265,6 +265,7 @@ UniValue blockToJSON(BlockManager& blockman, const CBlock& block, const CBlockIn
         case TxVerbosity::SHOW_DETAILS:
         case TxVerbosity::SHOW_DETAILS_AND_PREVOUT:
             CBlockUndo blockUndo;
+            blockman.SettleUndoWriteOf(blockindex); // a just-connected block's undo may be in flight
             const bool is_not_pruned{WITH_LOCK(::cs_main, return !blockman.IsBlockPruned(blockindex))};
             bool have_undo{is_not_pruned && WITH_LOCK(::cs_main, return blockindex.nStatus & BLOCK_HAVE_UNDO)};
             if (have_undo && !blockman.ReadBlockUndo(blockUndo, blockindex)) {
@@ -758,6 +759,7 @@ static CBlockUndo GetUndoChecked(BlockManager& blockman, const CBlockIndex& bloc
     // The Genesis block does not have undo data
     if (blockindex.nHeight == 0) return blockUndo;
 
+    blockman.SettleUndoWriteOf(blockindex); // a just-connected block's undo may be in flight
     {
         LOCK(cs_main);
         CheckBlockDataAvailability(blockman, blockindex, /*check_for_undo=*/true);
@@ -928,8 +930,9 @@ std::optional<int> GetPruneHeight(const BlockManager& blockman, const CChain& ch
     // If there are no blocks after the genesis block, or no blocks at all, nothing is pruned.
     if (!first_block || !chain_tip) return std::nullopt;
 
-    // If the chain tip is pruned, everything is pruned.
-    if ((chain_tip->nStatus & BLOCK_HAVE_MASK) != BLOCK_HAVE_MASK) return chain_tip->nHeight;
+    // If the chain tip is pruned, everything is pruned. A just-connected block's undo in flight counts as there
+    // (BlockManager::HasStatus()).
+    if (!blockman.HasStatus(*chain_tip, BLOCK_HAVE_MASK)) return chain_tip->nHeight;
 
     const auto& first_unpruned{blockman.GetFirstBlock(*chain_tip, /*status_mask=*/BLOCK_HAVE_MASK, first_block)};
     if (&first_unpruned == first_block) {
@@ -3198,6 +3201,11 @@ static RPCMethod dumptxoutset()
         if (node.chainman->m_blockman.IsPruneMode()) {
             LOCK(node.chainman->GetMutex());
             const CBlockIndex* current_tip{node.chainman->ActiveChain().Tip()};
+            // After an undo write that failed the tip has no undo data, and the node is stopping
+            // (BlockManager::HasStatus()).
+            if (!node.chainman->m_blockman.HasStatus(*current_tip, BLOCK_HAVE_MASK)) {
+                throw JSONRPCError(RPC_MISC_ERROR, "The tip's undo data is missing.");
+            }
             const CBlockIndex& first_block{node.chainman->m_blockman.GetFirstBlock(*current_tip, /*status_mask=*/BLOCK_HAVE_MASK)};
             if (first_block.nHeight > target_index->nHeight) {
                 throw JSONRPCError(RPC_MISC_ERROR, "Could not roll back to requested height since necessary block data is already pruned.");

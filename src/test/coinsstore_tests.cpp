@@ -5,6 +5,8 @@
 #include <coins.h>
 #include <coinsstore.h>
 #include <dbwrapper.h>
+#include <kernel/coinstats.h>
+#include <node/blockstorage.h>
 #include <primitives/block.h>
 #include <script/script.h>
 #include <test/util/coinsstore.h>
@@ -14,6 +16,7 @@
 #include <undo.h>
 #include <util/threadpool.h>
 #include <util/byte_units.h>
+#include <validation.h>
 
 #include <boost/test/unit_test.hpp>
 
@@ -2255,6 +2258,39 @@ BOOST_AUTO_TEST_CASE(block_apply_view_takes_the_missed_coins_of_several_inputs_f
     for (const COutPoint& outpoint : outpoints) BOOST_CHECK(!store.HaveCoin(outpoint));
     store.Sync();
     for (const COutPoint& outpoint : outpoints) BOOST_CHECK(!db.HaveCoin(outpoint));
+}
+
+//! A write-out run that is not final leaves the database without a best block until a later run closes its marker:
+//! there is then no block whose UTXO set the database holds, and the statistics are not given, for any hash type.
+//! Before the run opens the marker and after the final one closes it, they are.
+BOOST_FIXTURE_TEST_CASE(utxo_stats_refused_while_a_run_marker_is_open, TestChain100Setup)
+{
+    CCoinsViewDB db{MemoryDb("stats"), {}};
+    node::BlockManager& blockman{m_node.chainman->m_blockman};
+    const auto [tip_hash, tip_height]{WITH_LOCK(::cs_main, return std::pair(m_node.chainman->ActiveTip()->GetBlockHash(), m_node.chainman->ActiveHeight()))};
+    const auto write{[&](uint8_t txid, bool final) {
+        std::vector<CoinWrite> writes;
+        writes.push_back({COutPoint{Txid::FromUint256(uint256{txid}), 0}, Coin{CTxOut{CAmount{1000}, CScript{} << OP_TRUE}, 1, /*fCoinBaseIn=*/false}});
+        db.WriteRun(writes, tip_hash, tip_hash, final);
+    }};
+    const auto stats{[&](kernel::CoinStatsHashType type) { return kernel::ComputeUTXOStats(type, db, blockman); }};
+    write(10, /*final=*/true);
+    const auto before{stats(kernel::CoinStatsHashType::HASH_SERIALIZED)};
+    BOOST_REQUIRE(before);
+    BOOST_CHECK_EQUAL(before->nHeight, tip_height);
+    BOOST_CHECK_EQUAL(before->coins_count, 1U);
+
+    write(11, /*final=*/false);
+    BOOST_CHECK(db.GetBestBlock().IsNull());
+    for (const auto type : {kernel::CoinStatsHashType::HASH_SERIALIZED, kernel::CoinStatsHashType::MUHASH, kernel::CoinStatsHashType::NONE}) {
+        BOOST_CHECK(!stats(type));
+    }
+
+    db.WriteRun({}, tip_hash, tip_hash, /*final=*/true);
+    const auto after{stats(kernel::CoinStatsHashType::HASH_SERIALIZED)};
+    BOOST_REQUIRE(after);
+    BOOST_CHECK_EQUAL(after->nHeight, tip_height);
+    BOOST_CHECK_EQUAL(after->coins_count, 2U);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

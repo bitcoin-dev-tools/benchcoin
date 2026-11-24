@@ -9,6 +9,7 @@
 #include <coins_entry_machine.h>
 #include <crypto/common.h>
 #include <kernel/caches.h>
+#include <undo.h>
 #include <primitives/transaction.h>
 #include <sync.h>
 #include <uint256.h>
@@ -219,6 +220,9 @@ public:
     size_t ShardCount() const { return m_shards.size(); }
     //! The database's coin under `outpoint`, whatever the tier holds.
     std::optional<Coin> BaseCoin(const COutPoint& outpoint) const { return base->GetCoin(outpoint); }
+    //! The coins among `outpoints` that the tier holds, read with one hold of each shard's lock; what is
+    //! missing or spent is left out (PeekCoin() one by one is the fallback).
+    std::vector<std::pair<COutPoint, Coin>> Fetch(std::vector<COutPoint>&& outpoints) const;
 
     //! The lowest height bound whose write-out frees at least `bytes` of dirty entries, or the tip height if
     //! all dirty entries together do not.
@@ -884,6 +888,54 @@ private:
     bool m_base_concurrent{false};
     //! See SetFlushHelpers().
     std::shared_ptr<ThreadPool> m_flush_helpers;
+};
+
+/**
+ * The view a block is connected into: a CoinsViewOverlay (prefetch and the block's own changes for the
+ * core's lookups and references) whose changes are committed to the store once the block is valid, as
+ * the changes of its height (CoinsStore::ApplyConfirmed()). A block that fails leaves nothing in the store.
+ */
+class BlockApplyView final : public CoinsViewOverlay
+{
+public:
+    BlockApplyView(CoinsStore& store, util::NotNullSharedPtr<ThreadPool> thread_pool, bool deterministic = false);
+    ~BlockApplyView() override;
+
+    //! The view's block is at this height: the view is staged with a block. Cleared by the view's reset.
+    void SetHeight(int height) { m_height = height; }
+    bool InUse() const { return m_height >= 0; }
+    //! Whether a coin the view reads from the database stays in the store, clean (CoinsStore::GetCoin()),
+    //! so that the commit of its spend does not read the database a second time. For a window block. A block
+    //! at the tip reads without it: one that fails leaves none of its inputs in the cache.
+    //! Set before the block's first lookup; the view's reset clears it.
+    void SetKeepBaseReads(bool keep) { m_keep_base_reads = keep; }
+
+    //! Bring the block's inputs that the tier holds into the view, with one hold of each shard's lock.
+    void Prefetch(const CBlock& block);
+    //! As the cache's, and the spend left in the view keeps the height and the coinbase flag of its coin.
+    bool SpendCoin(const COutPoint& outpoint, Coin* moveto = nullptr) override;
+
+    //! Give the view back: the block's changes are dropped.
+    void Release() { Reset(); }
+    CoinsStore& Store() const { return m_store; }
+    //! A block connected alone, valid: its changes go into the store as confirmed changes
+    //! (CoinsStore::ApplyConfirmed()), a spend of a coin the store does not hold with the coin `undo` has for it.
+    //! Requires that nothing changed the store since the block's view read it, so that a coin the store
+    //! does not hold now is one it did not hold then.
+    void CommitAlone(const CBlock& block, const CBlockUndo& undo);
+    //! A commit made the view's changes in the store: the view is emptied.
+    void ChangesCommitted();
+    //! The block is committed and published: the store's best block moves to it. The view is reset.
+    void ConfirmCommitted(int height);
+
+protected:
+    std::optional<Coin> ReadBase(const COutPoint& outpoint) const override;
+    void Reset() noexcept override;
+
+private:
+    CoinsStore& m_store;
+    bool m_keep_base_reads{false};
+    int m_height{-1};
 };
 
 #endif // BITCOIN_COINSSTORE_H

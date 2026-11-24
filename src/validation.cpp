@@ -2865,17 +2865,12 @@ bool ConnectBlock(const CBlock& block, const BlockValidationContext& ctx,
     }
 
     // Enforce BIP68 (sequence locks)
-    int nLockTimeFlags = 0;
-    if (ctx.deployments.csv) {
-        nLockTimeFlags |= LOCKTIME_VERIFY_SEQUENCE;
-    }
+    const int nLockTimeFlags{ctx.deployments.csv ? static_cast<int>(LOCKTIME_VERIFY_SEQUENCE) : 0};
 
     // Get the script flags for this block
     const script_verify_flags flags{GetBlockScriptFlags(ctx.block_hash, ctx.deployments, ctx.params)};
 
     result.time_forks = SteadyClock::now();
-
-    const bool fScriptChecks{ctx.check_scripts};
 
     CBlockUndo& blockundo{result.undo};
 
@@ -2888,7 +2883,7 @@ bool ConnectBlock(const CBlock& block, const BlockValidationContext& ctx,
     // vector is made, zeroed and freed.
     std::vector<PrecomputedTransactionData> txsdata;
     std::optional<CCheckQueueControl<CScriptCheck>> control;
-    if (check_queue && check_queue->HasThreads() && fScriptChecks) {
+    if (check_queue && check_queue->HasThreads() && ctx.check_scripts) {
         control.emplace(*check_queue);
         txsdata.resize(block.vtx.size());
     }
@@ -2898,48 +2893,69 @@ bool ConnectBlock(const CBlock& block, const BlockValidationContext& ctx,
     int& nInputs{result.num_inputs};
     int64_t& nSigOpsCost{result.sigops_cost};
     blockundo.vtxundo.reserve(block.vtx.size() - 1);
+    // A window block, with the inputs resolved by position: the outpoints the block spent so far, in a table
+    // without a node each, which a later spend of one finds.
+    const bool window{static_cast<bool>(ctx.window_tx)};
+    size_t next_input{0};
+    static thread_local std::vector<const COutPoint*> spent_table;
+    size_t spent_mask{0};
+    const auto slot_of{[](const COutPoint& o) { return ReadLE64(o.hash.ToUint256().data() + 16) ^ (uint64_t{o.n} * 0x9E3779B97F4A7C15ULL); }};
+    if (window) {
+        spent_mask = std::bit_ceil(std::max<size_t>(16, 2 * ctx.input_coins.size())) - 1;
+        spent_table.assign(spent_mask + 1, nullptr);
+    }
     for (unsigned int i = 0; i < block.vtx.size(); i++)
     {
         if (!state.IsValid()) break;
         if (ctx.help_point && (i & 63) == 63) ctx.help_point();
-        if (ctx.implicit_creates) ctx.implicit_creates(i);
         const CTransaction &tx = *(block.vtx[i]);
 
         nInputs += tx.vin.size();
 
-        if (!tx.IsCoinBase()) {
-            const bool fCacheResults = just_check; /* Don't cache results if we're actually connecting blocks (still consult the cache, though) */
-            std::vector<CScriptCheck> vChecks;
-            PrecomputedTransactionData own_txdata;
-            if (!CheckBlockTransaction(tx, ctx, view, flags, nLockTimeFlags, fScriptChecks, fCacheResults, control ? txsdata[i] : own_txdata, validation_cache,
-                                       control ? &vChecks : nullptr, prevheights, nFees, nSigOpsCost, state)) {
+        if (i == 0) {
+            // The coinbase (CheckBlock() saw to it), which has legacy sigops only. A window block's outputs are
+            // the window's (WindowOutputs), and never the view's.
+            if (!AddBlockSigOps(tx, view, flags, nSigOpsCost, state)) break;
+            CTxUndo undo_dummy;
+            if (!window) UpdateCoins(tx, view, undo_dummy, ctx.height);
+            continue;
+        }
+        std::span<const Coin> coins{};
+        if (window) {
+            coins = ctx.input_coins.subspan(next_input, tx.vin.size());
+            next_input += tx.vin.size();
+            // Each input is looked for and entered in one walk: CheckBlock() ruled out an outpoint spent twice
+            // in one transaction, and a block that fails here or below is left.
+            bool again{false};
+            for (const CTxIn& in : tx.vin) {
+                size_t at{slot_of(in.prevout) & spent_mask};
+                for (; spent_table[at]; at = (at + 1) & spent_mask) again |= *spent_table[at] == in.prevout;
+                spent_table[at] = &in.prevout;
+            }
+            if (again) {
+                state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-txns-inputs-missingorspent",
+                              "CheckTxInputs: inputs missing/spent in transaction " + tx.GetHash().ToString());
                 break;
             }
-            if (control) control->Add(std::move(vChecks));
-        } else {
-            // A coinbase has legacy sigops only.
-            if (!AddBlockSigOps(tx, view, flags, nSigOpsCost, state)) break;
+            ctx.window_tx(i, &tx, coins);
         }
-
-        CTxUndo undoDummy;
-        if (i > 0) {
-            blockundo.vtxundo.emplace_back();
+        std::vector<CScriptCheck> vChecks;
+        PrecomputedTransactionData own_txdata;
+        // Results are not cached when the block is connected (the cache is still consulted).
+        if (!CheckBlockTransaction(tx, ctx, view, flags, nLockTimeFlags, ctx.check_scripts, /*cache_results=*/just_check, control ? txsdata[i] : own_txdata,
+                                   validation_cache, control ? &vChecks : nullptr, prevheights, nFees, nSigOpsCost, state)) {
+            break;
         }
-        if (ctx.implicit_creates) {
-            // The inputs are spent; the outputs are the window's (WindowOutputs), and never the view's.
-            if (i > 0) {
-                CTxUndo& txundo{blockundo.vtxundo.back()};
-                txundo.vprevout.reserve(tx.vin.size());
-                for (const CTxIn& txin : tx.vin) {
-                    txundo.vprevout.emplace_back();
-                    const bool is_spent{view.SpendCoin(txin.prevout, &txundo.vprevout.back())};
-                    assert(is_spent);
-                }
-            }
+        if (control) control->Add(std::move(vChecks));
+        CTxUndo& txundo{blockundo.vtxundo.emplace_back()};
+        if (window) {
+            // The inputs are spent; the outputs are the window's.
+            txundo.vprevout.assign(coins.begin(), coins.end());
         } else {
-            UpdateCoins(tx, view, i == 0 ? undoDummy : blockundo.vtxundo.back(), ctx.height);
+            UpdateCoins(tx, view, txundo, ctx.height);
         }
     }
+    if (window) ctx.window_tx(static_cast<uint32_t>(block.vtx.size() - 1), nullptr, {});
     result.time_connected = SteadyClock::now();
 
     const CAmount block_reward{nFees + GetBlockSubsidy(ctx.height, ctx.params)};
@@ -3851,20 +3867,15 @@ public:
         }
         return true;
     }
-    void FindCoins(std::vector<COutPoint>& outpoints, std::span<const uint32_t> positions, int viewer_height,
-                   const std::function<void(const COutPoint&, Coin&&)>& found) const override
+    void FindInputs(std::span<const COutPoint> outpoints, std::span<const uint32_t> positions, int viewer_height,
+                    std::vector<uint8_t>& decided, std::vector<Coin>& coins) const override
     {
         const int published{m_published.load(std::memory_order_acquire)};
         const size_t count{outpoints.size()};
-        // The lists are the thread's, kept from block to block. An input's tag is never zero (Tag()); it is
-        // set to zero once the input is not the store's to read.
         static thread_local std::vector<uint64_t> tags;
         tags.resize(count);
         for (size_t i{0}; i < count; ++i) tags[i] = Tag(outpoints[i].hash);
         static thread_local std::vector<uint32_t> order;
-        // The coins found, handed on once no shard's mutex is held.
-        static thread_local std::vector<std::pair<uint32_t, Coin>> coins;
-        coins.clear();
         InShards(m_shards, tags, order, [&](const Shard& shard, std::span<const uint32_t> items) EXCLUSIVE_LOCKS_REQUIRED(shard.mutex) {
             if (shard.count == 0) return;
             for (size_t k{0}; k < items.size(); ++k) {
@@ -3872,24 +3883,13 @@ public:
                 const uint32_t i{items[k]};
                 const Found hit{Probe(shard, tags[i], outpoints[i].hash, published, viewer_height, positions[i])};
                 if (hit.maker == nullptr) continue;
-                // As FindCoin(): the window decides the input. One the transaction does not make is no
-                // coin: the view finds it missing when it reads it. One an earlier transaction of the
-                // viewer's block makes is FindCoin()'s to answer.
-                tags[i] = 0;
+                decided[i] = 1;
                 const uint32_t out{outpoints[i].n};
-                if (hit.height != viewer_height && out < hit.maker->vout.size() && !hit.maker->vout[out].scriptPubKey.IsUnspendable()) {
-                    coins.emplace_back(i, Coin{hit.maker->vout[out], hit.height, hit.maker->IsCoinBase()});
+                if (out < hit.maker->vout.size() && !hit.maker->vout[out].scriptPubKey.IsUnspendable()) {
+                    coins[i] = Coin{hit.maker->vout[out], hit.height, hit.maker->IsCoinBase()};
                 }
             }
         });
-        for (auto& [i, coin] : coins) found(outpoints[i], std::move(coin));
-        coins.clear();
-        // What is left is the store's to read: the list is closed up in place.
-        size_t left{0};
-        for (size_t i{0}; i < count; ++i) {
-            if (tags[i] != 0) outpoints[left++] = outpoints[i];
-        }
-        outpoints.resize(left);
     }
     void NamedIds(std::span<const CTransactionRef> txs, int viewer_height, std::vector<uint8_t>& named) const override
     {
@@ -4811,12 +4811,16 @@ void Chainstate::RunWindowValidation(StagedConnect& s, WindowSync& sync) noexcep
             if (sync.open_jobs.load(std::memory_order_relaxed) == 0) return;
             RunCommitWork(sync);
         };
-        in.ctx.implicit_creates = [view = s.view](uint32_t position) { view->SetOwnLimit(position); };
         const auto failure{util::RunWorkerTask(CONNECT_TASK, [&] {
             s.view->SetOverlay(&sync.outputs, s.pindex->nHeight);
-            s.view->Prefetch(*in.block);
+            static thread_local std::vector<Coin> input_coins;
+            s.view->ResolveInputs(*in.block, input_coins);
+            in.ctx.input_coins = input_coins;
+            in.ctx.window_tx = [view = s.view](uint32_t position, const CTransaction* tx, std::span<const Coin> coins) { view->SetTransaction(position, tx, coins); };
             ok = ::ConnectBlock(*in.block, in.ctx, *s.view, /*check_queue=*/nullptr,
                                 m_chainman.m_validation_cache, /*just_check=*/false, state, result);
+            // The coins are the undo data's now; the thread keeps the list's room, not the last block's coins.
+            input_coins.clear();
             if (ok) {
                 PrepareCommit(s, *in.block, result.undo);
                 // The undo data, here so that the connector thread, which every block passes through, does not:

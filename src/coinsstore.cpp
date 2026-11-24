@@ -682,31 +682,6 @@ void CoinsStore::VisitShards(const std::vector<uint32_t>& shard_of, Work work) c
     }
 }
 
-std::vector<std::pair<COutPoint, Coin>> CoinsStore::Fetch(std::vector<COutPoint>&& outpoints) const
-{
-    std::vector<uint32_t> shard_of;
-    std::vector<uint64_t> hashes;
-    shard_of.reserve(outpoints.size());
-    hashes.reserve(outpoints.size());
-    for (const COutPoint& outpoint : outpoints) {
-        shard_of.push_back(ShardIndex(outpoint));
-        hashes.push_back(KeyHash(outpoint));
-    }
-    std::vector<std::pair<COutPoint, Coin>> found;
-    found.reserve(outpoints.size());
-    VisitShards(shard_of, [&](Shard& shard, std::span<const uint32_t> items) EXCLUSIVE_LOCKS_REQUIRED(shard.mutex) {
-        shard.map.PrefetchAll(hashes, items);
-        for (const uint32_t i : items) {
-            const COutPoint& outpoint{outpoints[i]};
-            const auto it{shard.map.find(outpoint, hashes[i])};
-            if (it == shard.map.end() || it->second.coin.IsSpent()) continue;
-            Reference(it->second);
-            found.emplace_back(outpoint, it->second.coin);
-        }
-    });
-    return found;
-}
-
 void CoinsStore::MayHave(std::span<const COutPoint> outpoints, std::vector<uint8_t>& may) const
 {
     may.assign(outpoints.size(), 0);
@@ -1349,32 +1324,58 @@ BlockApplyView::~BlockApplyView()
     StopFetching(); // the prefetch workers read the view
 }
 
-void BlockApplyView::Prefetch(const CBlock& block)
+void CoinsStore::FetchInto(std::span<const COutPoint> outpoints, std::span<const uint32_t> which, std::vector<Coin>& coins, std::vector<uint8_t>& found) const
 {
-    size_t inputs{0};
-    for (size_t i{1}; i < block.vtx.size(); ++i) inputs += block.vtx[i]->vin.size();
-    std::vector<COutPoint> outpoints;
-    outpoints.reserve(inputs);
-    // Kept by the thread: a list as long as the block has inputs is not allocated for every block.
+    found.assign(outpoints.size(), 0);
+    std::vector<uint32_t> shard_of;
+    std::vector<uint64_t> hashes;
+    shard_of.reserve(which.size());
+    hashes.reserve(which.size());
+    for (const uint32_t w : which) {
+        shard_of.push_back(ShardIndex(outpoints[w]));
+        hashes.push_back(KeyHash(outpoints[w]));
+    }
+    VisitShards(shard_of, [&](Shard& shard, std::span<const uint32_t> items) EXCLUSIVE_LOCKS_REQUIRED(shard.mutex) {
+        shard.map.PrefetchAll(hashes, items);
+        for (const uint32_t k : items) {
+            const uint32_t w{which[k]};
+            const auto it{shard.map.find(outpoints[w], hashes[k])};
+            if (it == shard.map.end() || it->second.coin.IsSpent()) continue;
+            Reference(it->second);
+            coins[w] = it->second.coin.ToCoin();
+            found[w] = 1;
+        }
+    });
+}
+
+void BlockApplyView::ResolveInputs(const CBlock& block, std::vector<Coin>& coins)
+{
+    static thread_local std::vector<COutPoint> outpoints;
     static thread_local std::vector<uint32_t> positions;
+    outpoints.clear();
     positions.clear();
     for (size_t i{1}; i < block.vtx.size(); ++i) {
         for (const CTxIn& in : block.vtx[i]->vin) {
             outpoints.push_back(in.prevout);
-            if (m_overlay) positions.push_back(static_cast<uint32_t>(i));
+            positions.push_back(static_cast<uint32_t>(i));
         }
     }
-    if (m_overlay) {
-        // An input a lower window block makes is not asked of the store, which does not have it yet. Its
-        // coin goes into the view from where it is found, with no list between.
-        m_overlay->FindCoins(outpoints, positions, m_overlay_height, [&](const COutPoint& outpoint, Coin&& coin) {
-            const size_t usage{coin.DynamicMemoryUsage()};
-            if (cacheCoins.try_emplace(outpoint, std::move(coin)).second) cachedCoinsUsage += usage;
-        });
+    coins.assign(outpoints.size(), Coin{});
+    static thread_local std::vector<uint8_t> decided;
+    decided.assign(outpoints.size(), 0);
+    if (m_overlay) m_overlay->FindInputs(outpoints, positions, m_overlay_height, decided, coins);
+    static thread_local std::vector<uint32_t> rest;
+    rest.clear();
+    for (uint32_t i{0}; i < outpoints.size(); ++i) {
+        if (!decided[i]) rest.push_back(i);
     }
-    for (auto& [outpoint, coin] : m_store.Fetch(std::move(outpoints))) {
-        const size_t usage{coin.DynamicMemoryUsage()};
-        if (cacheCoins.try_emplace(outpoint, std::move(coin)).second) cachedCoinsUsage += usage;
+    static thread_local std::vector<uint8_t> found;
+    m_store.FetchInto(outpoints, rest, coins, found);
+    for (const uint32_t i : rest) {
+        if (found[i]) continue;
+        // A window block's read leaves the coin in the tier, clean (SetKeepBaseReads()).
+        std::optional<Coin> coin{m_keep_base_reads ? m_store.GetCoin(outpoints[i]) : m_store.PeekCoin(outpoints[i])};
+        if (coin) coins[i] = std::move(*coin);
     }
 }
 
@@ -1496,9 +1497,35 @@ std::optional<Coin> BlockApplyView::ReadBase(const COutPoint& outpoint) const
     return m_keep_base_reads ? m_store.GetCoin(outpoint) : m_store.PeekCoin(outpoint);
 }
 
+const Coin* BlockApplyView::InputCoin(const COutPoint& outpoint) const
+{
+    if (!m_inputs_tx || m_inputs_tx->vin.empty()) return nullptr;
+    const std::vector<CTxIn>& vin{m_inputs_tx->vin};
+    const auto at{reinterpret_cast<uintptr_t>(&outpoint)};
+    const auto first{reinterpret_cast<uintptr_t>(&vin.front().prevout)};
+    if (at < first) return nullptr;
+    const size_t i{(at - first) / sizeof(CTxIn)};
+    if (i >= vin.size() || &vin[i].prevout != &outpoint) return nullptr;
+    return &m_inputs_coins[i];
+}
+
+const Coin& BlockApplyView::AccessCoin(const COutPoint& outpoint) const
+{
+    if (const Coin* coin{InputCoin(outpoint)}) return *coin;
+    return CoinsViewOverlay::AccessCoin(outpoint);
+}
+
+bool BlockApplyView::HaveCoin(const COutPoint& outpoint) const
+{
+    if (const Coin* coin{InputCoin(outpoint)}) return !coin->IsSpent();
+    return CoinsViewOverlay::HaveCoin(outpoint);
+}
+
 void BlockApplyView::Reset() noexcept
 {
     StopFetching(); // the prefetch workers read the view
+    m_inputs_tx = nullptr;
+    m_inputs_coins = {};
     m_keep_base_reads = false;
     m_overlay = nullptr;
     m_own_limit = 0;

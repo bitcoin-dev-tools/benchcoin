@@ -666,7 +666,7 @@ struct DeploymentFlags {
  *
  * Every member is a copy, with two kinds of exception: params refers to the
  * chain's constant parameters, and median_time_past_at, help_point and
- * implicit_creates are functions.
+ * window_tx are functions.
  */
 struct BlockValidationContext {
     const Consensus::Params& params;
@@ -698,10 +698,15 @@ struct BlockValidationContext {
     std::function<int64_t(int)> median_time_past_at;
     //! Called every 64 transactions of the block, where a window worker helps a commit that runs.
     std::function<void()> help_point{};
-    //! Set for a window block whose outputs are not added to the view: a later transaction of the block
-    //! reads them where the blocks above do, in the window's outputs. Called with each transaction's position
-    //! before the transaction is checked.
-    std::function<void(uint32_t)> implicit_creates{};
+    //! Set for a window block, whose outputs are not added to the view (a later transaction of the block reads
+    //! them where the blocks above do, in the window's outputs) and whose inputs are `input_coins`. Called with
+    //! each transaction's position, the transaction and its coins before the transaction is checked, which
+    //! the view answers the transaction's input lookups with; with no transaction once all are checked.
+    std::function<void(uint32_t, const CTransaction*, std::span<const Coin>)> window_tx{};
+    //! With `window_tx`: the coin of each input of the block by position (the coinbase has none), resolved
+    //! before the block is checked: the checks read these and not the view, and the block's spends are kept in
+    //! a set of its own.
+    std::span<const Coin> input_coins{};
     //! Where the block is on disk, as the index recorded it when the block was planned, for a worker that
     //! reads the block itself. Null where the block is not read from there.
     FlatFilePos block_pos{};

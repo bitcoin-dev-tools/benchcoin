@@ -9,11 +9,13 @@
 #include <attributes.h>
 #include <consensus/amount.h>
 #include <primitives/transaction_identifier.h> // IWYU pragma: export
+#include <primitives/txsegments.h>
 #include <script/script.h>
 #include <serialize.h>
 
 #include <algorithm>
 #include <compare>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <ios>
@@ -182,6 +184,25 @@ inline constexpr TransactionSerParams TX_WITH_WITNESS{.allow_witness = true};
 inline constexpr TransactionSerParams TX_NO_WITNESS{.allow_witness = false};
 
 /**
+ * A stream that computes the txid of the transaction being deserialised from the bytes it hands out. The
+ * deserialiser tells it which bytes belong to the txid preimage (the serialisation without witness) through these
+ * four calls; a stream without them, which is every ordinary stream, pays nothing. TxSegmentRecorder
+ * (primitives/txsegments.h) is the implementation: it records byte ranges, which are hashed afterwards.
+ *
+ *   TxidHold()     the bytes that follow belong to the preimage unless TxidDiscard() follows
+ *   TxidDiscard()  they do not (the segwit marker and flag)
+ *   TxidPause()    the bytes that follow are not part of the preimage (the witness)
+ *   TxidResume()   the preimage continues
+ */
+template <typename Stream>
+concept TxidHashingStream = requires(Stream& s) {
+    s.TxidHold();
+    s.TxidDiscard();
+    s.TxidPause();
+    s.TxidResume();
+};
+
+/**
  * Basic transaction serialization format:
  * - uint32_t version
  * - std::vector<CTxIn> vin
@@ -207,12 +228,17 @@ void UnserializeTransaction(TxType& tx, Stream& s, const TransactionSerParams& p
     unsigned char flags = 0;
     tx.vin.clear();
     tx.vout.clear();
-    /* Try to read the vin. In case the dummy is there, this will be read as an empty vector. */
+    /* Try to read the vin. In case the dummy is there, this will be read as an empty vector. Whether the bytes
+     * read from here belong to the txid preimage is known only after it: a hashing stream holds them (an empty
+     * vin's zero, and a flag byte read after it) until then. */
+    if constexpr (TxidHashingStream<Stream>) s.TxidHold();
     s >> tx.vin;
     if (tx.vin.size() == 0 && fAllowWitness) {
         /* We read a dummy or an empty vin. */
         s >> flags;
         if (flags != 0) {
+            /* The dummy and the flag are witness framing, not part of the txid. */
+            if constexpr (TxidHashingStream<Stream>) s.TxidDiscard();
             s >> tx.vin;
             s >> tx.vout;
         }
@@ -223,9 +249,11 @@ void UnserializeTransaction(TxType& tx, Stream& s, const TransactionSerParams& p
     if ((flags & 1) && fAllowWitness) {
         /* The witness flag is present, and we support witnesses. */
         flags ^= 1;
+        if constexpr (TxidHashingStream<Stream>) s.TxidPause();
         for (size_t i = 0; i < tx.vin.size(); i++) {
             s >> tx.vin[i].scriptWitness;
         }
+        if constexpr (TxidHashingStream<Stream>) s.TxidResume();
         if (!tx.HasWitness()) {
             /* It's illegal to encode witnesses when all witness stacks are empty. */
             throw std::ios_base::failure("Superfluous witness record");
@@ -237,6 +265,7 @@ void UnserializeTransaction(TxType& tx, Stream& s, const TransactionSerParams& p
     }
     s >> tx.nLockTime;
 }
+
 template<typename Stream, typename TxType>
 void SerializeTransaction(const TxType& tx, Stream& s, const TransactionSerParams& params)
 {
@@ -309,6 +338,17 @@ private:
 
     bool ComputeHasWitness() const;
 
+    //! A deserialised transaction with its hashes; defined once CMutableTransaction is.
+    struct Deserialized;
+    template <typename Stream>
+    static Deserialized DeserializeHashed(const TransactionSerParams& params, Stream& s);
+    static std::pair<Txid, Wtxid> HashBySerialising(const CMutableTransaction& tx);
+    /** The hashes were computed from the bytes the transaction was deserialised from (primitives/txsegments.h,
+     *  TxSegmentRecorder), and whether it has a witness was seen in the serialisation; they are what
+     *  ComputeHash(), ComputeWitnessHash() and ComputeHasWitness() would return. Private: nothing checks
+     *  that they belong to the transaction. */
+    explicit CTransaction(Deserialized&& d);
+
 public:
     /** Convert a CMutableTransaction into a CTransaction. */
     explicit CTransaction(const CMutableTransaction& tx);
@@ -320,11 +360,13 @@ public:
     }
 
     /** This deserializing constructor is provided instead of an Unserialize method.
-     *  Unserialize is not possible, since it would require overwriting const fields. */
+     *  Unserialize is not possible, since it would require overwriting const fields.
+     *  From a stream over a contiguous buffer (DataStream, SpanReader) the hashes are computed from the bytes
+     *  read; from any other stream by serialising the transaction again. */
     template <typename Stream>
-    CTransaction(deserialize_type, const TransactionSerParams& params, Stream& s) : CTransaction(CMutableTransaction(deserialize, params, s)) {}
+    CTransaction(deserialize_type, const TransactionSerParams& params, Stream& s);
     template <typename Stream>
-    CTransaction(deserialize_type, Stream& s) : CTransaction(CMutableTransaction(deserialize, s)) {}
+    CTransaction(deserialize_type, Stream& s);
 
     bool IsNull() const {
         return vin.empty() && vout.empty();
@@ -412,6 +454,54 @@ struct CMutableTransaction
         return false;
     }
 };
+
+//! A stream over a contiguous buffer: its unread bytes can be seen and skipped, so a transaction's hashes can be
+//! computed from them once it has been parsed.
+template <typename Stream>
+concept ContiguousInputStream = requires(Stream& s, size_t n) {
+    { s.data() } -> std::convertible_to<const std::byte*>;
+    { s.size() } -> std::convertible_to<size_t>;
+    s.ignore(n);
+};
+
+struct CTransaction::Deserialized {
+    CMutableTransaction tx;
+    Txid txid;
+    Wtxid wtxid;
+    bool has_witness{false};
+};
+
+template <typename Stream>
+CTransaction::Deserialized CTransaction::DeserializeHashed(const TransactionSerParams& params, Stream& s)
+{
+    Deserialized d;
+    auto& input{[&]() -> auto& {
+        if constexpr (ContainsStream<Stream>) {
+            return s.GetStream();
+        } else {
+            return s;
+        }
+    }()};
+    if constexpr (ContiguousInputStream<std::remove_reference_t<decltype(input)>>) {
+        const std::span<const std::byte> data{input.data(), input.size()};
+        TxSegmentRecorder recorder{data};
+        UnserializeTransaction(d.tx, recorder, params);
+        const TxSegments& segments{recorder.End()};
+        std::tie(d.txid, d.wtxid) = HashTransactionSegments(data, segments);
+        d.has_witness = segments.has_witness;
+        input.ignore(recorder.Pos());
+    } else {
+        UnserializeTransaction(d.tx, s, params);
+        std::tie(d.txid, d.wtxid) = HashBySerialising(d.tx);
+        d.has_witness = d.tx.HasWitness();
+    }
+    return d;
+}
+
+template <typename Stream>
+CTransaction::CTransaction(deserialize_type, const TransactionSerParams& params, Stream& s) : CTransaction(DeserializeHashed(params, s)) {}
+template <typename Stream>
+CTransaction::CTransaction(deserialize_type, Stream& s) : CTransaction(DeserializeHashed(s.template GetParams<TransactionSerParams>(), s)) {}
 
 typedef std::shared_ptr<const CTransaction> CTransactionRef;
 template <typename Tx> static inline CTransactionRef MakeTransactionRef(Tx&& txIn) { return std::make_shared<const CTransaction>(std::forward<Tx>(txIn)); }

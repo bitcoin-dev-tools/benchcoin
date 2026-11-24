@@ -94,7 +94,7 @@ std::vector<std::byte> BlockAround(std::span<const std::byte> tx_bytes)
     return bytes;
 }
 
-//! A stream that hides its buffer.
+//! A stream that hides its buffer: the deserialising constructor must fall back to serialise-and-hash.
 struct OpaqueReader {
     SpanReader& inner;
     void read(std::span<std::byte> dst) { inner.read(dst); }
@@ -105,6 +105,9 @@ struct OpaqueReader {
         return *this;
     }
 };
+static_assert(ContiguousInputStream<SpanReader>);
+static_assert(ContiguousInputStream<DataStream>);
+static_assert(!ContiguousInputStream<OpaqueReader>);
 
 //! Deserialise `bytes` as a block over an opaque stream, whose transactions are hashed by serialising them again,
 //! and over a SpanReader, whose transactions are hashed from the bytes; the two must fail together or agree on
@@ -271,6 +274,10 @@ BOOST_AUTO_TEST_CASE(transaction_hashes_fixed_cases)
     for (size_t i{0}; i < one_in.vin.size(); ++i) superfluous.insert(superfluous.end() - 4, std::byte{0});
     BOOST_CHECK(!CheckBlockBytes(BlockAround(superfluous)));
     BOOST_CHECK(!CheckTransactionBytes(superfluous, TX_WITH_WITNESS));
+    // The stream of a transaction that fails is left where it was.
+    DataStream failing{superfluous};
+    BOOST_CHECK_THROW((void)CTransaction(deserialize, TX_WITH_WITNESS, failing), std::ios_base::failure);
+    BOOST_CHECK_EQUAL(failing.size(), superfluous.size());
     // Witness bytes read without witness support: the paths fail together or agree.
     CheckTransactionBytes(Bytes(TX_WITH_WITNESS(one_in)), TX_NO_WITNESS);
 }

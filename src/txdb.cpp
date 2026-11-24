@@ -212,13 +212,15 @@ std::shared_future<void> CCoinsViewDB::CompactFullAsync()
 {
     AssertLockHeld(::cs_main);
     if (m_compaction.valid() && m_compaction.wait_for(std::chrono::seconds{0}) != std::future_status::ready) return m_compaction;
-    m_compaction = std::async(std::launch::async, [this] {
+    // noexcept: a failed compaction is a database error (std::runtime_error), logged; anything else, a failed
+    // allocation, terminates instead of resting in a future nobody reads.
+    m_compaction = std::async(std::launch::async, [this]() noexcept {
         try {
             util::ThreadRename("utxocompact");
             LOCK(m_db_mutex);
 
             m_db->CompactFull();
-        } catch (const std::exception& e) {
+        } catch (const std::runtime_error& e) {
             LogWarning("Failed chainstate compaction (%s)", e.what());
         }
     }).share();

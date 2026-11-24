@@ -317,12 +317,17 @@ void CCoinsViewCache::Reset() noexcept
 
 void CCoinsViewCache::TraceUncache(const COutPoint& outpoint, const Coin& coin)
 {
+    TraceUncache(outpoint, coin.nHeight, coin.out.nValue, coin.IsCoinBase());
+}
+
+void CCoinsViewCache::TraceUncache(const COutPoint& outpoint, uint32_t height, CAmount value, bool coinbase)
+{
     TRACEPOINT(utxocache, uncache,
            outpoint.hash.data(),
            (uint32_t)outpoint.n,
-           (uint32_t)coin.nHeight,
-           (int64_t)coin.out.nValue,
-           (bool)coin.IsCoinBase());
+           height,
+           (int64_t)value,
+           coinbase);
 }
 
 void CCoinsViewCache::Uncache(const COutPoint& hash)

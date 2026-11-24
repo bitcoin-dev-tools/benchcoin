@@ -9,6 +9,7 @@
 #include <coins_entry_machine.h>
 #include <crypto/common.h>
 #include <kernel/caches.h>
+#include <memusage.h>
 #include <undo.h>
 #include <primitives/transaction.h>
 #include <sync.h>
@@ -21,6 +22,7 @@
 #include <condition_variable>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <functional>
 #include <limits>
 #include <memory>
@@ -30,6 +32,163 @@
 #include <tuple>
 #include <utility>
 #include <vector>
+
+/**
+ * A coin as the store's entries hold it: the amount, the height and the coinbase flag of a Coin, and its output
+ * script inline up to INLINE (35) bytes, so that the common output scripts, the 34-byte P2WSH and P2TR outputs
+ * included, take no allocation of their own, as in a Coin, whose CScript keeps 36 bytes inline. A longer script
+ * is on the heap here too. The bytes are kept as they are: a Coin converted to a StoredCoin and back is the same
+ * coin. 48 bytes, where a Coin is 56.
+ */
+class StoredCoin
+{
+    //! First, so that the fields below follow it without padding.
+    CAmount m_value{-1};
+
+public:
+    static constexpr size_t INLINE{35};
+    //! The amount, read without making a Coin.
+    CAmount Amount() const { return m_value; }
+
+    StoredCoin() = default;
+    StoredCoin(const Coin& coin) { Assign(coin); }
+    StoredCoin(const StoredCoin& other) { CopyFrom(other); }
+    StoredCoin(StoredCoin&& other) noexcept { MoveFrom(other); }
+    StoredCoin& operator=(const Coin& coin)
+    {
+        Release();
+        Assign(coin);
+        return *this;
+    }
+    //! As the assignment of a Coin of these parts, without the Coin.
+    void AssignOutput(CAmount value, uint32_t height, bool coinbase, const CScript& script)
+    {
+        Release();
+        m_value = value;
+        nHeight = height;
+        fCoinBase = coinbase;
+        SetScript(script.data(), script.size());
+    }
+    StoredCoin& operator=(const StoredCoin& other)
+    {
+        if (this != &other) {
+            Release();
+            CopyFrom(other);
+        }
+        return *this;
+    }
+    StoredCoin& operator=(StoredCoin&& other) noexcept
+    {
+        if (this != &other) {
+            Release();
+            MoveFrom(other);
+        }
+        return *this;
+    }
+    ~StoredCoin() { Release(); }
+
+    //! As Coin::Clear().
+    void Clear()
+    {
+        Release();
+        m_value = -1;
+        nHeight = 0;
+        fCoinBase = false;
+    }
+
+    //! The coin as a Coin: what lookups hand out.
+    Coin ToCoin() const
+    {
+        Coin coin;
+        if (IsSpent()) return coin;
+        coin.out.nValue = m_value;
+        const unsigned char* bytes{Script()};
+        coin.out.scriptPubKey.assign(bytes, bytes + ScriptSize());
+        coin.nHeight = nHeight;
+        coin.fCoinBase = fCoinBase;
+        return coin;
+    }
+    operator Coin() const { return ToCoin(); }
+
+    //! As Coin::IsSpent() (CTxOut::IsNull()).
+    bool IsSpent() const { return m_value == -1; }
+    //! As Coin::DynamicMemoryUsage(): the heap memory of a script longer than INLINE bytes.
+    size_t DynamicMemoryUsage() const { return m_size == HEAP ? memusage::MallocUsage(sizeof(uint32_t) + ScriptSize()) : 0; }
+
+    //! One type for both, as in Coin: a compiler that starts a new unit where the type changes (MSVC) would
+    //! not pack a bool into the height's word.
+    uint32_t nHeight : 31 {0};
+    uint32_t fCoinBase : 1 {0};
+
+private:
+    //! The marker in m_size of a script on the heap: m_bytes holds the pointer, the allocation the script's
+    //! length (four bytes) and then its bytes.
+    static constexpr uint8_t HEAP{0xff};
+    static_assert(INLINE < HEAP && INLINE >= sizeof(unsigned char*));
+
+    uint8_t m_size{0};
+    unsigned char m_bytes[INLINE];
+
+    unsigned char* HeapBlock() const
+    {
+        unsigned char* block;
+        std::memcpy(&block, m_bytes, sizeof(block));
+        return block;
+    }
+    size_t ScriptSize() const
+    {
+        if (m_size != HEAP) return m_size;
+        uint32_t size;
+        std::memcpy(&size, HeapBlock(), sizeof(size));
+        return size;
+    }
+    const unsigned char* Script() const { return m_size == HEAP ? HeapBlock() + sizeof(uint32_t) : m_bytes; }
+    void SetScript(const unsigned char* bytes, size_t size)
+    {
+        if (size <= INLINE) {
+            m_size = static_cast<uint8_t>(size);
+            if (size) std::memcpy(m_bytes, bytes, size);
+            return;
+        }
+        auto* block{new unsigned char[sizeof(uint32_t) + size]};
+        const uint32_t size32{static_cast<uint32_t>(size)};
+        std::memcpy(block, &size32, sizeof(size32));
+        std::memcpy(block + sizeof(uint32_t), bytes, size);
+        std::memcpy(m_bytes, &block, sizeof(block));
+        m_size = HEAP;
+    }
+    void Assign(const Coin& coin)
+    {
+        m_value = coin.out.nValue;
+        nHeight = coin.nHeight;
+        fCoinBase = coin.fCoinBase;
+        const CScript& script{coin.out.scriptPubKey};
+        SetScript(script.data(), script.size());
+    }
+    void CopyFrom(const StoredCoin& other)
+    {
+        m_value = other.m_value;
+        nHeight = other.nHeight;
+        fCoinBase = other.fCoinBase;
+        SetScript(other.Script(), other.ScriptSize());
+    }
+    void MoveFrom(StoredCoin& other) noexcept
+    {
+        m_value = other.m_value;
+        nHeight = other.nHeight;
+        fCoinBase = other.fCoinBase;
+        m_size = other.m_size;
+        std::memcpy(m_bytes, other.m_bytes, INLINE);
+        other.m_size = 0;
+        other.m_value = -1;
+    }
+    void Release() noexcept
+    {
+        if (m_size == HEAP) delete[] HeapBlock();
+        m_size = 0;
+    }
+};
+static_assert(sizeof(StoredCoin) == 48);
 
 /**
  * The young tier of the UTXO set: the in-memory layer above the coins
@@ -323,7 +482,7 @@ private:
      * and the height are written by Transit() and Enter() alone.
      */
     struct Entry {
-        Coin coin;
+        StoredCoin coin;
         //! The height the entry is filed under, the write-out's age: the last change's as a rule, and an
         //! earlier one's where that change is owed still, or where a change finds the entry dirty
         //! (coins_entry::Height).
@@ -861,7 +1020,8 @@ private:
      * it. Any other coin takes the change height. Where the entry is dirty already, it stays filed under
      * the height of the earlier change if that is lower (coins_entry::Height::Oldest).
      */
-    int TagFor(const Coin& coin) const
+    template <typename AnyCoin>
+    int TagFor(const AnyCoin& coin) const
     {
         const int settled{m_run_in_flight ? m_inflight_settled_height : m_written_height};
         return coin.nHeight > settled ? static_cast<int>(coin.nHeight) : m_change_height;

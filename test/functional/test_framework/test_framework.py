@@ -205,6 +205,10 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
                             help="use BIP324 v2 connections between all nodes by default")
         parser.add_argument("--v1transport", dest="v1transport", default=False, action="store_true",
                             help="Explicitly use v1 transport (can be used to overwrite global --v2transport option)")
+        parser.add_argument("--connectworkers", dest="connectworkers", type=int, default=None,
+                            help="give the nodes under test this many connect pool threads (-prevoutfetchthreads) instead of the "
+                                 "configured single one, so that requested blocks in initial block download go to receive tasks; "
+                                 "a test's own -prevoutfetchthreads still applies")
         parser.add_argument("--test_methods", dest="test_methods", nargs='*',
                             help="Run specified test methods sequentially instead of the full test. Use only for methods that do not depend on any context set up in run_test or other methods.")
 
@@ -491,6 +495,7 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
                 extra_args=args,
                 use_cli=self.options.usecli,
                 v2transport=self.options.v2transport,
+                connect_workers=self.options.connectworkers,
                 uses_wallet=self.uses_wallet,
             )
             init.update(extra_init[i])

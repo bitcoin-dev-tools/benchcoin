@@ -29,6 +29,10 @@ namespace util {
  *    it is not Running is a bug of the caller and asserts;
  *  - the connector thread (ChainstateManager::SignalConnector()): a block
  *    handed over while it is not Running is stored and not activated;
+ *  - the receive tasks (PeerManagerImpl::HandOffBlock()): a block handed
+ *    over while they are not Running asserts, and a task touches nothing of
+ *    its owner once it has left the owner's task set, which is what the
+ *    owner waits for while Draining;
  *  - a hook called from another thread (HookTarget): its owner disarms it
  *    and waits for a call that is running before it is destroyed.
  */

@@ -56,6 +56,10 @@ inline constexpr unsigned int MAX_CMPCTBLOCKS_INFLIGHT_PER_BLOCK = 3;
 inline constexpr unsigned int MAX_HEADERS_RESULTS = 2000;
 /** The compactblocks version we support. See BIP 152. */
 inline constexpr uint64_t CMPCTBLOCKS_VERSION{2};
+/** The threads of the receive tasks' pool, which deserialise and check the blocks received in initial block
+ *  download (PeerManagerImpl::HandOffBlock()): enough for a 2.5 Gbit/s connection where a thread deserialises
+ *  and checks heavy blocks at about 63 MB a second. */
+inline constexpr int RECEIVE_THREADS{5};
 
 struct CNodeStateStats {
     int nSyncHeight = -1;
@@ -106,6 +110,13 @@ public:
         //! Whether or not the internal RNG behaves deterministically (this is
         //! a test-only option).
         bool deterministic_rng{false};
+        //! Test only: a peer's block is processed to its end on the message
+        //! handler, before the next message. No receive task is started for
+        //! it on the receive pool (HandOffBlock() declines), and the handler
+        //! activates the chain itself, not the connector thread. (Where
+        //! HandOffBlock() declines a block for its own reasons, the connector
+        //! thread still activates the chain.)
+        bool blocks_on_message_handler{false};
         //! Number of headers sent in one getheaders message result (this is
         //! a test-only option).
         uint32_t max_headers_result{MAX_HEADERS_RESULTS};
@@ -174,6 +185,10 @@ public:
 
     /** Send ping message to all peers */
     virtual void SendPings() = 0;
+
+    /** Wait for the blocks of peers that are being processed off the message handler thread. For shutdown,
+     *  once the message handler has stopped and before anything the processing of a block relies on goes. */
+    virtual void FinishBlockTasks() = 0;
 
     /** Set the height of the best block and its time (seconds since epoch). */
     virtual void SetBestBlock(int height, std::chrono::seconds time) = 0;

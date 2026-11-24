@@ -1484,11 +1484,17 @@ BOOST_FIXTURE_TEST_CASE(a_copy_outlives_the_latch, TestChain100Setup)
         // The latch says tip. The wait that was given the download's copy goes by the copy: it returns with
         // the activation still to be attempted.
         BOOST_REQUIRE(download.wait_for(std::chrono::seconds{60}) == std::future_status::ready);
+        BOOST_CHECK(chainman.AnyHandOffPending());
         // The wait that was given the tip's copy is still waiting. (A slow thread can make this pass, not fail.)
         BOOST_CHECK(tip.wait_for(std::chrono::milliseconds{100}) == std::future_status::timeout);
+        // The download's copy never gives way. (The tip's copy gives way only until the connector takes the
+        // activation, which it does without cs_main: either answer is right here.)
+        BOOST_CHECK(!chainman.YieldHistoricalActivation(/*in_ibd=*/true));
     }
     // With cs_main free the connector attempts the activation, and that wait returns too.
     tip.get();
+    // The activation was taken, so the tip's copy no longer gives way either.
+    BOOST_CHECK(!chainman.YieldHistoricalActivation(/*in_ibd=*/false));
 }
 
 BOOST_AUTO_TEST_SUITE_END()

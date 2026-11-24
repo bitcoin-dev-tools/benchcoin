@@ -111,6 +111,7 @@ class TestNode():
         use_cli=False,
         version=None,
         v2transport=False,
+        connect_workers=None,
         uses_wallet=False,
         ipcbind=False,
         use_gui=False,
@@ -184,6 +185,11 @@ class TestNode():
             else:
                 self.args.append("-v2transport=0")
         # if v2transport is requested via global flag but not supported for node version, ignore it
+
+        # The global --connectworkers flag, for the binary under test only (previous releases do not know the
+        # option), kept over restarts; a test's own -prevoutfetchthreads in extra_args comes later and wins.
+        if connect_workers is not None and self.version is None:
+            self.args.append(f"-prevoutfetchthreads={connect_workers}")
 
         self.cli = None
         self.use_cli = use_cli

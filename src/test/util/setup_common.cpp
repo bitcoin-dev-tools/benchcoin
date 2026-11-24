@@ -413,6 +413,7 @@ TestingSetup::TestingSetup(
     PeerManager::Options peerman_opts;
     ApplyArgsManOptions(*m_node.args, peerman_opts);
     peerman_opts.deterministic_rng = true;
+    peerman_opts.blocks_on_message_handler = true;
     peerman_opts.get_block_filter_index = [this](BlockFilterType filter_type) {
         return node::GetBlockFilterIndex(m_node, filter_type);
     };

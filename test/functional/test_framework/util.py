@@ -580,6 +580,8 @@ def write_config(config_path, *, n, chain, extra_config="", disable_autoconnect=
         f.write("maxconnections=76\n")
         f.write("par=" + str(min(2, os.cpu_count())) + "\n")
         # Use a single connect pool thread (input prefetch and window validation) to keep per-node resource usage low.
+        # With it no requested block goes to a receive task in initial block download; --connectworkers gives the
+        # nodes more threads, and test_runner.py runs some P2P and IBD tests that way.
         f.write("prevoutfetchthreads=1\n")
         f.write(extra_config)
 

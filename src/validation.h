@@ -1383,8 +1383,12 @@ protected:
     NodeClock::time_point m_next_write{NodeClock::time_point::max()};
     const CBlockIndex* m_last_flushed_block GUARDED_BY(::cs_main){nullptr};
     //! Set by the connect window around its periodic write: a write-out run started there is waited for
-    //! by the connector once it has released cs_main, not inside FlushStateToDisk().
+    //! by the connector once it has released cs_main, not inside FlushStateToDisk(). So is the run that
+    //! automatic pruning needs; the files are then chosen by the next flush.
     bool m_defer_write_out_wait GUARDED_BY(::cs_main){false};
+    //! Set by the connect window around a block's publication: the write-out before the tip moves leaves
+    //! automatic pruning to the periodic write of the same hold.
+    bool m_prune_at_periodic_write GUARDED_BY(::cs_main){false};
     //! The write-out runs that failed (a fatal error is raised for each). What rests on a run having
     //! landed, the removal of pruned files, compares it across the wait.
     uint64_t m_write_out_runs_failed GUARDED_BY(::cs_main){0};
@@ -1523,6 +1527,9 @@ private:
     //! a coin a lower block spent, a create over a coin) and the blocks that failed in the window or were
     //! taken back, and were connected again alone. Written by the connector thread, read at shutdown.
     std::atomic<uint64_t> m_window_blocks{0};
+    //! Steps that use the window and have not ended (ConnectStep::window_steps): while one runs, every block it
+    //! publishes checks for pruning, and a block accepted meanwhile leaves that check to it (FinishAcceptBlock()).
+    std::atomic<int> m_window_steps_running{0};
     std::atomic<uint64_t> m_window_conflicts{0};
     std::atomic<uint64_t> m_window_retries{0};
 

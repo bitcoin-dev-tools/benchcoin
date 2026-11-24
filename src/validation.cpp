@@ -3246,12 +3246,18 @@ bool Chainstate::FlushStateToDisk(
         bool fFlushForPrune = false;
 
         CoinsCacheSizeState cache_state = GetCoinsCacheSizeState();
-        if (m_blockman.IsPruneMode() && (m_blockman.m_check_for_pruning || nManualPruneHeight > 0) && m_chainman.m_blockman.m_blockfiles_indexed) {
+        // An automatic check is left for a later flush while a write-out run is in flight: that is the window's,
+        // waited for by the connector once it has released cs_main, and what pruning needs is decided once it
+        // has landed. m_check_for_pruning stays set meanwhile.
+        if (m_blockman.IsPruneMode() && (m_blockman.m_check_for_pruning || nManualPruneHeight > 0) && m_chainman.m_blockman.m_blockfiles_indexed &&
+            (nManualPruneHeight > 0 || (!m_prune_at_periodic_write && !CoinsStoreTip().RunInFlight()))) {
+            // Pruning takes files for a request, or with the block files at the prune target; below it no file
+            // is chosen (FindFilesToPrune()). The check is made at every allocation of block or undo space.
+            const bool prunes{nManualPruneHeight > 0 || m_blockman.AtPruneTarget(*this, m_chainman)};
             // What is queued lands before files are chosen: an undo write still to come must not find its
-            // block pruned (its completion would mark the undo data stored again), and a write-out run in
-            // flight (the window's, met by a caller that is not the connecting thread) must not be what
-            // keeps the run this pruning needs from being made below.
-            SettleWriteOut();
+            // block pruned (its completion would mark the undo data stored again). Below the target nothing
+            // is chosen, and nothing is waited for.
+            if (prunes) SettleWriteOut();
             // make sure we don't prune above any of the prune locks bestblocks
             // pruning is height-based
             int last_prune{m_chain.Height()}; // last height we can prune
@@ -3278,6 +3284,12 @@ bool Chainstate::FlushStateToDisk(
             // up to the height pruning may reach; it is on disk before the block index records a pruned file.
             // The run is made only when pruning would take files: for a request, or with the block files at
             // the prune target. Below the target the written head holds nothing back that would go.
+            // In the connect window's publishing hold the run is not waited for here, as no run started there
+            // is: the connector waits once it has released cs_main, and the files are chosen by the next
+            // flush, from the head that is written then. Until then the block files may exceed the target
+            // by what that run takes, as they exceed it until the flush after the block that crossed it.
+            // A request (pruneblockchain) waits: it returns once its files are gone.
+            bool prune_deferred{false};
             {
                 CoinsStore& store{CoinsStoreTip()};
                 const auto written_fork_height{[&]() EXCLUSIVE_LOCKS_REQUIRED(::cs_main) {
@@ -3286,14 +3298,14 @@ bool Chainstate::FlushStateToDisk(
                     return fork ? fork->nHeight : 0;
                 }};
                 const int can_prune{GetPruneRange(nManualPruneHeight > 0 ? std::min(last_prune, nManualPruneHeight) : last_prune).second};
-                const bool prunes{nManualPruneHeight > 0 || m_blockman.AtPruneTarget(*this, m_chainman)};
                 if (prunes && m_blockman.HasBlockFileEndingWithin(written_fork_height(), can_prune)) {
                     // The run commits the block index.
                     if (!CheckDiskSpace(m_blockman.m_opts.blocks_dir)) {
                         return FatalError(m_chainman.GetNotifications(), state, _("Disk space is too low!"));
                     }
                     if (!StartWriteOutRun(state, can_prune, /*final=*/false, /*evict_to=*/std::nullopt, mode, /*for_prune=*/true)) return false;
-                    SettleWriteOut();
+                    prune_deferred = m_defer_write_out_wait && nManualPruneHeight == 0;
+                    if (!prune_deferred) SettleWriteOut();
                 }
                 last_prune = std::min(last_prune, written_fork_height());
             }
@@ -3305,7 +3317,7 @@ bool Chainstate::FlushStateToDisk(
                     setFilesToPrune,
                     std::min(last_prune, nManualPruneHeight),
                     *this);
-            } else {
+            } else if (!prune_deferred) {
                 LOG_TIME_MILLIS_WITH_CATEGORY("find files to prune", BCLog::BENCH);
 
                 m_blockman.FindFilesToPrune(setFilesToPrune, last_prune, *this, m_chainman);
@@ -5239,6 +5251,9 @@ struct ConnectStep {
     std::shared_ptr<WindowSync> sync;
     //! What the block published last held in memory: the estimate for a block still being validated.
     size_t last_block_bytes{0};
+    //! While the step uses the window, the manager's count of such steps, which it is in (see
+    //! ChainstateManager::m_window_steps_running).
+    std::atomic<int>* window_steps{nullptr};
     //! A listener asked to stop: no block is staged any more, and the step ends once the blocks the hold
     //! committed are published.
     bool stop_requested{false};
@@ -5253,6 +5268,7 @@ struct ConnectStep {
     ~ConnectStep()
     {
         if (std::uncaught_exceptions() > exceptions) std::terminate();
+        if (window_steps) window_steps->fetch_sub(1, std::memory_order_relaxed);
         Assert(in_flight.empty());
     }
 };
@@ -5784,6 +5800,8 @@ bool Chainstate::ActivateBestChain(BlockValidationState& state, std::shared_ptr<
                         step->use_window = !retry && in_ibd && !reorg_lock_main && m_chainman.ConnectWindow() > 1;
                         if (step->use_window) {
                             step->sync = std::make_shared<WindowSync>();
+                            step->window_steps = &m_chainman.m_window_steps_running;
+                            step->window_steps->fetch_add(1, std::memory_order_relaxed);
                             step->sync->outputs.SetPublished(m_chain.Height());
                         }
                     }
@@ -6119,6 +6137,9 @@ bool Chainstate::ActivateBestChain(BlockValidationState& state, std::shared_ptr<
                         // GetRole() from BACKGROUND to NORMAL. Read per block, under this hold: a step that uses the
                         // window releases cs_main between blocks, and a snapshot activated meanwhile changes the role.
                         const kernel::ChainstateRole role{this->GetRole()};
+                        // In the window, automatic pruning is left to the periodic write of this hold, which
+                        // does not wait for the run it needs under cs_main (FlushStateToDisk()). The flag is
+                        // cleared on any way out of the publication, before that periodic write.
                         bool tip_published{false};
                         if (staged->sync && WITH_LOCK(staged->sync->mutex, return staged->commit_failed)) {
                             // Its commit met a conflict, which is no verdict on the block: as a block that
@@ -6126,6 +6147,8 @@ bool Chainstate::ActivateBestChain(BlockValidationState& state, std::shared_ptr<
                             m_window_retry_serial = true;
                             ++m_chainman.m_window_retries;
                         } else {
+                            m_prune_at_periodic_write = step->use_window;
+                            const std::unique_ptr<bool, decltype([](bool* flag) { *flag = false; })> clear_flag{&m_prune_at_periodic_write};
                             tip_published = PublishConnectTip(state, *staged, role, step->disconnectpool, step->blocks_disconnected);
                         }
                         if (tip_published && step->use_window) step->sync->outputs.Release(staged->pindex->nHeight);
@@ -7338,8 +7361,17 @@ bool ChainstateManager::FinishAcceptBlock(const CBlock& block, BlockValidationSt
     // The fatal error notification inside FlushStateToDisk still fires,
     // so the node will shut down on unrecoverable flush errors regardless.
     // For state a dummy value is used, and the return value is ignored.
-    BlockValidationState flush_state_ignore;
-    (void)ActiveChainstate().FlushStateToDisk(flush_state_ignore, FlushStateMode::NONE);
+    //
+    // Not while a step that uses the window runs (in initial block download): every block it publishes checks for
+    // pruning at the step's periodic write, which waits for no run under cs_main, and the check here would
+    // settle the effects queue, and a write-out run, under cs_main on a receive task while the connector waits
+    // for the lock. With no such step (the connector waits for a block, or connects at the tip) the check is
+    // made here as before, so that blocks received ahead of a stalled tip do not take the block files past
+    // the prune target. The external block loader keeps it.
+    if (m_blockman.LoadingBlocks() || m_window_steps_running.load(std::memory_order_relaxed) == 0) {
+        BlockValidationState flush_state_ignore;
+        (void)ActiveChainstate().FlushStateToDisk(flush_state_ignore, FlushStateMode::NONE);
+    }
 
     CheckBlockIndex();
 

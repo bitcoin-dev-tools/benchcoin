@@ -346,14 +346,14 @@ void CoinsStore::EmplaceCoinInternalDANGER(const COutPoint& outpoint, Coin&& coi
     Assert(!m_run_in_flight);
     Shard& shard{ShardFor(outpoint)};
     LOCK(shard.mutex);
-    const size_t usage{coin.DynamicMemoryUsage()};
     auto [it, inserted]{shard.map.try_emplace(outpoint)};
     if (inserted) Resized(shard);
     if (!inserted) return;
     Entry& entry{it->second};
     entry.coin = std::move(coin);
     Transit(entry, coins_entry::ABSENT, entry.coin.IsSpent() ? Event::ConfirmedSpend : Event::ConfirmedWrite, m_change_height);
-    AddUsage(shard, usage);
+    // As the entry holds the coin: a script a Coin keeps inline may be on the heap here, and the reverse.
+    AddUsage(shard, entry.coin.DynamicMemoryUsage());
     Attach(shard, *it);
 }
 
@@ -405,8 +405,11 @@ void CoinsStore::CreateLocked(Shard& shard, const COutPoint& outpoint, uint64_t 
         Detach(shard, *it);
         SubUsage(shard, entry.coin.DynamicMemoryUsage());
     }
-    entry.coin = std::move(coin);
-    if (script) entry.coin.out.scriptPubKey = *script;
+    if (script) {
+        entry.coin.AssignOutput(coin.out.nValue, coin.nHeight, coin.fCoinBase, *script);
+    } else {
+        entry.coin = std::move(coin);
+    }
     Transit(entry, from, owes ? Event::CoinOverErase : fresh ? Event::ConfirmedNew : Event::ConfirmedWrite, filed);
     AddUsage(shard, entry.coin.DynamicMemoryUsage());
     Attach(shard, *it);
@@ -454,7 +457,7 @@ uint32_t CoinsStore::ApplyConfirmed(std::vector<Change>&& changes, int height, C
                 if (report) report->conflicted.push_back(change.outpoint);
                 continue;
             }
-            if (over && report) report->overwritten.emplace_back(change.outpoint, old->second.coin);
+            if (over && report) report->overwritten.emplace_back(change.outpoint, old->second.coin.ToCoin());
             if (old == shard.map.end() && change.possible_overwrite && report) report->unread.push_back(change.outpoint);
             CreateLocked(shard, outpoint, hashes[i], std::move(*change.coin), change.script, change.possible_overwrite, height);
         }
@@ -539,7 +542,8 @@ void CoinsStore::Uncache(const COutPoint& outpoint)
     LOCK(shard.mutex);
     auto it{shard.map.find(outpoint)};
     if (it == shard.map.end() || it->second.dirty) return;
-    TraceUncache(outpoint, it->second.coin);
+    const StoredCoin& coin{it->second.coin};
+    TraceUncache(outpoint, coin.nHeight, coin.Amount(), coin.fCoinBase);
     EraseEntry(shard, it);
 }
 
@@ -876,7 +880,7 @@ void CoinsStore::CollectChunk(Shard& shard, WriteOutRun& run, uint64_t limit, ui
                 run.oldest_left = std::min<int>(run.oldest_left, created);
                 continue;
             }
-            writes.push_back({node->first, entry.coin.IsSpent() ? std::nullopt : std::make_optional(entry.coin)});
+            writes.push_back({node->first, entry.coin.IsSpent() ? std::nullopt : std::make_optional(entry.coin.ToCoin())});
             nodes.push_back(node);
             size += BatchBytes(writes.back());
             ++run.count;

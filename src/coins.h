@@ -586,6 +586,7 @@ public:
     virtual void Uncache(const COutPoint &outpoint);
     //! The utxocache:uncache tracepoint, for an override of Uncache() that removed the coin of this height, value
     //! and coinbase flag.
+    static void TraceUncache(const COutPoint& outpoint, uint32_t height, CAmount value, bool coinbase);
 
     //! Size of the cache (in number of transaction outputs)
     virtual unsigned int GetCacheSize() const;

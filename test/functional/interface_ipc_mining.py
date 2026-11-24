@@ -553,7 +553,7 @@ class IPCMiningTest(BitcoinTestFramework):
 
                 self.log.debug("Submit solution that can't be deserialized")
                 await assert_capnp_raises(lambda: template.submitSolution(ctx, 0, 0, 0, b"\x00"),
-                                          "remote exception: std::exception: SpanReader::read(): end of data:")
+                                          "remote exception: std::exception: TxSegmentRecorder::read(): end of data:")
 
                 self.log.debug("Submit a block with a bad version")
                 block.nVersion = 0
@@ -739,7 +739,7 @@ class IPCMiningTest(BitcoinTestFramework):
 
             self.log.debug("Submit a malformed complete block")
             await assert_capnp_raises(lambda: mining2.submitBlock(ctx2, block.serialize()[:-15]),
-                                      "remote exception: std::exception: SpanReader::read(): end of data:")
+                                      "remote exception: std::exception: TxSegmentRecorder::read(): end of data:")
 
             self.log.debug("Submit empty block data")
             await assert_capnp_raises(lambda: mining2.submitBlock(ctx2, b""),

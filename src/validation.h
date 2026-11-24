@@ -702,6 +702,12 @@ struct BlockValidationContext {
     //! reads them where the blocks above do, in the window's outputs. Called with each transaction's position
     //! before the transaction is checked.
     std::function<void(uint32_t)> implicit_creates{};
+    //! The coin of each input of the block by position (the coinbase has none), resolved before the block is
+    //! checked: the checks read these and not the view, and the block's spends are kept in a set of its own.
+    std::span<const Coin> input_coins{};
+    //! With `input_coins`: hands the view the transaction about to be checked and its coins, which the view
+    //! answers that transaction's input lookups with; null once the block's transactions are checked.
+    std::function<void(const CTransaction*, std::span<const Coin>)> inputs_for{};
     //! Where the block is on disk, as the index recorded it when the block was planned, for a worker that
     //! reads the block itself. Null where the block is not read from there.
     FlatFilePos block_pos{};

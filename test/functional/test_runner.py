@@ -138,6 +138,7 @@ BASE_SCRIPTS = [
     'feature_coins_lag_prune.py',
     'feature_connect_window.py',
     'feature_connect_window.py --bip30-off',
+    'feature_connect_window_double_spend.py',
     'wallet_taproot.py',
     'feature_bip68_sequence.py',
     'rpc_packages.py',

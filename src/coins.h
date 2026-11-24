@@ -507,7 +507,11 @@ public:
     std::optional<Coin> PeekCoin(const COutPoint& outpoint) const override;
     bool HaveCoin(const COutPoint& outpoint) const override;
     uint256 GetBestBlock() const override;
-    void SetBestBlock(const uint256& block_hash);
+    /**
+     * The methods below are virtual so that CoinsStore, the sharded young tier of the UTXO set that the
+     * chainstate uses as its tip view, can stand in for a CCoinsViewCache wherever one is expected.
+     */
+    virtual void SetBestBlock(const uint256& block_hash);
     void BatchWrite(CoinsViewCacheCursor& cursor, const uint256& block_hash) override;
 
     /**
@@ -515,7 +519,7 @@ public:
      * The semantics are the same as HaveCoin(), but no calls to
      * the backing CCoinsView are made.
      */
-    bool HaveCoinInCache(const COutPoint &outpoint) const;
+    virtual bool HaveCoinInCache(const COutPoint &outpoint) const;
 
     /**
      * Return a reference to Coin in the cache, or coinEmpty if not found. This is
@@ -527,13 +531,13 @@ public:
      * on! To be safe, best to not hold the returned reference through any other
      * calls to this cache.
      */
-    const Coin& AccessCoin(const COutPoint &output) const;
+    virtual const Coin& AccessCoin(const COutPoint &output) const;
 
     /**
      * Add a coin. Set possible_overwrite to true if an unspent version may
      * already exist in the cache.
      */
-    void AddCoin(const COutPoint& outpoint, Coin&& coin, bool possible_overwrite);
+    virtual void AddCoin(const COutPoint& outpoint, Coin&& coin, bool possible_overwrite);
 
     /**
      * Emplace a coin into cacheCoins without performing any checks, marking
@@ -542,14 +546,14 @@ public:
      * NOT FOR GENERAL USE. Used only when loading coins from a UTXO snapshot.
      * @sa ChainstateManager::PopulateAndValidateSnapshot()
      */
-    void EmplaceCoinInternalDANGER(const COutPoint& outpoint, Coin&& coin);
+    virtual void EmplaceCoinInternalDANGER(const COutPoint& outpoint, Coin&& coin);
 
     /**
      * Spend a coin. Pass moveto in order to get the deleted data.
      * If no unspent output exists for the passed outpoint, this call
      * has no effect.
      */
-    bool SpendCoin(const COutPoint &outpoint, Coin* moveto = nullptr);
+    virtual bool SpendCoin(const COutPoint &outpoint, Coin* moveto = nullptr);
 
     /**
      * Push the modifications applied to this cache to its base and wipe local state.
@@ -572,22 +576,24 @@ public:
      * Removes the UTXO with the given outpoint from the cache, if it is
      * not modified.
      */
-    void Uncache(const COutPoint &outpoint);
+    virtual void Uncache(const COutPoint &outpoint);
+    //! The utxocache:uncache tracepoint, for an override of Uncache() that removed the coin of this height, value
+    //! and coinbase flag.
 
     //! Size of the cache (in number of transaction outputs)
-    unsigned int GetCacheSize() const;
+    virtual unsigned int GetCacheSize() const;
 
     //! Number of dirty cache entries (transaction outputs)
-    size_t GetDirtyCount() const noexcept { return m_dirty_count; }
+    virtual size_t GetDirtyCount() const noexcept { return m_dirty_count; }
 
     //! Calculate the size of the cache (in bytes)
-    size_t DynamicMemoryUsage() const;
+    virtual size_t DynamicMemoryUsage() const;
 
     //! Check whether all prevouts of the transaction are present in the UTXO set represented by this view
     bool HaveInputs(const CTransaction& tx) const;
 
     //! Run an internal sanity check on the cache data structure. */
-    void SanityCheck() const;
+    virtual void SanityCheck() const;
 
     class ResetGuard
     {

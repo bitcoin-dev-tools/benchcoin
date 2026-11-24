@@ -305,6 +305,16 @@ void CCoinsViewCache::Reset() noexcept
     SetBestBlock(uint256::ZERO);
 }
 
+void CCoinsViewCache::TraceUncache(const COutPoint& outpoint, const Coin& coin)
+{
+    TRACEPOINT(utxocache, uncache,
+           outpoint.hash.data(),
+           (uint32_t)outpoint.n,
+           (uint32_t)coin.nHeight,
+           (int64_t)coin.out.nValue,
+           (bool)coin.IsCoinBase());
+}
+
 void CCoinsViewCache::Uncache(const COutPoint& hash)
 {
     CCoinsMap::iterator it = cacheCoins.find(hash);

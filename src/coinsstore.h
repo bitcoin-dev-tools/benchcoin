@@ -1,0 +1,889 @@
+// Copyright (c) 2026-present The Bitcoin Core developers
+// Distributed under the MIT software license, see the accompanying
+// file COPYING or http://www.opensource.org/licenses/mit-license.php.
+
+#ifndef BITCOIN_COINSSTORE_H
+#define BITCOIN_COINSSTORE_H
+
+#include <coins.h>
+#include <coins_entry_machine.h>
+#include <crypto/common.h>
+#include <kernel/caches.h>
+#include <primitives/transaction.h>
+#include <sync.h>
+#include <uint256.h>
+#include <util/check.h>
+#include <util/hasher.h>
+
+#include <array>
+#include <atomic>
+#include <condition_variable>
+#include <cstddef>
+#include <cstdint>
+#include <functional>
+#include <limits>
+#include <memory>
+#include <new>
+#include <optional>
+#include <span>
+#include <tuple>
+#include <utility>
+#include <vector>
+
+/**
+ * The young tier of the UTXO set: the in-memory layer above the coins
+ * database that holds every coin changed since it was last written out and
+ * clean copies of old coins that lookups brought in. It is the chainstate's
+ * tip view, and it is a CCoinsViewCache to its callers: the same entry
+ * semantics (an entry is DIRTY when it differs from the database and FRESH
+ * when the database is known not to hold it, so a spent FRESH entry needs no
+ * erase) behind the same interface, with the base class's map unused.
+ *
+ *  - The map is sharded by the leading bytes of the txid, a shard being a
+ *    range of the database's keys, with one mutex per shard, held across the
+ *    lookup, compare and update of one entry, so that several threads can
+ *    mutate distinct entries at once.
+ *  - Every entry carries the height of its last change. A write-out run
+ *    takes the entries changed at or below a height bound (BeginWriteOut),
+ *    streams them to the database a chunk at a time under its two-head
+ *    marker (StreamWriteOut), each chunk becoming clean as it lands, and
+ *    ends by recording the head the database then holds (CommitWriteOut).
+ *    What stays in memory is the lag: the changes of the last blocks, among
+ *    which coins created and spent since the bound are never written at all.
+ *  - Clean entries can be evicted on their own (EvictClean), so the budget
+ *    is met before any dirty entry has to be written.
+ *  - A block's changes are made once the block is valid, at its height
+ *    (ApplyConfirmed), by several threads on disjoint shards. A change that
+ *    does not find the coin it expects is not made and is reported, and the
+ *    caller takes the block's other changes back.
+ *
+ * The owner serialises commits and runs (under cs_main); the shard locks make
+ * lookups from other threads safe meanwhile. AccessCoin() returns a reference
+ * to the calling thread's copy of the coin, valid until the thread's next
+ * call: no lock of the caller keeps a commit from spending the entry.
+ */
+class CoinsStore : public CCoinsViewCache
+{
+    struct Entry;
+    //! A map node: an outpoint and its entry. Nodes never move, so a run in flight refers to entries by node
+    //! pointer.
+    using Node = std::pair<const COutPoint, Entry>;
+
+public:
+    //! A write-out run between BeginWriteOut() and CommitWriteOut().
+    struct WriteOutRun {
+        //! Coins a disconnect restored (KeepWritten()), handed to this run: written before anything else of
+        //! it and before its marker, as plain coins (CCoinsViewDB::WriteCoins()), by the run's owner and not
+        //! by StreamWriteOut(), which never reads them. An owner that cannot write them abandons the run
+        //! (AbandonWriteOut()) rather than stream it.
+        std::vector<CoinWrite> restored;
+        //! The number of changes collected.
+        size_t count{0};
+        //! The tier's best block when the run was prepared: the marker's new head. Every write is the
+        //! outpoint's value in that block's state.
+        uint256 new_head;
+        //! The block whose state the database held before the run (the settled head of the previous run):
+        //! the marker's old head.
+        uint256 old_head;
+        //! Every change at or below this height is carried.
+        int bound_height{-1};
+        //! The height of new_head.
+        int head_height{-1};
+        //! The lowest change height among the dirty entries the run leaves behind, as far as collected.
+        int oldest_left{std::numeric_limits<int>::max()};
+        //! The height whose state the database holds once the run has landed: that of new_head when no
+        //! dirty change remains behind, else one below the oldest change that remains. At least
+        //! bound_height, since everything at or below the bound is carried. Known once every shard has
+        //! been collected.
+        int settled_height{-1};
+        //! The block at settled_height on the chain of new_head: the next run's old head. StreamWriteOut()
+        //! fills it in.
+        uint256 settled_head;
+        //! Whether the run drains the tier: the database is consistent with new_head afterwards and the
+        //! marker is replaced by the best block.
+        bool final{false};
+        size_t bytes{0};
+    };
+
+    //! The number of shards unless the caller names one: many against any number of threads a machine
+    //! runs, since a thread that finds a shard taken waits far longer than the hold it waits out. An
+    //! empty shard is a few hundred bytes.
+    static constexpr size_t DEFAULT_SHARDS{256};
+    //! `deterministic` is the cache base's (CCoinsViewCache), whose own map the store does not use; the shards'
+    //! key hash keeps its random salt (KeyHash()), which places entries and decides no outcome.
+    explicit CoinsStore(CCoinsView* base_view, size_t shards = DEFAULT_SHARDS, bool deterministic = false);
+
+    // CCoinsView
+    //! The entry's coin as a copy, bringing it in from the base on a miss; nullopt if absent or spent.
+    std::optional<Coin> GetCoin(const COutPoint& outpoint) const override;
+    std::optional<Coin> PeekCoin(const COutPoint& outpoint) const override;
+    bool HaveCoin(const COutPoint& outpoint) const override;
+    uint256 GetBestBlock() const override;
+    //! A child cache's dirty entries become confirmed changes of this tier at the current change height.
+    void BatchWrite(CoinsViewCacheCursor& cursor, const uint256& block_hash) override;
+
+    // CCoinsViewCache: changes one by one (the disconnect path, snapshot loading, tests).
+    void SetBestBlock(const uint256& block_hash) override;
+    bool HaveCoinInCache(const COutPoint& outpoint) const override;
+    const Coin& AccessCoin(const COutPoint& outpoint) const override;
+    void AddCoin(const COutPoint& outpoint, Coin&& coin, bool possible_overwrite) override;
+    //! Insert a coin known to be absent from the tier and the base (snapshot loading). Marked dirty, not fresh.
+    void EmplaceCoinInternalDANGER(const COutPoint& outpoint, Coin&& coin) override;
+    bool SpendCoin(const COutPoint& outpoint, Coin* moveto = nullptr) override;
+    //! Write everything dirty synchronously through the base, as a final run, and drop every entry. The
+    //! coins disconnects restored are not among what it writes: the caller writes Restored() first.
+    void Flush(bool reallocate_cache = true) override;
+    //! Write everything dirty synchronously through the base, as a final run, and keep the entries clean.
+    //! As Flush(), the caller writes Restored() first.
+    void Sync();
+    /**
+     * How the base takes its writes: the size of a batch (the database's batch size), and whether several
+     * threads may call its WriteRun() at once (the database's may). Flush() and Sync() write batches of up
+     * to that size, each the changes of neighbouring shards in the order of their keys: a range of the
+     * database's keys that no other batch of the flush reaches into (ShardIndex()). A flush of more than
+     * a few batches to a base that allows it has up to four workers, a range of the shards each,
+     * collecting and serializing its next batch while the database is busy with another's: the calling
+     * thread and tasks of the pool given to SetFlushHelpers().
+     */
+    void SetBaseWrites(uint64_t batch_bytes, bool concurrent)
+    {
+        m_batch_bytes = batch_bytes;
+        m_base_concurrent = concurrent;
+    }
+    //! The pool a flush's further workers run on, as tasks (the node's connect pool). Without one, the
+    //! calling thread writes every range, one after the other.
+    void SetFlushHelpers(std::shared_ptr<ThreadPool> pool) { m_flush_helpers = std::move(pool); }
+    void Uncache(const COutPoint& outpoint) override;
+    unsigned int GetCacheSize() const override;
+    size_t GetDirtyCount() const noexcept override;
+    size_t DynamicMemoryUsage() const override;
+    //! The regions the nodes of every store are carved from, which are never given back: beyond the live
+    //! nodes, which DynamicMemoryUsage() counts, they hold the free ones, which nothing else counts.
+    static size_t NodeRegionBytes() { return s_node_region_bytes.load(std::memory_order_relaxed); }
+    void SanityCheck() const override;
+    //! Not meaningful for the tier.
+    void Reset() noexcept override;
+
+    // The tier's own interface.
+    //! Set the block and the height tagged onto the changes that follow.
+    void SetBestBlock(const uint256& block_hash, int height);
+    //! The height tagged onto the changes that follow. Set to the fork height before disconnecting blocks, so
+    //! that the inverse changes are the oldest and the next run carries them all.
+    void SetChangeHeight(int height) { m_change_height = height; }
+    //! The height of the tier's best block, for the paths that move it by hash alone (a disconnect's
+    //! flush); SetBestBlock(hash, height) sets it too. Distinct from the change height, which a reorg
+    //! holds at the fork while the best block moves.
+    void SetTierHeight(int height)
+    {
+        // Below the block the database holds, or is being brought to: what the disconnect changed is tagged
+        // with the fork height, and no run may stop at a bound until a final one has carried it.
+        Assert(!m_run_in_flight);
+        if (height < m_written_height) m_fell_below_written = true;
+        m_tier_height = height;
+    }
+
+    //! One of a block's changes, for ApplyConfirmed(): an unspent coin is the outpoint's creation, a spent one
+    //! its spend. The outpoint and the coin stay where the caller has them, for the length of the call: a
+    //! change is no copy of either.
+    struct Change {
+        const COutPoint* outpoint;
+        Coin* coin;
+        //! For a create: a live coin under it is a BIP30 overwrite, allowed only with this, as AddCoin().
+        bool possible_overwrite{false};
+        //! For a spend: `coin`, spent, has the height and the coinbase flag of the coin the block validated
+        //! the spend against, and another coin met at the apply is a conflict.
+        bool known_coin{false};
+        //! For a create: the coin's script, where `coin` holds all but it.
+        const CScript* script{nullptr};
+    };
+    //! The shard of an outpoint: what a commit groups a block's changes by.
+    size_t ShardIndexOf(const COutPoint& outpoint) const { return ShardIndex(outpoint); }
+    //! What ApplyConfirmed() tells of a call, for the caller that takes its changes back.
+    struct ConfirmedReport {
+        //! The changes that were not made, by the address of their outpoint.
+        std::vector<const COutPoint*> conflicted;
+        //! The coins that creates wrote over (Change::possible_overwrite), by the address of the create's outpoint.
+        std::vector<std::pair<const COutPoint*, Coin>> overwritten;
+        //! The creates that may overwrite and found no entry: what they wrote over, if anything, is the
+        //! database's coin (BaseCoin()).
+        std::vector<const COutPoint*> unread;
+    };
+    //! The changes of the block at `height`, which validated, by several threads on disjoint shards. Returns
+    //! the conflicts: a spend whose coin is not there, or is another, and a create over a coin it may not
+    //! overwrite. A change that is a conflict is not made, the others are; `report` names them, so that the
+    //! caller can take the others back (with the inverse changes, as a disconnected block's).
+    //! A spend of a coin the tier does not hold takes the coin from `base_coin` where it gives one: the coin
+    //! the database holds under the outpoint, as the block read it, which nothing has changed since (a block
+    //! connected alone, from its undo data); else from a read of the database.
+    uint32_t ApplyConfirmed(std::vector<Change>&& changes, int height, ConfirmedReport* report = nullptr, const std::function<const Coin*(const COutPoint&)>& base_coin = {});
+    size_t ShardCount() const { return m_shards.size(); }
+    //! The database's coin under `outpoint`, whatever the tier holds.
+    std::optional<Coin> BaseCoin(const COutPoint& outpoint) const { return base->GetCoin(outpoint); }
+
+    //! The lowest height bound whose write-out frees at least `bytes` of dirty entries, or the tip height if
+    //! all dirty entries together do not.
+    int BoundForBytes(size_t bytes, int tip_height) const;
+
+    //! Drop clean entries until the tier's usage is at most `target_bytes`, oldest first in each shard; an
+    //! entry read since it was last passed over gets a second chance.
+    size_t EvictClean(size_t target_bytes);
+
+    /**
+     * Open a run that carries every dirty entry changed at or below `bound_height`, under the
+     * marker (`new_head`, the settled head of the previous run); `head_height` is new_head's height.
+     * `final` carries everything regardless of the bound. A run with nothing to carry still
+     * moves the settled head when the bound is above it; nullptr if there is nothing to carry and no
+     * head to move.
+     *
+     * What the marker promises: before the run the database holds the state at old_head; each write sets
+     * an outpoint to its value at new_head; so a crash anywhere inside the run is repaired by undoing
+     * old_head down to its fork with new_head and re-applying up to new_head (ReplayBlocks), which
+     * rewrites every outpoint the two states can differ in. For the promise to hold at the next run, the
+     * settled head after this one must be a lower bound for that replay: a block at or below which the
+     * database holds every change, which is `settled_height` on new_head's chain. The bound names the
+     * oldest change carried, not that block (a reorg's inverse changes are tagged with the fork height and
+     * move it to the tier's head). It is a lower bound and not a state the database holds whole: a coin
+     * created at or below it and spent above it cancels in the tier and never reaches the database, which
+     * any replay forward from it agrees with; a disconnect below the spend restores the coin, and the next
+     * run writes it first (KeepWritten()).
+     *
+     * One kind of write is not the outpoint's value at new_head: a confirmed create above the bound that
+     * owes the database an erase is written as that erase (CollectChunk()), also where it went over an
+     * unspent coin the database never had. The database then holds less than the state below the create,
+     * never a coin that state does not have, and the replay re-applies the create like every block above
+     * old_head.
+     */
+    std::unique_ptr<WriteOutRun> BeginWriteOut(int bound_height, int head_height, const uint256& new_head, bool final);
+    /**
+     * Write the run through the base a chunk at a time, a chunk being one database batch of about
+     * `batch_bytes` (the database's batch size): collect a chunk of dirty entries from the shards'
+     * maps, each shard under its lock and the chunk filling across shards, write
+     * it with no shard locked, then settle the chunk's entries shard by shard through the node pointers
+     * kept (an entry changed since stays dirty and is collected again; a spent one is erased). Memory
+     * beyond the tier is one chunk's coins, whatever the size of the run; a run smaller than a chunk is one
+     * write. A collected entry is not FRESH: its value is on its way to the database. At most one chunk
+     * is outstanding, and a collected entry is never erased before its chunk settles, which is what keeps
+     * the pointers good.
+     *
+     * The last write closes the marker: a final run replaces it by the best block; any other rewrites
+     * it to (new_head, settled head), the pair the next run starts from, so that the marker on disk
+     * never names an old head below what the tier counts as written. `block_at` names the block at a
+     * height on new_head's chain (not needed for a final run).
+     *
+     * Takes shard locks and touches nothing else of the tier, so it may run on another thread than the
+     * owner's. Throws what the base's WriteRun() throws; the run is then abandoned (AbandonWriteOut()).
+     */
+    void StreamWriteOut(WriteOutRun& run, const std::function<uint256(int)>& block_at, uint64_t batch_bytes = DEFAULT_DB_CACHE_BATCH);
+    //! Coins a disconnect restored that the database may never have held (see DisconnectTip()): the next
+    //! run writes them first, before its marker, and a forced flush before anything (TakeRestored()). The
+    //! database may hold them from now on, so none of them stays fresh: a later spend is written as an
+    //! erase rather than dropped.
+    void KeepWritten(std::vector<CoinWrite> restored);
+    //! The restored coins not yet handed to a run, for a caller that writes them itself (a forced flush).
+    std::vector<CoinWrite> TakeRestored() { return std::exchange(m_restored, {}); }
+    const std::vector<CoinWrite>& Restored() const { return m_restored; }
+    //! The run has landed: its settled head is the database's state from now on.
+    void CommitWriteOut(const WriteOutRun& run);
+    //! The run did not land (the node is going down). What it had collected counts as written in the tier and
+    //! may be missing in the database, so the tier refuses every later run and flush (FlushFailed()).
+    void AbandonWriteOut();
+    //! The settled head: the block whose state the database holds, apart from the run in flight (null
+    //! before any run).
+    const uint256& WrittenHead() const { return m_written_head; }
+    //! At start-up, after the database was found or made consistent with `block_hash`: nothing is dirty.
+    void InitWrittenHead(const uint256& block_hash, int height)
+    {
+        m_written_head = block_hash;
+        m_written_height = height;
+        SetTierHeight(height);
+    }
+    //! Whether a run is between BeginWriteOut() and CommitWriteOut().
+    bool RunInFlight() const { return m_run_in_flight; }
+    //! Whether a flush lost changes to a failed write. Nothing may be written after it (Flush()).
+    bool FlushFailed() const { return m_flush_failed; }
+
+private:
+    //! How an entry is counted in its shard: among the dirty entries, by the span of its change height, or
+    //! among the clean ones; LIST_NONE while a change is made to it (Detach()).
+    enum List : uint8_t { LIST_NONE, LIST_DIRTY, LIST_CLEAN };
+    /**
+     * An entry is counted in its shard by its state: a dirty entry in the byte sum of its change height's
+     * span, where the write-out's bound is found, a clean one among the entries eviction may take. There
+     * are no lists: a write-out run and eviction walk the shard's map.
+     *
+     * The flags other than `referenced`, with whether the coin is spent, are the entry's state: what
+     * each flag means, which states there are and what leads from one to another is said in
+     * coins_entry_machine.h, with what each change does to the height the entry is filed under. The flags
+     * and the height are written by Transit() and Enter() alone.
+     */
+    struct Entry {
+        Coin coin;
+        //! The height the entry is filed under, the write-out's age: the last change's as a rule, and an
+        //! earlier one's where that change is owed still, or where a change finds the entry dirty
+        //! (coins_entry::Height).
+        int32_t height{0};
+        bool dirty : 1 {false};
+        bool fresh : 1 {false};
+        bool collected : 1 {false};
+        //! A lookup found the entry since eviction last passed over it.
+        bool referenced : 1 {false};
+        //! The coin was made over an erase the database is owed still (coins_entry::OWED).
+        bool owed : 1 {false};
+        uint8_t list : 2 {LIST_NONE};
+    };
+    //! The huge page size the hint below is made for (x86-64's; elsewhere the hint is as harmless as none).
+    static constexpr size_t HUGE_PAGE_BYTES{size_t{2} << 20};
+    //! Memory of a multiple of HUGE_PAGE_BYTES, aligned to it, that the system is asked to back with huge
+    //! pages where it can (Linux's transparent huge pages, in their "madvise" or "always" mode): a lookup
+    //! lands on a random node of a large map, and with small pages misses the TLB for the bucket and again
+    //! for the node. Only a hint. Freed with FreeRegion().
+    static void* HintedRegion(size_t bytes);
+    static inline std::atomic<size_t> s_node_region_bytes{0};
+    static void FreeRegion(void* region) noexcept { ::operator delete(region, std::align_val_t{HUGE_PAGE_BYTES}); }
+    //! A shard's entries are inserted and erased by whichever thread holds its mutex, so a node is often freed
+    //! by another thread than the one that allocated it. A thread keeps the nodes it frees for its own next
+    //! insertions: a list of up to MAX_KEPT nodes and one full list beside it. A thread with two full lists
+    //! gives one to the depot, and a thread with none takes one from there: a lock for every MAX_KEPT
+    //! nodes, held for the exchange of a pointer.
+    //!
+    //! The depot carves new lists from regions of REGION_BYTES, asked for with the huge page hint
+    //! (HintedRegion()). A node is never given back: one that is freed waits, with its thread or in the
+    //! depot, for the next insertion, and the regions stay with the process.
+    template <typename T>
+    struct NodeAllocator {
+        using value_type = T;
+        static constexpr size_t MAX_KEPT{1024};
+        static constexpr size_t REGION_BYTES{size_t{32} << 20};
+        //! The next full list after this one in the depot: the second word of a list's first node.
+        static void*& NextList(void* list) { return static_cast<void**>(list)[1]; }
+        //! Full lists, each MAX_KEPT nodes, for whichever thread next runs out, and the region new ones are
+        //! carved from. Never destroyed, so that a thread may end at any time.
+        struct Depot {
+            Mutex mutex;
+            void* lists GUARDED_BY(mutex){nullptr};
+            //! The nodes of threads that ended, fewer than MAX_KEPT: a full list once there are as many.
+            void* loose GUARDED_BY(mutex){nullptr};
+            size_t loose_count GUARDED_BY(mutex){0};
+            //! What is left of the newest region.
+            std::byte* fresh GUARDED_BY(mutex){nullptr};
+            size_t fresh_bytes GUARDED_BY(mutex){0};
+            void Give(void* list) EXCLUSIVE_LOCKS_REQUIRED(!mutex)
+            {
+                LOCK(mutex);
+                NextList(list) = lists;
+                lists = list;
+            }
+            void GiveLoose(void* nodes) EXCLUSIVE_LOCKS_REQUIRED(!mutex)
+            {
+                LOCK(mutex);
+                while (nodes) {
+                    void* next{*static_cast<void**>(nodes)};
+                    *static_cast<void**>(nodes) = loose;
+                    loose = nodes;
+                    if (++loose_count == MAX_KEPT) {
+                        NextList(loose) = lists;
+                        lists = std::exchange(loose, nullptr);
+                        loose_count = 0;
+                    }
+                    nodes = next;
+                }
+            }
+            //! A full list: one that was given, else MAX_KEPT nodes no one has used yet.
+            void* Take() EXCLUSIVE_LOCKS_REQUIRED(!mutex)
+            {
+                static constexpr size_t LIST_BYTES{MAX_KEPT * sizeof(T)};
+                std::byte* nodes;
+                {
+                    LOCK(mutex);
+                    if (lists) return std::exchange(lists, NextList(lists));
+                    if (fresh_bytes < LIST_BYTES) {
+                        // The remainder, less than a list, is left behind.
+                        fresh = static_cast<std::byte*>(HintedRegion(REGION_BYTES));
+                        fresh_bytes = REGION_BYTES;
+                        s_node_region_bytes.fetch_add(REGION_BYTES, std::memory_order_relaxed);
+                    }
+                    nodes = fresh;
+                    fresh += LIST_BYTES;
+                    fresh_bytes -= LIST_BYTES;
+                }
+                // Linked outside the lock: the first touch of the memory is where the system supplies it.
+                for (size_t i{0}; i < MAX_KEPT; ++i) {
+                    *reinterpret_cast<void**>(nodes + i * sizeof(T)) = i + 1 < MAX_KEPT ? nodes + (i + 1) * sizeof(T) : nullptr;
+                }
+                return nodes;
+            }
+        };
+        static Depot& Shared()
+        {
+            static Depot* const depot{new Depot};
+            return *depot;
+        }
+        //! Whether this thread's list is destroyed: at the thread's end, and on the main thread before the
+        //! static objects, which may still free nodes (a store a static test setup owns). Trivially
+        //! destructible, so it can be read after that.
+        static bool& KeptGone()
+        {
+            thread_local bool gone{false};
+            return gone;
+        }
+        struct Kept {
+            void* head{nullptr};
+            size_t count{0};
+            //! A full list, or none.
+            void* spare{nullptr};
+            ~Kept()
+            {
+                KeptGone() = true;
+                if (spare) Shared().Give(std::exchange(spare, nullptr));
+                if (head) Shared().GiveLoose(std::exchange(head, nullptr));
+                count = 0;
+            }
+        };
+        static Kept& Mine()
+        {
+            static_assert(sizeof(T) >= 2 * sizeof(void*) && sizeof(T) % alignof(T) == 0 && alignof(T) <= HUGE_PAGE_BYTES);
+            thread_local Kept kept;
+            return kept;
+        }
+        NodeAllocator() = default;
+        template <typename U>
+        NodeAllocator(const NodeAllocator<U>&) noexcept {}
+        T* allocate(size_t n)
+        {
+            Assert(n == 1);
+            if (KeptGone()) {
+                // One node of a list of the depot's (which is never destroyed), the rest back to it.
+                void* node{Shared().Take()};
+                Shared().GiveLoose(std::exchange(*static_cast<void**>(node), nullptr));
+                return static_cast<T*>(node);
+            }
+            Kept& kept{Mine()};
+            if (!kept.head) {
+                // The full list beside, else one of the depot's.
+                kept.head = kept.spare ? std::exchange(kept.spare, nullptr) : Shared().Take();
+                kept.count = MAX_KEPT;
+            }
+            void* node{kept.head};
+            kept.head = *static_cast<void**>(node);
+            --kept.count;
+            return static_cast<T*>(node);
+        }
+        void deallocate(T* p, size_t n) noexcept
+        {
+            Assert(n == 1);
+            if (KeptGone()) {
+                *reinterpret_cast<void**>(p) = nullptr;
+                Shared().GiveLoose(p);
+                return;
+            }
+            Kept& kept{Mine()};
+            if (kept.count == MAX_KEPT) {
+                // The full list goes beside, the one that was there to the depot, and a new one begins.
+                if (kept.spare) Shared().Give(kept.spare);
+                kept.spare = std::exchange(kept.head, nullptr);
+                kept.count = 0;
+            }
+            *reinterpret_cast<void**>(p) = kept.head;
+            kept.head = p;
+            ++kept.count;
+        }
+        friend bool operator==(const NodeAllocator&, const NodeAllocator&) noexcept { return true; }
+    };
+    //! The salted hash of an outpoint, one salt for all shards: a batch hashes its keys before it takes a shard.
+    static uint64_t KeyHash(const COutPoint& outpoint) noexcept
+    {
+        static const SaltedCoinsCacheHasher hasher;
+        return hasher(outpoint);
+    }
+    /**
+     * A shard's table: chained, with nodes that never move (a run in flight points at them),
+     * of the std::unordered_map interface as far as the store uses it. The bucket array is a power of two
+     * and a chain ends at a null pointer. A caller with many keys for one shard hashes them first and asks
+     * for their buckets and nodes ahead (Prefetch(), PrefetchNode()).
+     */
+    class Map
+    {
+    public:
+        struct Cell {
+            Cell* chain;
+            Node node;
+        };
+        class iterator
+        {
+        public:
+            iterator() = default;
+            iterator(const Map* map, size_t bucket, Cell* cell) : m_map{map}, m_bucket{bucket}, m_cell{cell} {}
+            Node& operator*() const { return m_cell->node; }
+            Node* operator->() const { return &m_cell->node; }
+            bool operator==(const iterator& other) const { return m_cell == other.m_cell; }
+            //! The bucket the iterator is in.
+            size_t bucket() const { return m_bucket; }
+            iterator& operator++()
+            {
+                m_cell = m_cell->chain;
+                while (!m_cell && ++m_bucket < m_map->m_bucket_count) m_cell = m_map->m_buckets[m_bucket];
+                return *this;
+            }
+
+        private:
+            friend class Map;
+            const Map* m_map{nullptr};
+            size_t m_bucket{0};
+            Cell* m_cell{nullptr};
+        };
+
+        Map() = default;
+        Map(const Map&) = delete;
+        Map& operator=(const Map&) = delete;
+        ~Map()
+        {
+            for (size_t b{0}; b < m_bucket_count; ++b) {
+                for (Cell* cell{m_buckets[b]}; cell;) {
+                    Cell* next{cell->chain};
+                    Free(cell);
+                    cell = next;
+                }
+            }
+        }
+
+        size_t size() const { return m_size; }
+        size_t bucket_count() const { return m_bucket_count; }
+        iterator end() const { return {}; }
+        iterator begin() const { return from(0); }
+        //! The first node of the first bucket at or after `first` that has one.
+        iterator from(size_t first) const
+        {
+            for (size_t b{first}; b < m_bucket_count; ++b) {
+                if (m_buckets[b]) return {this, b, m_buckets[b]};
+            }
+            return {};
+        }
+        //! Ask for the bucket of a hash ahead of its probe.
+        void Prefetch(uint64_t hash) const
+        {
+            if (m_bucket_count != 0) Ahead(&m_buckets[hash & (m_bucket_count - 1)]);
+        }
+        //! Ask for the first node of the bucket's chain, both of its cache lines. Reads the bucket.
+        void PrefetchNode(uint64_t hash) const
+        {
+            if (m_bucket_count == 0) return;
+            if (const Cell* cell{m_buckets[hash & (m_bucket_count - 1)]}) {
+                Ahead(cell);
+                Ahead(reinterpret_cast<const char*>(cell) + 64);
+            }
+        }
+        //! Ask for every item's bucket, then every chain's first node, before the first probe waits for one.
+        void PrefetchAll(std::span<const uint64_t> hashes, std::span<const uint32_t> items) const
+        {
+            for (const uint32_t i : items) Prefetch(hashes[i]);
+            for (const uint32_t i : items) PrefetchNode(hashes[i]);
+        }
+        iterator find(const COutPoint& key) const { return find(key, KeyHash(key)); }
+        iterator find(const COutPoint& key, uint64_t hash) const
+        {
+            if (m_bucket_count == 0) return {};
+            const size_t bucket{hash & (m_bucket_count - 1)};
+            for (Cell* cell{m_buckets[bucket]}; cell; cell = cell->chain) {
+                if (cell->node.first == key) return {this, bucket, cell};
+            }
+            return {};
+        }
+        std::pair<iterator, bool> try_emplace(const COutPoint& key) { return try_emplace(key, KeyHash(key)); }
+        std::pair<iterator, bool> try_emplace(const COutPoint& key, uint64_t hash)
+        {
+            if (const iterator it{find(key, hash)}; it != end()) return {it, false};
+            if (m_size == m_bucket_count) Rebucket(m_bucket_count == 0 ? MIN_BUCKETS : m_bucket_count * 2);
+            const size_t bucket{hash & (m_bucket_count - 1)};
+            Cell* cell{::new (NodeAllocator<Cell>{}.allocate(1)) Cell{{}, Node(std::piecewise_construct, std::forward_as_tuple(key), std::tuple<>())}};
+            cell->chain = m_buckets[bucket];
+            m_buckets[bucket] = cell;
+            ++m_size;
+            return {iterator{this, bucket, cell}, true};
+        }
+        iterator erase(iterator it)
+        {
+            iterator next{it};
+            ++next;
+            Cell** link{&m_buckets[it.m_bucket]};
+            while (*link != it.m_cell) link = &(*link)->chain;
+            *link = it.m_cell->chain;
+            Free(it.m_cell);
+            --m_size;
+            return next;
+        }
+        size_t erase(const COutPoint& key)
+        {
+            const iterator it{find(key)};
+            if (it == end()) return 0;
+            erase(it);
+            return 1;
+        }
+        //! Only rehash(0) of an empty map is used: the bucket array goes back.
+        void rehash(size_t)
+        {
+            Assume(m_size == 0);
+            m_buckets.reset();
+            m_bucket_count = 0;
+        }
+
+    private:
+        static constexpr size_t MIN_BUCKETS{16};
+        //! A hint only: without the builtin the probe waits for its memory.
+        static void Ahead(const void* p)
+        {
+#if defined(__GNUC__) || defined(__clang__)
+            __builtin_prefetch(p);
+#else
+            (void)p;
+#endif
+        }
+        static void Free(Cell* cell)
+        {
+            std::destroy_at(cell);
+            NodeAllocator<Cell>{}.deallocate(cell, 1);
+        }
+        void Rebucket(size_t count)
+        {
+            Buckets buckets{nullptr, BucketsDeleter{count * sizeof(Cell*) >= HUGE_PAGE_BYTES}};
+            if (count != 0) {
+                // An array of a huge page or more (a power of two, so a multiple of it) asks for huge pages.
+                void* array{buckets.get_deleter().hinted ? HintedRegion(count * sizeof(Cell*)) : ::operator new(count * sizeof(Cell*))};
+                buckets.reset(new (array) Cell*[count]());
+            }
+            for (size_t b{0}; b < m_bucket_count; ++b) {
+                for (Cell* cell{m_buckets[b]}; cell;) {
+                    Cell* next{cell->chain};
+                    const size_t bucket{KeyHash(cell->node.first) & (count - 1)};
+                    cell->chain = buckets[bucket];
+                    buckets[bucket] = cell;
+                    cell = next;
+                }
+            }
+            m_buckets = std::move(buckets);
+            m_bucket_count = count;
+        }
+
+        struct BucketsDeleter {
+            bool hinted;
+            void operator()(Cell** array) const noexcept
+            {
+                if (hinted) {
+                    FreeRegion(array);
+                } else {
+                    ::operator delete(array);
+                }
+            }
+        };
+        using Buckets = std::unique_ptr<Cell*[], BucketsDeleter>;
+        Buckets m_buckets{nullptr, BucketsDeleter{false}};
+        size_t m_bucket_count{0};
+        size_t m_size{0};
+    };
+    //! The dirty entries of one span of change heights in a shard: what writing them out frees, DirtyBytes()
+    //! of each.
+    struct Bucket {
+        int64_t bytes{0};
+    };
+    using ShardMutex = Mutex;
+    //! On cache lines of its own: a shard is written by whichever thread holds it, and its neighbours by others.
+    struct alignas(64) Shard {
+        mutable ShardMutex mutex;
+        Map map GUARDED_BY(mutex);
+        //! The shard's share of the tier's totals (see Totals): its dirty entries, and its map's size and
+        //! bucket count as last counted (Resized()).
+        size_t dirty_count GUARDED_BY(mutex){0};
+        size_t entries GUARDED_BY(mutex){0};
+        size_t buckets GUARDED_BY(mutex){0};
+        //! The dirty entries' byte sums by span of change heights (SpanOf()), what writing each span out frees
+        //! (DirtyBytes() of each entry), empty when the shard has none: they find the span a write-out's bound
+        //! lies in.
+        std::vector<int64_t> dirty_spans GUARDED_BY(mutex);
+        //! Where eviction's sweep of the map stands, a bucket: a clean entry found since the last sweep keeps
+        //! its place once (`referenced`), as a clock.
+        size_t clock GUARDED_BY(mutex){0};
+        //! Counts the times a write-out settled entries of this shard, or a flush emptied it: an unlocked
+        //! read of the base that started before the count moved may predate what was written.
+        uint64_t settles GUARDED_BY(mutex){0};
+    };
+    /**
+     * The tier's totals: its memory usage, its entries and its dirty entries. The owner asks for them
+     * for every block it publishes, and every change of an entry moves them. They are kept as sums of
+     * deltas in stripes, a thread adding to the stripe it was dealt and each stripe on a cache line of
+     * its own, so that a query reads the stripes and neither locks nor reads a shard. One stripe means
+     * nothing (what one thread adds another takes away); the sum is the total, exact when no change is
+     * under way.
+     */
+    struct alignas(64) Totals {
+        //! As DynamicMemoryUsage() reports it: the maps' nodes and bucket arrays, the shards' arrays of
+        //! dirty span sums, and the coins' own memory.
+        std::atomic<int64_t> bytes{0};
+        std::atomic<int64_t> entries{0};
+        std::atomic<int64_t> dirty{0};
+    };
+    static constexpr size_t TOTALS_STRIPES{64};
+    //! The calling thread's stripe.
+    Totals& MyTotals() const;
+    size_t SumTotals(std::atomic<int64_t> Totals::* field) const;
+    //! What an entry's map node costs, as DynamicMemoryUsage() counts it.
+    static int64_t NodeBytes();
+    /**
+     * How many change heights share a list of dirty entries, as a power of two. While nothing is written
+     * out the dirty entries are the coins of every height since the last write, a few to a shard for each:
+     * a list for every height would be an allocation of its own for nearly every dirty coin. An entry
+     * keeps its height, and whoever needs heights apart inside a span reads them there.
+     */
+    static constexpr int DIRTY_SPAN_BITS{10};
+    static size_t SpanOf(int height);
+    //! The list for dirty entries of this change height; the shard's array grows to hold it.
+    Bucket& DirtyBucket(Shard& shard, int height) const EXCLUSIVE_LOCKS_REQUIRED(shard.mutex);
+    //! Give the shard's array of dirty span sums back: it has no dirty entry left.
+    void FreeDirtySpans(Shard& shard) const EXCLUSIVE_LOCKS_REQUIRED(shard.mutex);
+    //! The memory of a shard's coins grows or shrinks.
+    void AddUsage(Shard& shard, size_t bytes) const EXCLUSIVE_LOCKS_REQUIRED(shard.mutex);
+    void SubUsage(Shard& shard, size_t bytes) const EXCLUSIVE_LOCKS_REQUIRED(shard.mutex);
+
+    Shard& ShardFor(const COutPoint& outpoint) const { return m_shards[ShardIndex(outpoint)]; }
+    //! What a dirty entry counts for in the tier's usage, as DynamicMemoryUsage() measures it.
+    static int64_t DirtyBytes(const Entry& entry);
+    //! Take the entry out of its shard's counts. Before any change of its coin or height, which its span's
+    //! byte sum depends on.
+    void Detach(Shard& shard, Node& node) const EXCLUSIVE_LOCKS_REQUIRED(shard.mutex);
+    //! Count a detached entry as its state calls for.
+    void Attach(Shard& shard, Node& node) const EXCLUSIVE_LOCKS_REQUIRED(shard.mutex);
+    //! A lookup found the entry.
+    static void Reference(Entry& entry) { if (!entry.referenced) entry.referenced = true; }
+    using State = coins_entry::State;
+    using Event = coins_entry::Event;
+    //! The entry's state: its flags, and whether its coin is spent.
+    static State StateOf(const Entry& entry)
+    {
+        using namespace coins_entry;
+        return static_cast<State>((entry.dirty ? DIRTY : 0) | (entry.fresh ? FRESH : 0) | (entry.collected ? COLLECTED : 0) |
+                                  (entry.owed ? OWED : 0) | (entry.coin.IsSpent() ? SPENT : 0));
+    }
+    //! A coin put over the entry and filed under `height` owes the database the entry's erase
+    //! (Event::CoinOverErase): the entry is dirty, spent and filed lower, an erase the database does not have
+    //! yet, which a run bounded below the coin still writes (CollectChunk()).
+    static bool OwesErase(const Entry& entry, int height) { return entry.dirty && entry.coin.IsSpent() && entry.height < height; }
+    //! Put the entry in the state `to`, which the machine answered and which the entry's coin agrees
+    //! with, and file it under `height`, which the machine answered as well. An event the machine refuses
+    //! is a defect of the store's logic, and stops the node here. The span sums are by height: an entry
+    //! changes its height out of its shard's counts (Detach()).
+    static void Enter(Entry& entry, State to, int height)
+    {
+        using namespace coins_entry;
+        Assert(to != REFUSED);
+        Assert(static_cast<bool>(to & SPENT) == entry.coin.IsSpent());
+        Assert(height == entry.height || entry.list == LIST_NONE);
+        entry.height = height;
+        entry.dirty = to & DIRTY;
+        entry.fresh = to & FRESH;
+        entry.collected = to & COLLECTED;
+        entry.owed = to & OWED;
+    }
+    //! `event` happened to the entry at `height` (the change's or the coin's, as the event has it). The entry was in `from` before and has its coin as the event leaves it. With the
+    //! entry out of its shard's counts where the event changes how it is counted (Detach()).
+    static void Transit(Entry& entry, State from, Event event, int height)
+    {
+        using namespace coins_entry;
+        Enter(entry, Next(from, event), NextHeight(HeightRule(from, event), from, entry.height, height));
+    }
+    //! The same for an event that has no height and leaves the entry where it is filed.
+    static void Transit(Entry& entry, State from, Event event)
+    {
+        Assert(coins_entry::HeightRule(from, event) == coins_entry::Height::Keep);
+        Enter(entry, coins_entry::Next(from, event), entry.height);
+    }
+    //! The same for events that leave the coin spent or unspent as it was.
+    static void Transit(Entry& entry, Event event, int height) { Transit(entry, StateOf(entry), event, height); }
+    static void Transit(Entry& entry, Event event) { Transit(entry, StateOf(entry), event); }
+    //! Collect the shard's dirty entries at or below the run's bound into `writes` and `nodes` until
+    //! `size`, about what the collected changes come to in a database batch, reaches `limit`; note the
+    //! oldest change height left behind. Of a coin above the bound that was made over an erase the database
+    //! is owed (Entry::owed), the erase is written.
+    void CollectChunk(Shard& shard, WriteOutRun& run, uint64_t limit, uint64_t& size, std::vector<CoinWrite>& writes, std::vector<Node*>& nodes) const EXCLUSIVE_LOCKS_REQUIRED(shard.mutex);
+    //! A collected entry's value is in the database: clean (erased when spent), unless changed since.
+    void SettleNode(Shard& shard, Node& node) const EXCLUSIVE_LOCKS_REQUIRED(shard.mutex);
+    void SpendEntry(Shard& shard, Map::iterator it, Coin* moveto) EXCLUSIVE_LOCKS_REQUIRED(shard.mutex);
+    //! What a lookup has of an entry it found, with the shard held: a copy of the coin, if there is one.
+    static std::optional<Coin> SeenCoin(Entry& entry);
+    /**
+     * Visit the shards of a block's items, `shard_of[i]` being item i's: `work(shard, items)` runs once
+     * for every shard that has any, with its lock held and the indices of its items in their order. The
+     * walk passes over a shard another thread holds, coming back for those at the end: there is no order
+     * between shards to keep.
+     */
+    template <typename Work>
+    void VisitShards(const std::vector<uint32_t>& shard_of, Work work) const;
+    //! Erase an entry, keeping the shard's counts right.
+    void EraseEntry(Shard& shard, Map::iterator it) const EXCLUSIVE_LOCKS_REQUIRED(shard.mutex);
+    //! The same for an entry reached over a list, erased by its key: a cell has no link back, so the erase
+    //! walks the chain from its bucket either way.
+    void EraseEntry(Shard& shard, Node& node) const EXCLUSIVE_LOCKS_REQUIRED(shard.mutex);
+    //! Erase an entry that is out of its shard's counts and whose coin's usage is taken off the books already.
+    void EraseDetached(Shard& shard, Map::iterator it) const EXCLUSIVE_LOCKS_REQUIRED(shard.mutex);
+    struct Wipe;
+    struct WipeWorker;
+    //! A flush's worker: takes its shards from the highest down, and writes what it took out of them.
+    void RunWipeWorker(Wipe& wipe, WipeWorker& worker) NO_THREAD_SAFETY_ANALYSIS;
+    //! Take the shard's entries out of it, its changes into the worker's batch in the order of their
+    //! keys. Returns what the shard's changes come to as a database batch.
+    uint64_t WipeShard(Shard& shard, WipeWorker& worker) EXCLUSIVE_LOCKS_REQUIRED(shard.mutex);
+    //! Write the worker's batch and unlock the shards it emptied: their changes are in the database.
+    void WriteWipeBatch(const Wipe& wipe, WipeWorker& worker) NO_THREAD_SAFETY_ANALYSIS;
+    //! The map's size or bucket count may have changed: count the difference into the totals.
+    void Resized(Shard& shard) const EXCLUSIVE_LOCKS_REQUIRED(shard.mutex);
+    //! ApplyConfirmed()'s create and spend of one entry, at `height`, with the shard held. A create over a coin it
+    //! may not overwrite never comes here: ApplyConfirmed() reports it as a conflict instead.
+    void CreateLocked(Shard& shard, const COutPoint& outpoint, uint64_t hash, Coin&& coin, const CScript* script, bool possible_overwrite, int height) EXCLUSIVE_LOCKS_REQUIRED(shard.mutex);
+    void SpendEntryAt(Shard& shard, Map::iterator it, int height) EXCLUSIVE_LOCKS_REQUIRED(shard.mutex);
+    /**
+     * The shard of an outpoint, by the leading bytes of its txid as the database's key begins with them:
+     * the shards are consecutive ranges of the database's keys in the order of their index
+     * (SetBaseWrites()). A transaction's outputs share a shard. Whoever makes a transaction can pick its
+     * shard by grinding, which buys contention on that shard and a larger share of a forced flush's scratch
+     * memory (WipeShard() stages a whole shard's changes), and nothing else: an entry's place in the
+     * shard's map is by the salted hash.
+     */
+    size_t ShardIndex(const COutPoint& outpoint) const { return (uint64_t{ReadBE32(outpoint.hash.ToUint256().data())} * m_shards.size()) >> 32; }
+
+    /**
+     * The change height an unspent coin arriving one by one is tagged with (AddCoin(), BatchWrite()). A coin
+     * restored by a disconnect (the change height is then the fork height) that was created above the
+     * settled height is not in the database. It keeps its creation height, below the fork or above it:
+     * a run bounded below its creation leaves it and the settled head below its creating block, which a
+     * replay then applies again, and a run bounded at or above its creation writes it. Tagged with the
+     * fork height, a run bounded between the two would settle the database above its creation without
+     * it. Any other coin takes the change height. Where the entry is dirty already, it stays filed under
+     * the height of the earlier change if that is lower (coins_entry::Height::Oldest), and where that change
+     * is an erase the database is still owed, the coin owes it in turn (OwesErase()).
+     */
+    int TagFor(const Coin& coin) const
+    {
+        return static_cast<int>(coin.nHeight) > m_written_height ? static_cast<int>(coin.nHeight) : m_change_height;
+    }
+
+    mutable std::vector<Shard> m_shards;
+    mutable std::array<Totals, TOTALS_STRIPES> m_totals;
+    mutable uint256 m_tier_block_hash;
+    int m_change_height{0};
+    int m_tier_height{-1};
+    uint256 m_written_head;
+    int m_written_height{-1};
+    bool m_run_in_flight{false};
+    //! A flush lost changes to a failed write (Flush()). The run it began never ends.
+    bool m_flush_failed{false};
+    //! The tier's block has been below the written head since the last final run began (a disconnect):
+    //! every run is final, whatever its caller asked for (BeginWriteOut()).
+    bool m_fell_below_written{false};
+    //! Restored coins for the next run (KeepWritten()); the owner's alone.
+    std::vector<CoinWrite> m_restored;
+
+    //! See SetBaseWrites().
+    uint64_t m_batch_bytes{DEFAULT_DB_CACHE_BATCH};
+    bool m_base_concurrent{false};
+    //! See SetFlushHelpers().
+    std::shared_ptr<ThreadPool> m_flush_helpers;
+};
+
+#endif // BITCOIN_COINSSTORE_H

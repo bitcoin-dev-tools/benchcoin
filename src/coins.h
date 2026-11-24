@@ -351,6 +351,12 @@ private:
     bool m_will_erase;
 };
 
+//! One change for a coins database write run: the coin, or its erase when nullopt. See CCoinsView::WriteRun.
+struct CoinWrite {
+    COutPoint outpoint;
+    std::optional<Coin> coin;
+};
+
 /** Pure abstract view on the open txout dataset. */
 class CCoinsView
 {
@@ -383,6 +389,16 @@ public:
     //! The passed cursor is used to iterate through the coins.
     virtual void BatchWrite(CoinsViewCacheCursor& cursor, const uint256& block_hash) = 0;
 
+    /**
+     * Write a run of changes that leave the view in a state between two blocks: every change of a block at
+     * or below `old_head` is included (and was, in earlier runs), the changes of blocks up to `new_head`
+     * may be included in part. The view records the pair as its head blocks (GetHeadBlocks()) so that a
+     * crash can be recovered by replaying the blocks between them; a `final` run leaves the view
+     * consistent with `new_head` and records it as the best block instead. Views that are not a database
+     * do not support it.
+     */
+    virtual void WriteRun(const std::vector<CoinWrite>& writes, const uint256& new_head, const uint256& old_head, bool final);
+
     //! Estimate database size
     virtual size_t EstimateSize() const = 0;
 };
@@ -408,6 +424,7 @@ public:
     {
         for (auto it{cursor.Begin()}; it != cursor.End(); it = cursor.NextAndMaybeErase(*it)) { }
     }
+    void WriteRun(const std::vector<CoinWrite>&, const uint256&, const uint256&, bool) override {}
     size_t EstimateSize() const override { return 0; }
 };
 
@@ -428,6 +445,7 @@ public:
     uint256 GetBestBlock() const override { return base->GetBestBlock(); }
     std::vector<uint256> GetHeadBlocks() const override { return base->GetHeadBlocks(); }
     void BatchWrite(CoinsViewCacheCursor& cursor, const uint256& block_hash) override { base->BatchWrite(cursor, block_hash); }
+    void WriteRun(const std::vector<CoinWrite>& writes, const uint256& new_head, const uint256& old_head, bool final) override { base->WriteRun(writes, new_head, old_head, final); }
     size_t EstimateSize() const override { return base->EstimateSize(); }
 };
 

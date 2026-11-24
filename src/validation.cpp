@@ -2563,15 +2563,9 @@ bool ConnectBlock(const CBlock& block, const BlockValidationContext& ctx,
 
     // BIP30: no transaction may overwrite one that is not completely spent. Whether the rule
     // applies to this block was decided when the context was built, see EnforceBIP30().
-    if (ctx.enforce_bip30) {
-        for (const auto& tx : block.vtx) {
-            for (size_t o = 0; o < tx->vout.size(); o++) {
-                if (view.HaveCoin(COutPoint(tx->GetHash(), o))) {
-                    state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-txns-BIP30",
-                                  "tried to overwrite transaction");
-                }
-            }
-        }
+    if (ctx.enforce_bip30 && view.HaveAnyOutput(block.vtx)) {
+        state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-txns-BIP30",
+                      "tried to overwrite transaction");
     }
 
     // Enforce BIP68 (sequence locks)

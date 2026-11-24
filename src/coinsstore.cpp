@@ -642,6 +642,30 @@ std::vector<std::pair<COutPoint, Coin>> CoinsStore::Fetch(std::vector<COutPoint>
     return found;
 }
 
+void CoinsStore::MayHave(std::span<const COutPoint> outpoints, std::vector<uint8_t>& may) const
+{
+    may.assign(outpoints.size(), 0);
+    std::vector<uint32_t> shard_of;
+    std::vector<uint64_t> hashes;
+    shard_of.reserve(outpoints.size());
+    hashes.reserve(outpoints.size());
+    for (const COutPoint& outpoint : outpoints) {
+        shard_of.push_back(ShardIndex(outpoint));
+        hashes.push_back(KeyHash(outpoint));
+    }
+    VisitShards(shard_of, [&](Shard& shard, std::span<const uint32_t> items) EXCLUSIVE_LOCKS_REQUIRED(shard.mutex) {
+        shard.map.PrefetchAll(hashes, items);
+        for (const uint32_t i : items) {
+            if (shard.map.find(outpoints[i], hashes[i]) != shard.map.end()) may[i] = 1;
+        }
+    });
+    // With no shard held, as Lookup() reads the base. A coin the base has may have been spent since: the
+    // caller asks again, one by one.
+    for (size_t i{0}; i < outpoints.size(); ++i) {
+        if (!may[i] && base->HaveCoin(outpoints[i])) may[i] = 1;
+    }
+}
+
 // ---------------------------------------------------------------------------------------------------------
 // Sizes, eviction and the write-out
 
@@ -1283,10 +1307,22 @@ void BlockApplyView::Prefetch(const CBlock& block)
     for (size_t i{1}; i < block.vtx.size(); ++i) inputs += block.vtx[i]->vin.size();
     std::vector<COutPoint> outpoints;
     outpoints.reserve(inputs);
+    // Kept by the thread: a list as long as the block has inputs is not allocated for every block.
+    static thread_local std::vector<uint32_t> positions;
+    positions.clear();
     for (size_t i{1}; i < block.vtx.size(); ++i) {
         for (const CTxIn& in : block.vtx[i]->vin) {
             outpoints.push_back(in.prevout);
+            if (m_overlay) positions.push_back(static_cast<uint32_t>(i));
         }
+    }
+    if (m_overlay) {
+        // An input a lower window block makes is not asked of the store, which does not have it yet. Its
+        // coin goes into the view from where it is found, with no list between.
+        m_overlay->FindCoins(outpoints, positions, m_overlay_height, [&](const COutPoint& outpoint, Coin&& coin) {
+            const size_t usage{coin.DynamicMemoryUsage()};
+            if (cacheCoins.try_emplace(outpoint, std::move(coin)).second) cachedCoinsUsage += usage;
+        });
     }
     for (auto& [outpoint, coin] : m_store.Fetch(std::move(outpoints))) {
         const size_t usage{coin.DynamicMemoryUsage()};
@@ -1306,6 +1342,36 @@ bool BlockApplyView::SpendCoin(const COutPoint& outpoint, Coin* moveto)
         it->second.coin.fCoinBase = spent.fCoinBase;
     }
     return true;
+}
+
+bool BlockApplyView::HaveAnyOutput(std::span<const CTransactionRef> txs) const
+{
+    // A block connected alone reads through its prefetch, and a block that is past its first transaction
+    // reads its own outputs in the overlay: one by one.
+    if (!m_overlay || m_own_limit != 0) return CoinsViewOverlay::HaveAnyOutput(txs);
+    static thread_local std::vector<uint8_t> named;
+    m_overlay->NamedIds(txs, m_overlay_height, named);
+    std::vector<COutPoint> outpoints;
+    for (size_t i{0}; i < txs.size(); ++i) {
+        const CTransaction& tx{*txs[i]};
+        for (uint32_t o{0}; o < tx.vout.size(); ++o) {
+            const COutPoint outpoint{tx.GetHash(), o};
+            if (named[i]) {
+                if (HaveCoin(outpoint)) return true;
+            } else if (const auto it{cacheCoins.find(outpoint)}; it != cacheCoins.end()) {
+                if (!it->second.coin.IsSpent()) return true;
+            } else {
+                outpoints.push_back(outpoint);
+            }
+        }
+    }
+    // What neither the view nor the window has is the store's.
+    static thread_local std::vector<uint8_t> may;
+    m_store.MayHave(outpoints, may);
+    for (size_t i{0}; i < outpoints.size(); ++i) {
+        if (may[i] && HaveCoin(outpoints[i])) return true;
+    }
+    return false;
 }
 
 void BlockApplyView::CommitAlone(const CBlock& block, const CBlockUndo& undo)
@@ -1373,6 +1439,11 @@ void BlockApplyView::ConfirmCommitted(int height)
 
 std::optional<Coin> BlockApplyView::ReadBase(const COutPoint& outpoint) const
 {
+    // An outpoint an unpublished window block made is the window's to answer.
+    if (m_overlay) {
+        std::optional<Coin> coin;
+        if (m_overlay->FindCoin(outpoint, m_overlay_height, m_own_limit, coin)) return coin;
+    }
     // A window block's read leaves the coin in the tier, clean (SetKeepBaseReads()).
     return m_keep_base_reads ? m_store.GetCoin(outpoint) : m_store.PeekCoin(outpoint);
 }
@@ -1381,6 +1452,8 @@ void BlockApplyView::Reset() noexcept
 {
     StopFetching(); // the prefetch workers read the view
     m_keep_base_reads = false;
+    m_overlay = nullptr;
+    m_own_limit = 0;
     m_height = -1;
     CoinsViewOverlay::Reset();
 }

@@ -40,6 +40,11 @@ std::optional<Coin> CCoinsViewCache::PeekCoin(const COutPoint& outpoint) const
     return base->PeekCoin(outpoint);
 }
 
+void CCoinsView::WriteRun(const std::vector<CoinWrite>&, const uint256&, const uint256&, bool)
+{
+    throw std::logic_error("WriteRun is not supported by this view");
+}
+
 CCoinsViewCache::CCoinsViewCache(CCoinsView* in_base, bool deterministic) :
     CCoinsViewBacked(in_base), m_deterministic(deterministic),
     cacheCoins(0, SaltedCoinsCacheHasher{/*deterministic=*/deterministic}, CCoinsMap::key_equal{}, &m_cache_coins_memory_resource)
@@ -298,6 +303,16 @@ void CCoinsViewCache::Reset() noexcept
     cachedCoinsUsage = 0;
     m_dirty_count = 0;
     SetBestBlock(uint256::ZERO);
+}
+
+void CCoinsViewCache::TraceUncache(const COutPoint& outpoint, const Coin& coin)
+{
+    TRACEPOINT(utxocache, uncache,
+           outpoint.hash.data(),
+           (uint32_t)outpoint.n,
+           (uint32_t)coin.nHeight,
+           (int64_t)coin.out.nValue,
+           (bool)coin.IsCoinBase());
 }
 
 void CCoinsViewCache::Uncache(const COutPoint& hash)

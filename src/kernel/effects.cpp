@@ -61,18 +61,32 @@ void EffectsExecutor::WaitForBacklogBelow(size_t limit_bytes)
     m_cv_done.wait(lock, [&]() EXCLUSIVE_LOCKS_REQUIRED(m_mutex) { return m_backlog_bytes.load(std::memory_order_relaxed) <= limit_bytes; });
 }
 
+void EffectsExecutor::WaitForCompletionOr(const std::function<bool()>& enough)
+{
+    WAIT_LOCK(m_mutex, lock);
+    m_cv_done.wait(lock, [&]() EXCLUSIVE_LOCKS_REQUIRED(m_mutex) {
+        return !m_done.empty() || (m_queue.empty() && !m_io_running) || enough();
+    });
+}
+
 void EffectsExecutor::ApplyCompletions()
 {
+    bool applied{false};
     while (true) {
         std::pair<Completion, bool> done;
         {
             LOCK(m_mutex);
-            if (m_done.empty()) return;
+            if (m_done.empty()) break;
             done = std::move(m_done.front());
             m_done.pop_front();
         }
         if (done.first) done.first(done.second);
+        applied = true;
     }
+    // What was applied may be what WaitForCompletionOr() waits for on another thread, which found no
+    // completion left to apply itself. The mutex is taken so that a waiter that has asked and not yet slept
+    // is not passed by.
+    if (applied) WITH_LOCK(m_mutex, m_cv_done.notify_all());
 }
 
 size_t EffectsExecutor::PendingBytes() const
@@ -121,7 +135,7 @@ void EffectsExecutor::Loop()
         }
         bool ok{true};
         if (item.effect) {
-            // WaitForIO() may be called with cs_main held.
+            // WaitForIO() is called with cs_main held (Chainstate::SettleWriteOut()).
             WAITED_FOR_UNDER_LOCK("an effect's I/O");
             ok = item.effect();
         }

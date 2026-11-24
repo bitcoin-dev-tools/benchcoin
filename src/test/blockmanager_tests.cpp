@@ -13,6 +13,8 @@
 #include <util/chaintype.h>
 #include <validation.h>
 
+#include <algorithm>
+
 #include <boost/test/unit_test.hpp>
 #include <test/util/common.h>
 #include <test/util/logging.h>
@@ -402,10 +404,108 @@ struct LeftBlockFileSetup : public BasicTestingSetup {
     void CheckLeftFileTrimmedNotSynced() EXCLUSIVE_LOCKS_REQUIRED(::cs_main)
     {
         const fs::path left{m_args.GetBlocksDirPath() / fs::u8path(strprintf("blk%05u.dat", first.nFile))};
+        // The trim is the effects executor's.
+        blockman.m_effects.WaitForIO();
         BOOST_CHECK_EQUAL(fs::file_size(left), blockman.GetBlockFileInfo(first.nFile)->nSize);
         BOOST_CHECK(blockman.BlockFileUnsynced(first.nFile));
     }
 };
+
+//! A block file the write position leaves while a block's write to it is still in flight is trimmed only once
+//! that write is in: a trim before it would be undone by the write's allocation, or cut its bytes off.
+BOOST_FIXTURE_TEST_CASE(blockmanager_pinned_file_trimmed_after_its_write, BasicTestingSetup)
+{
+    KernelNotifications notifications{Assert(m_node.shutdown_request), m_node.exit_status, *Assert(m_node.warnings)};
+    BlockManager blockman{*Assert(m_node.shutdown_signal), BlockManager::Options{
+        .chainparams = Params(),
+        .fast_prune = true,
+        .blocks_dir = m_args.GetBlocksDirPath(),
+        .notifications = notifications,
+        .block_tree_db_params = DBParams{
+            .path = m_args.GetDataDirNet() / "blocks" / "index",
+            .cache_bytes = 0,
+        },
+    }};
+    const CBlock block;
+    FlatFilePos claimed;
+    {
+        LOCK(::cs_main);
+        claimed = blockman.AllocateBlockPos(block, /*nHeight=*/1);
+        BOOST_REQUIRE(!claimed.IsNull());
+        blockman.PinBlockFile(claimed.nFile);
+        // Written past the claimed block until the write position leaves its file.
+        int height{1};
+        for (FlatFilePos pos{claimed}; pos.nFile == claimed.nFile;) {
+            pos = blockman.WriteBlock(block, ++height);
+            BOOST_REQUIRE(!pos.IsNull());
+        }
+    }
+    const fs::path file{m_args.GetBlocksDirPath() / fs::u8path(strprintf("blk%05u.dat", claimed.nFile))};
+    const uint64_t used{WITH_LOCK(::cs_main, return blockman.GetBlockFileInfo(claimed.nFile)->nSize)};
+    // The trim waits for the pinned write: the file keeps its allocated size.
+    blockman.m_effects.WaitForIO();
+    BOOST_CHECK_GT(fs::file_size(file), used);
+    BOOST_REQUIRE(blockman.WriteBlockAt(block, claimed));
+    {
+        LOCK(::cs_main);
+        blockman.UnpinBlockFile(claimed.nFile);
+    }
+    blockman.m_effects.WaitForIO();
+    BOOST_CHECK_EQUAL(fs::file_size(file), used);
+}
+
+//! Blocks claimed one after the other across the allocation chunks of one file and written in the reverse order:
+//! each write allocates from where the file is allocated to, never from its own position, so a later block's
+//! bytes, written first, are neither zeroed nor cut off by an earlier block's allocation. With -fastprune a chunk
+//! is 16 KiB, and four blocks of about 6 KB span two.
+BOOST_FIXTURE_TEST_CASE(blockmanager_blocks_written_out_of_order_across_chunks, BasicTestingSetup)
+{
+    KernelNotifications notifications{Assert(m_node.shutdown_request), m_node.exit_status, *Assert(m_node.warnings)};
+    BlockManager blockman{*Assert(m_node.shutdown_signal), BlockManager::Options{
+        .chainparams = Params(),
+        .fast_prune = true,
+        .blocks_dir = m_args.GetBlocksDirPath(),
+        .notifications = notifications,
+        .block_tree_db_params = DBParams{
+            .path = m_args.GetDataDirNet() / "blocks" / "index",
+            .cache_bytes = 0,
+        },
+    }};
+    std::vector<CBlock> blocks(4);
+    std::vector<FlatFilePos> claimed;
+    for (size_t i{0}; i < blocks.size(); ++i) {
+        CMutableTransaction tx;
+        tx.vin.emplace_back();
+        tx.vin.back().scriptSig = CScript() << std::vector<unsigned char>(6000, static_cast<unsigned char>(0x10 + i));
+        tx.vout.emplace_back(1, CScript() << OP_TRUE);
+        blocks[i].nVersion = static_cast<int32_t>(1 + i);
+        blocks[i].vtx.push_back(MakeTransactionRef(std::move(tx)));
+    }
+    {
+        LOCK(::cs_main);
+        for (size_t i{0}; i < blocks.size(); ++i) {
+            claimed.push_back(blockman.AllocateBlockPos(blocks[i], /*nHeight=*/static_cast<int>(1 + i)));
+            BOOST_REQUIRE(!claimed.back().IsNull());
+            BOOST_REQUIRE_EQUAL(claimed.back().nFile, claimed.front().nFile);
+        }
+    }
+    const uint64_t end{claimed.back().nPos + GetSerializeSize(TX_WITH_WITNESS(blocks.back()))};
+    // The -fastprune chunk (BlockManager's block file sequence).
+    constexpr uint64_t CHUNK{0x4000};
+    BOOST_REQUIRE_GT(end, CHUNK);
+    for (size_t i{blocks.size()}; i-- > 0;) BOOST_REQUIRE(blockman.WriteBlockAt(blocks[i], claimed[i]));
+    for (size_t i{0}; i < blocks.size(); ++i) {
+        DataStream expected;
+        expected << TX_WITH_WITNESS(blocks[i]);
+        const auto read{blockman.ReadRawBlock(claimed[i])};
+        BOOST_REQUIRE(read);
+        BOOST_CHECK(std::equal(read->begin(), read->end(), expected.begin(), expected.end()));
+    }
+    const fs::path file{m_args.GetBlocksDirPath() / fs::u8path(strprintf("blk%05u.dat", claimed.front().nFile))};
+    // Allocated in whole chunks up to the last block: at least its end, and less than a chunk beyond it.
+    BOOST_CHECK_GE(fs::file_size(file), end);
+    BOOST_CHECK_LT(fs::file_size(file), end + CHUNK);
+}
 
 //! The write position leaving a block file trims it without a sync: the file stays unsynced until the block index
 //! is written, which syncs every written file first.
@@ -415,6 +515,18 @@ BOOST_FIXTURE_TEST_CASE(blockmanager_left_file_synced_before_the_index_records_i
     CheckLeftFileTrimmedNotSynced();
     BOOST_CHECK(blockman.SyncWrittenFiles());
     BOOST_CHECK(!blockman.BlockFileUnsynced(first.nFile));
+}
+
+//! So does a write-out run's index batch: it owes the left file's sync, makes it, and may then be committed.
+BOOST_FIXTURE_TEST_CASE(blockmanager_left_file_synced_by_the_index_batch, LeftBlockFileSetup)
+{
+    LOCK(::cs_main);
+    CheckLeftFileTrimmedNotSynced();
+    auto batch{blockman.PrepareBlockIndexBatch()};
+    BOOST_CHECK(std::ranges::any_of(batch.block_syncs, [&](const FlatFilePos& owed) { return owed.nFile == first.nFile; }));
+    BOOST_CHECK(blockman.SyncBatchFiles(batch));
+    BOOST_CHECK(batch.block_syncs.empty());
+    blockman.CommitBlockIndexBatch(batch);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

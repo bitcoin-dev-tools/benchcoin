@@ -41,6 +41,7 @@ BOOST_AUTO_TEST_CASE(flush_table)
     BOOST_CHECK(!FLUSH_TABLE.Next(S::FilesSynced, E::Unlink)); // no unlink while the index still refers to the file
     BOOST_CHECK(!FLUSH_TABLE.Next(S::FilesSynced, E::WriteCoins)); // no coins ahead of the index
     BOOST_CHECK(!FLUSH_TABLE.Next(S::CoinsWritten, E::WriteCoins));
+    BOOST_CHECK(!FLUSH_TABLE.Next(S::FilesUnlinked, E::WriteCoins)); // the unlink is the last step
 }
 
 // A block is written with cs_main released, between the claim of its position and the end of the
@@ -157,6 +158,27 @@ BOOST_FIXTURE_TEST_CASE(failed_undo_file_sync_is_remembered, TestChain100Setup)
     BOOST_CHECK(!WITH_LOCK(cs_main, return blockman.SyncWrittenFiles()));
 }
 
+// ...and of the finish of a left undo file, which runs on the effects executor and reports its failure
+// without propagating it: the latch keeps every later write of the block index from landing.
+BOOST_FIXTURE_TEST_CASE(failed_undo_file_finish_is_remembered, TestChain100Setup)
+{
+    auto& chainman{*Assert(m_node.chainman)};
+    auto& blockman{chainman.m_blockman};
+    CreateAndProcessBlock({}, CScript() << OP_TRUE);
+    const CBlockIndex* tip{WITH_LOCK(cs_main, return chainman.ActiveChain().Tip())};
+    const fs::path block_file{WITH_LOCK(cs_main, return blockman.GetBlockPosFilename(tip->GetBlockPos()))};
+    const int file_number{WITH_LOCK(cs_main, return tip->nFile)};
+    const fs::path file{fs::path{block_file.parent_path()} / fs::PathFromString(strprintf("rev%05u.dat", file_number))};
+    BOOST_REQUIRE(fs::exists(file));
+    const uint64_t undo_size{WITH_LOCK(cs_main, return blockman.GetBlockFileInfo(file_number)->nUndoSize)};
+
+    InjectOpenFailure(file);
+    blockman.FinishUndoFile(FlatFilePos{file_number, undo_size});
+    BOOST_CHECK(blockman.SyncFailed());
+    RemoveOpenFailure(file);
+    BOOST_CHECK(!WITH_LOCK(cs_main, return blockman.SyncWrittenFiles()));
+}
+
 namespace {
 struct FastPruneChain100Setup : public TestChain100Setup {
     FastPruneChain100Setup() : TestChain100Setup{ChainType::REGTEST, {.extra_args = {"-fastprune"}}} {}
@@ -188,7 +210,8 @@ std::shared_ptr<const CBlock> ChildBlock(const CBlockHeader& prev, int height, C
 
 // The case the cursor file's sync does not cover: undo data written into the undo file of
 // a block file the cursor has left. Only SyncWrittenFiles() makes it durable before the
-// index records it; without that call the write-out's check in WriteBlockIndexDB fails.
+// index records it; without that call the batch still owes the sync when it is committed,
+// which CommitBlockIndexBatch() asserts against.
 BOOST_FIXTURE_TEST_CASE(undo_in_a_left_file_is_synced, FastPruneChain100Setup)
 {
     auto& chainman{*Assert(m_node.chainman)};

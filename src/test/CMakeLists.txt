@@ -40,6 +40,7 @@ add_executable(test_bitcoin
   cluster_linearize_tests.cpp
   coins_entry_machine_tests.cpp
   coins_tests.cpp
+  connect_machine_tests.cpp
   coinsstore_tests.cpp
   coinscachepair_tests.cpp
   coinstatsindex_tests.cpp

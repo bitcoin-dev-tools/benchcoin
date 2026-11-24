@@ -4,11 +4,17 @@
 
 #include <chain.h>
 #include <consensus/validation.h>
+#include <kernel/effects.h>
+#include <kernel/mempool_removal_reason.h>
 #include <node/block_facts.h>
+#include <node/mempool_persist.h>
 #include <node/tip_snapshot.h>
 #include <script/script.h>
+#include <sync.h>
 #include <test/util/setup_common.h>
 #include <test/util/validation.h>
+#include <txmempool.h>
+#include <util/fs.h>
 #include <validation.h>
 #include <validationinterface.h>
 
@@ -237,6 +243,134 @@ BOOST_AUTO_TEST_CASE(block_facts_are_one_copy)
     BOOST_CHECK_EQUAL(facts->tx_count, tip->nTx);
     BOOST_CHECK(facts->HaveData());
     BOOST_CHECK(facts->data_pos == tip->GetBlockPos());
+}
+
+//! Records the order of a block's and a transaction's announcement.
+struct AnnouncementOrder final : public CValidationInterface {
+    std::vector<char> m_order;
+    void BlockConnected(const kernel::ChainstateRole&, const std::shared_ptr<const CBlock>&, const CBlockIndex*) override
+    {
+        m_order.push_back('b');
+    }
+    void TransactionAddedToMempool(const NewMempoolTransactionInfo&, uint64_t) override
+    {
+        m_order.push_back('t');
+    }
+};
+
+//! Holds the effects executor's queue behind an effect of its own until Release(), so that what is queued after
+//! it, a block's undo write and with it the block's BlockConnected, waits. Released on destruction as well.
+class HeldEffects
+{
+    std::promise<void> m_release;
+
+public:
+    explicit HeldEffects(kernel::EffectsExecutor& effects)
+    {
+        effects.Enqueue([released = m_release.get_future().share()] { released.wait(); return true; }, [](bool) {});
+    }
+    ~HeldEffects() { Release(); }
+    void Release()
+    {
+        try {
+            m_release.set_value();
+        } catch (const std::future_error&) {
+        }
+    }
+};
+
+//! In initial block download a block's BlockConnected waits for the block's undo write. A transaction
+//! accepted after the block is still announced after it. The block's signal is held back until the
+//! transaction is submitted, under cs_main, so that the executor's hook cannot hand it over first: only the
+//! submission's own settling (SubmitToMemoryPool()) puts it ahead of the transaction.
+BOOST_AUTO_TEST_CASE(a_transaction_is_announced_after_the_block_in_ibd)
+{
+    auto& chainman{static_cast<TestChainstateManager&>(*Assert(m_node.chainman))};
+    ValidationSignals& signals{*Assert(m_node.validation_signals)};
+
+    // A block that is two days old when it arrives leaves the node in initial block download. The chainstate
+    // is written first, so that the block's connection makes no periodic write, which would wait for the
+    // held queue.
+    const CBlock block{CreateBlock({}, CScript{} << OP_TRUE)};
+    m_clock += std::chrono::hours{48};
+    chainman.ResetIbd();
+    chainman.ActiveChainstate().ForceFlushStateToDisk();
+    signals.SyncWithValidationInterfaceQueue();
+    const CMutableTransaction tx{CreateValidMempoolTransaction(m_coinbase_txns[0], /*input_vout=*/0, /*input_height=*/1, coinbaseKey,
+                                                               CScript{} << OP_0 << std::vector<uint8_t>(20, 1), CAmount{1 * COIN}, /*submit=*/false)};
+
+    AnnouncementOrder order;
+    signals.RegisterValidationInterface(&order);
+
+    HeldEffects held{chainman.m_blockman.m_effects};
+    bool new_block{false};
+    BOOST_REQUIRE(chainman.ProcessNewBlock(std::make_shared<const CBlock>(block), /*force_processing=*/true, /*min_pow_checked=*/true, &new_block));
+    BOOST_REQUIRE(new_block);
+    BOOST_REQUIRE(chainman.IsInitialBlockDownload());
+    BOOST_REQUIRE(WITH_LOCK(::cs_main, return chainman.ActiveTip()->GetBlockHash()) == block.GetHash());
+
+    const MempoolAcceptResult result{[&] {
+        LOCK(::cs_main);
+        held.Release();
+        return chainman.ProcessTransaction(MakeTransactionRef(tx));
+    }()};
+    BOOST_REQUIRE(result.m_result_type == MempoolAcceptResult::ResultType::VALID);
+    signals.SyncWithValidationInterfaceQueue();
+    signals.UnregisterValidationInterface(&order);
+
+    const std::vector<char> expected{'b', 't'};
+    BOOST_CHECK_EQUAL_COLLECTIONS(order.m_order.begin(), order.m_order.end(), expected.begin(), expected.end());
+}
+
+//! The same for a transaction the node loads from its mempool file: in initial block download
+//! LoadMempool() hands the signals of the blocks connected so far over before each transaction. As above,
+//! the block's signal is held back until the file is loaded, under cs_main.
+BOOST_AUTO_TEST_CASE(a_loaded_transaction_is_announced_after_the_block_in_ibd)
+{
+    auto& chainman{static_cast<TestChainstateManager&>(*Assert(m_node.chainman))};
+    ValidationSignals& signals{*Assert(m_node.validation_signals)};
+    CTxMemPool& pool{*Assert(m_node.mempool)};
+
+    // A mempool file with one transaction, which the pool then no longer holds.
+    const CMutableTransaction tx{CreateValidMempoolTransaction(m_coinbase_txns[0], /*input_vout=*/0, /*input_height=*/1, coinbaseKey,
+                                                               CScript{} << OP_0 << std::vector<uint8_t>(20, 1), CAmount{1 * COIN}, /*submit=*/true)};
+    const fs::path path{m_args.GetDataDirNet() / "mempool_one_transaction.dat"};
+    BOOST_REQUIRE(node::DumpMempool(pool, path));
+    const auto remove_transaction{[&] {
+        LOCK2(::cs_main, pool.cs);
+        pool.removeRecursive(CTransaction{tx}, MemPoolRemovalReason::REPLACED);
+        BOOST_REQUIRE_EQUAL(pool.size(), 0U);
+    }};
+    remove_transaction();
+
+    // A block that is two days old when it arrives leaves the node in initial block download; the chainstate is
+    // written first, as above.
+    const CBlock block{CreateBlock({}, CScript{} << OP_TRUE)};
+    m_clock += std::chrono::hours{48};
+    chainman.ResetIbd();
+    chainman.ActiveChainstate().ForceFlushStateToDisk();
+    signals.SyncWithValidationInterfaceQueue();
+
+    AnnouncementOrder order;
+    signals.RegisterValidationInterface(&order);
+
+    HeldEffects held{chainman.m_blockman.m_effects};
+    bool new_block{false};
+    BOOST_REQUIRE(chainman.ProcessNewBlock(std::make_shared<const CBlock>(block), /*force_processing=*/true, /*min_pow_checked=*/true, &new_block));
+    BOOST_REQUIRE(new_block);
+    BOOST_REQUIRE(chainman.IsInitialBlockDownload());
+
+    {
+        LOCK(::cs_main);
+        held.Release();
+        BOOST_REQUIRE(node::LoadMempool(pool, path, chainman.ActiveChainstate(), {}));
+    }
+    BOOST_REQUIRE_EQUAL(WITH_LOCK(pool.cs, return pool.size()), 1U);
+    signals.SyncWithValidationInterfaceQueue();
+    signals.UnregisterValidationInterface(&order);
+
+    const std::vector<char> expected{'b', 't'};
+    BOOST_CHECK_EQUAL_COLLECTIONS(order.m_order.begin(), order.m_order.end(), expected.begin(), expected.end());
 }
 
 BOOST_AUTO_TEST_SUITE_END()

@@ -27,6 +27,8 @@ namespace util {
  *
  *  - the effects executor (kernel::EffectsExecutor): an effect queued while
  *    it is not Running is a bug of the caller and asserts;
+ *  - the connector thread (ChainstateManager::SignalConnector()): a block
+ *    handed over while it is not Running is stored and not activated;
  *  - a hook called from another thread (HookTarget): its owner disarms it
  *    and waits for a call that is running before it is destroyed.
  */

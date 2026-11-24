@@ -1988,10 +1988,23 @@ void Chainstate::InitCoinsCache(size_t cache_size_bytes)
     m_coins_views->m_store->SetFlushHelpers(m_chainman.m_connect_pool.get());
 }
 
+void Chainstate::CheckCoinsStore()
+{
+    AssertLockHeld(::cs_main);
+    if (!m_coins_views || !m_coins_views->m_store) return;
+    CoinsStore& store{*m_coins_views->m_store};
+    if (store.RunInFlight()) SettleWriteOut();
+    // Not after a flush that failed, nor with a run that could not be settled: the tier and the database
+    // must agree.
+    if (m_chainman.m_options.check_block_index.value_or(0) <= 0 || store.FlushFailed() || store.RunInFlight()) return;
+    store.SanityCheck();
+    LogDebug(BCLog::COINDB, "Coin store checked, %u entries", store.GetCacheSize());
+}
+
 void Chainstate::ResetCoinsViews()
 {
     AssertLockHeld(::cs_main);
-    if (m_coins_views && m_coins_views->m_store && m_coins_views->m_store->RunInFlight()) SettleWriteOut();
+    CheckCoinsStore();
     m_coins_views.reset();
 }
 
@@ -9400,8 +9413,22 @@ util::Result<void> Chainstate::InvalidateCoinsDBOnDisk()
     // Should never be called on a non-snapshot chainstate.
     assert(m_from_snapshot_blockhash);
 
-    // Coins views no longer usable. A write-out run in flight writes through them: it lands first.
-    ResetCoinsViews();
+    // Another thread may be in this chainstate's ActivateBestChain() with a window batch staged, whose workers
+    // apply through the coins views with no lock held. The views are then left, and so is the directory: the
+    // caller's fatal error stops the node, and the next start finds the snapshot invalid again, with nothing
+    // running, and renames it then. Tried, not waited for: that thread needs cs_main, held here, to finish.
+    // Released at once: a thread that takes it after this needs cs_main to stage anything, and finds the
+    // views gone, as on master.
+    if (!m_chainstate_mutex.try_lock()) {
+        return util::Error{Untranslated("The snapshot chainstate was in use; its directory is renamed at the next start.")};
+    }
+    m_chainstate_mutex.unlock();
+
+    // Coins views no longer usable. A write-out run in flight writes through them: it lands first. The store
+    // is not checked here (CheckCoinsStore()): this is reached from a block's publication, and another thread
+    // may have a block of this chainstate staged, which the check must not meet.
+    if (m_coins_views && m_coins_views->m_store && m_coins_views->m_store->RunInFlight()) SettleWriteOut();
+    m_coins_views.reset();
 
     const fs::path db_path{StoragePath()};
     const fs::path invalid_path{db_path + "_INVALID"};

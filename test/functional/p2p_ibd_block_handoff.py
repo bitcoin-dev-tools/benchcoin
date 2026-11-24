@@ -11,6 +11,7 @@ block is found mutated or invalid is disconnected, with the chain left where it 
 """
 
 import copy
+import time
 
 from test_framework.blocktools import (
     TIME_GENESIS_BLOCK,
@@ -98,8 +99,9 @@ class IBDBlockHandoffTest(BitcoinTestFramework):
         return [f"block {block.hash_hex} of peer={peer_id} goes to the receive pool" for block in blocks]
 
     def deliver_first_block(self, peer, tip_hex, height):
-        """The peer answers one request at once, so that the batch after it is asked for as a whole. Returns
-        the new tip."""
+        """A peer is asked for one block at a time until its first has arrived, and then for as many as it
+        delivers in two seconds. The peer answers one request at once, so that the batch after it is asked
+        for as a whole. Returns the new tip."""
         node = self.nodes[0]
         block = self.build_blocks(int(tip_hex, 16), height, 1)[0]
         with p2p_lock:
@@ -124,6 +126,9 @@ class IBDBlockHandoffTest(BitcoinTestFramework):
 
     def run_test(self):
         node = self.nodes[0]
+        # The request rule asks a peer for as many blocks as it delivers in two seconds. With the clock frozen a
+        # delivery takes no time, so every peer may have a batch in flight however slow the machine.
+        node.setmocktime(int(time.time()))
         self.log.info("Requested blocks go to the receive pool, and the ping after them is answered once they are connected")
         peer = node.add_p2p_connection(BlockRequests())
         peer_id = max(info["id"] for info in node.getpeerinfo())

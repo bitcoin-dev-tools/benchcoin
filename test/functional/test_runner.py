@@ -298,6 +298,7 @@ BASE_SCRIPTS = [
     'p2p_eviction.py',
     'p2p_outbound_eviction.py',
     'p2p_ibd_block_handoff.py',
+    'p2p_ibd_request_rule.py',
     'p2p_tip_connector.py',
     'p2p_ibd_stalling.py --v1transport',
     'p2p_ibd_stalling_handoff.py',

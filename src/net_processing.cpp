@@ -136,8 +136,13 @@ static const unsigned int MAX_LOCATOR_SZ = 101;
 static const unsigned int MAX_INV_SZ = 50000;
 /** Limit to avoid sending big packets. Not used in processing incoming GETDATA for compatibility */
 static const unsigned int MAX_GETDATA_SZ = 1000;
-/** Number of blocks that can be requested at any given time from a single peer. */
+/** The most blocks requested at any given time from a single peer. In initial block download a peer is
+ *  asked for one more than it delivers in BLOCK_DOWNLOAD_QUEUE_TIME, up to this (CNodeState::BlocksToAskFor()). */
 static const int MAX_BLOCKS_IN_TRANSIT_PER_PEER = 16;
+/** In initial block download a peer has at most one block outstanding beyond those it delivers in this time,
+ *  going by the blocks it sent so far: the blocks asked of a peer are the lowest not yet asked for, and every
+ *  block downloaded above them waits for them. */
+static constexpr auto BLOCK_DOWNLOAD_QUEUE_TIME{2s};
 /** Default time during which a peer must stall block download progress before being disconnected.
  * the actual timeout is increased temporarily if peers are disconnected for hitting the timeout */
 static constexpr auto BLOCK_STALLING_TIMEOUT_DEFAULT{2s};
@@ -484,6 +489,20 @@ struct CNodeState {
     std::list<QueuedBlock> vBlocksInFlight;
     //! When the first entry in vBlocksInFlight started downloading. Don't care when vBlocksInFlight is empty.
     std::chrono::microseconds m_downloading_since{0us};
+    //! How long the peer took for a block of late, smoothed, or 0 before its first block.
+    std::chrono::microseconds m_block_delivery_time{0us};
+    //! When the block the peer is sending started: the arrival of the block before it, or its request if the
+    //! peer had no block to send then.
+    std::chrono::microseconds m_block_delivery_since{0us};
+    //! The block started at its request: its time includes the request's round trip, which a block sent behind
+    //! another does not wait for.
+    bool m_block_delivery_from_request{false};
+    //! The blocks to have outstanding with the peer at a time in initial block download.
+    int BlocksToAskFor() const
+    {
+        if (m_block_delivery_time == 0us) return 1;
+        return static_cast<int>(std::min<int64_t>(MAX_BLOCKS_IN_TRANSIT_PER_PEER, 1 + std::chrono::microseconds{BLOCK_DOWNLOAD_QUEUE_TIME} / m_block_delivery_time));
+    }
     //! Time before which block requests should not be sent to this peer.
     std::chrono::microseconds m_block_download_paused_until{0us};
     //! Whether we consider this a preferred download peer.
@@ -5599,6 +5618,26 @@ void PeerManagerImpl::ProcessMessage(Peer& peer, CNode& pfrom, const std::string
             return;
         }
 
+        if (in_ibd) {
+            // What the peer took for this block decides how many it is asked for at a time.
+            LOCK(cs_main);
+            CNodeState& state{*Assert(State(pfrom.GetId()))};
+            const auto now{std::chrono::duration_cast<std::chrono::microseconds>(time_received.time_since_epoch())};
+            if (state.m_block_delivery_since != 0us && now >= state.m_block_delivery_since) {
+                auto took{now - state.m_block_delivery_since};
+                // A block that started at its request waited for the round trip as well: without it, a peer far away
+                // would be judged by its latency and never asked for a second block, the one that shows its pace.
+                if (state.m_block_delivery_from_request) {
+                    const NodeClock::duration min_ping{pfrom.m_min_ping_time.load()};
+                    if (min_ping != NodeClock::duration::max()) took -= std::min(took, std::chrono::duration_cast<std::chrono::microseconds>(min_ping));
+                }
+                // A block read together with the one before it, or under a clock that stands still, took no time.
+                took = std::max<std::chrono::microseconds>(took, 1us);
+                state.m_block_delivery_time = state.m_block_delivery_time == 0us ? took : (3 * state.m_block_delivery_time + took) / 4;
+            }
+            state.m_block_delivery_since = now;
+            state.m_block_delivery_from_request = false;
+        }
         // In initial block download a block the peer was asked for goes to the receive pool.
         if (HandOffBlock(peer, vRecv, in_ibd)) return;
         // Outside initial block download a block that arrives behind its parent finds the parent connected,
@@ -7019,11 +7058,12 @@ bool PeerManagerImpl::SendMessages(CNode& node)
         const bool can_request_blocks_from_peer{current_time >= state.m_block_download_paused_until};
         // Blocks the peer still has to send: not those with the receive pool (QueuedBlock::with_pool).
         // Whether this pass of requests is in initial block download (ChainstateManager::IsInitialBlockDownload()):
-        // read once, for whom.
+        // read once, for how many and for whom.
         const bool request_in_ibd{m_chainman.IsInitialBlockDownload()};
-        auto get_inflight_budget = [&state]() {
+        const int blocks_at_a_time{request_in_ibd ? state.BlocksToAskFor() : MAX_BLOCKS_IN_TRANSIT_PER_PEER};
+        auto get_inflight_budget = [&state, blocks_at_a_time]() {
             const auto on_the_wire{std::ranges::count_if(state.vBlocksInFlight, [](const QueuedBlock& block) { return !block.with_pool; })};
-            return std::max(0, MAX_BLOCKS_IN_TRANSIT_PER_PEER - static_cast<int>(on_the_wire));
+            return std::max(0, blocks_at_a_time - static_cast<int>(on_the_wire));
         };
         if (CanServeBlocks(peer) && can_request_blocks_from_peer && ((sync_blocks_and_headers_from_peer && !IsLimitedPeer(peer)) || !request_in_ibd) && get_inflight_budget() > 0) {
             std::vector<const CBlockIndex*> vToDownload;
@@ -7042,6 +7082,11 @@ bool PeerManagerImpl::SendMessages(CNode& node)
                     peer,
                     get_inflight_budget(),
                     vToDownload, from_tip, historical_blocks->second);
+            }
+            // The peer has nothing to send: the first of these blocks starts now.
+            if (!vToDownload.empty() && get_inflight_budget() == blocks_at_a_time) {
+                state.m_block_delivery_since = current_time;
+                state.m_block_delivery_from_request = true;
             }
             for (const CBlockIndex *pindex : vToDownload) {
                 uint32_t nFetchFlags = GetFetchFlags(peer);

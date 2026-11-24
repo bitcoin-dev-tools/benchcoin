@@ -28,6 +28,7 @@
 #include <future>
 #include <memory>
 #include <optional>
+#include <span>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -520,6 +521,12 @@ public:
      * the backing CCoinsView are made.
      */
     virtual bool HaveCoinInCache(const COutPoint &outpoint) const;
+
+    /**
+     * Whether HaveCoin() holds for any output of these transactions (BIP30). A subclass may answer for all
+     * of them at once.
+     */
+    virtual bool HaveAnyOutput(std::span<const CTransactionRef> txs) const;
 
     /**
      * Return a reference to Coin in the cache, or coinEmpty if not found. This is

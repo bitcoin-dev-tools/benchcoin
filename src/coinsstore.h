@@ -223,6 +223,10 @@ public:
     //! The coins among `outpoints` that the tier holds, read with one hold of each shard's lock; what is
     //! missing or spent is left out (PeekCoin() one by one is the fallback).
     std::vector<std::pair<COutPoint, Coin>> Fetch(std::vector<COutPoint>&& outpoints) const;
+    //! For a check that none of `outpoints` has a coin (BIP30), with one hold of each shard's lock. An
+    //! outpoint with `may` unset has none, as GetCoin() and PeekCoin() would answer: the tier has no entry
+    //! for it and the base no coin. One with `may` set is theirs to answer.
+    void MayHave(std::span<const COutPoint> outpoints, std::vector<uint8_t>& may) const;
 
     //! The lowest height bound whose write-out frees at least `bytes` of dirty entries, or the tip height if
     //! all dirty entries together do not.
@@ -891,6 +895,32 @@ private:
 };
 
 /**
+ * The coins the blocks of a window create before their changes are in the store (the window's outputs
+ * overlay, validation.cpp).
+ */
+class WindowCoinSource
+{
+public:
+    virtual ~WindowCoinSource() = default;
+    //! Whether the window decides `outpoint` for a block at `viewer_height`: an unpublished block below it
+    //! made its transaction, or the viewer's block did in one of its first `own_limit` transactions. `coin`
+    //! is then the output, or empty where the transaction has no such output. An outpoint the window does
+    //! not decide is the store's. The window does not know what its blocks spend: the coin may be one that
+    //! a lower block of the window spent, which the block's commit finds (CoinsStore::ApplyConfirmed()).
+    virtual bool FindCoin(const COutPoint& outpoint, int viewer_height, uint32_t own_limit, std::optional<Coin>& coin) const = 0;
+    //! As FindCoin() for a block's inputs at once, `positions` the transaction each is of: a coin found
+    //! below the viewer is handed to `found`, and `outpoints` is left with the inputs to read in the store.
+    //! An input decided to be no coin is neither, nor is one that an earlier transaction of the block
+    //! makes: FindCoin() answers when it is read.
+    virtual void FindCoins(std::vector<COutPoint>& outpoints, std::span<const uint32_t> positions, int viewer_height,
+                           const std::function<void(const COutPoint&, Coin&&)>& found) const = 0;
+    //! Which of the transactions' ids an unpublished block below `viewer_height` may make a transaction
+    //! of: `named` is set for those. No output of the others is the window's to decide: FindCoin() would
+    //! answer false for each.
+    virtual void NamedIds(std::span<const CTransactionRef> txs, int viewer_height, std::vector<uint8_t>& named) const = 0;
+};
+
+/**
  * The view a block is connected into: a CoinsViewOverlay (prefetch and the block's own changes for the
  * core's lookups and references) whose changes are committed to the store once the block is valid, as
  * the changes of its height (CoinsStore::ApplyConfirmed()). A block that fails leaves nothing in the store.
@@ -909,11 +939,27 @@ public:
     //! at the tip reads without it: one that fails leaves none of its inputs in the cache.
     //! Set before the block's first lookup; the view's reset clears it.
     void SetKeepBaseReads(bool keep) { m_keep_base_reads = keep; }
+    //! A window block's reads that the view does not hold look in the window's outputs before the store.
+    //! Cleared by the view's reset.
+    void SetOverlay(const WindowCoinSource* overlay, int height)
+    {
+        m_overlay = overlay;
+        m_overlay_height = height;
+    }
+    //! The block's outputs are not added to the view (BlockValidationContext::implicit_creates): its reads
+    //! find those of its first `limit` transactions in the overlay. Cleared by the view's reset.
+    void SetOwnLimit(uint32_t limit) { m_own_limit = limit; }
 
     //! Bring the block's inputs that the tier holds into the view, with one hold of each shard's lock.
+    //! Those the window's outputs have are taken from there and not asked of the store
+    //! (WindowCoinSource::FindCoins()).
     void Prefetch(const CBlock& block);
     //! As the cache's, and the spend left in the view keeps the height and the coinbase flag of its coin.
     bool SpendCoin(const COutPoint& outpoint, Coin* moveto = nullptr) override;
+    //! A window block's view, before the block's first transaction, answers for the block at once: the
+    //! window's outputs are asked once for each transaction, the store once for each shard. Only an output
+    //! that one of them may have is asked as the cache asks.
+    bool HaveAnyOutput(std::span<const CTransactionRef> txs) const override;
 
     //! Give the view back: the block's changes are dropped.
     void Release() { Reset(); }
@@ -927,6 +973,20 @@ public:
     void ChangesCommitted();
     //! The block is committed and published: the store's best block moves to it. The view is reset.
     void ConfirmCommitted(int height);
+    //! One change of a window block, as its commit needs it once the view is emptied: a spend names the
+    //! input's outpoint in the block and the coin spent (`n` its height twice plus the coinbase flag), a
+    //! create the transaction in the block and its output `n`, from which the commit makes the coin. The
+    //! block outlives the commit.
+    struct CommitItem {
+        //! CONFLICT: the commit did not make the change (CoinsStore::ConfirmedReport).
+        static constexpr uint8_t SPEND{1}, FRESH{2}, OVERWRITE{4}, KNOWN{8}, DROPPED{16}, CONFLICT{32};
+        const void* at;
+        uint32_t n;
+        uint8_t flags;
+        bool Spend() const { return flags & SPEND; }
+        const CTransaction& Tx() const { return *static_cast<const CTransaction*>(at); }
+        COutPoint Outpoint() const { return Spend() ? *static_cast<const COutPoint*>(at) : COutPoint{Tx().GetHash(), n}; }
+    };
 
 protected:
     std::optional<Coin> ReadBase(const COutPoint& outpoint) const override;
@@ -935,6 +995,9 @@ protected:
 private:
     CoinsStore& m_store;
     bool m_keep_base_reads{false};
+    const WindowCoinSource* m_overlay{nullptr};
+    int m_overlay_height{0};
+    uint32_t m_own_limit{0};
     int m_height{-1};
 };
 

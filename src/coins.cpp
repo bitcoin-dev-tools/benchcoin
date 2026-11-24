@@ -187,6 +187,16 @@ bool CCoinsViewCache::HaveCoin(const COutPoint& outpoint) const
     return (it != cacheCoins.end() && !it->second.coin.IsSpent());
 }
 
+bool CCoinsViewCache::HaveAnyOutput(std::span<const CTransactionRef> txs) const
+{
+    for (const auto& tx : txs) {
+        for (uint32_t o{0}; o < tx->vout.size(); ++o) {
+            if (HaveCoin(COutPoint{tx->GetHash(), o})) return true;
+        }
+    }
+    return false;
+}
+
 bool CCoinsViewCache::HaveCoinInCache(const COutPoint &outpoint) const {
     CCoinsMap::const_iterator it = cacheCoins.find(outpoint);
     return (it != cacheCoins.end() && !it->second.coin.IsSpent());

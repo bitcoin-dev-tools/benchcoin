@@ -629,6 +629,10 @@ struct DeploymentFlags {
  *    only that block waits. The write allocates the file space it needs; the
  *    claim of its position is arithmetic.
  *  - A window block that is not in memory is read on a block I/O thread.
+ *  - The blocks a reorganisation disconnects are read with their undo data
+ *    before its hold, on the block I/O threads (Chainstate::ReadForReorg()).
+ *    InvalidateBlock() reads each block it disconnects before that block's
+ *    hold.
  *  - Undo writes, the trim and sync of a file that is finished, and the
  *    write-out runs with the syncs their block index batch owes, are the
  *    ordered effects executor's (BlockManager::m_effects).
@@ -637,8 +641,11 @@ struct DeploymentFlags {
  *
  * Still made under cs_main, by a caller that waits for the result itself: the
  * syncs of a forced flush, the removal of files for pruneblockchain, the
- * reads of DisconnectTip(), the external block loader, and loading and
- * verifying at the start.
+ * external block loader, loading and verifying at the start, and of a
+ * reorganisation the reads that were not made before its hold: of the blocks
+ * of the new branch that are not in memory, of the blocks it disconnects past
+ * the first 16, and of a step that follows one whose branch was invalid,
+ * where the locks are not released in between.
  */
 
 /**
@@ -742,7 +749,15 @@ bool ConnectBlock(const CBlock& block, const BlockValidationContext& ctx,
                   ValidationCache& validation_cache, bool just_check,
                   BlockValidationState& state, ConnectBlockResult& result);
 
+//! A block to disconnect and its undo data, read before the hold of cs_main that disconnects it
+//! (File I/O, above; Chainstate::ReadForDisconnect()).
+struct DisconnectRead {
+    std::shared_ptr<CBlock> block;
+    std::optional<CBlockUndo> undo;
+};
+
 struct ConnectStep;
+struct ReorgReads;
 struct StagedConnect;
 struct WindowSync;
 namespace connect_phase {
@@ -1163,7 +1178,11 @@ public:
                       CCoinsViewCache& view, bool fJustCheck = false) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
 
     // Apply the effects of a block disconnection on the UTXO set.
-    bool DisconnectTip(BlockValidationState& state, DisconnectedBlockTransactions* disconnectpool) EXCLUSIVE_LOCKS_REQUIRED(cs_main, m_mempool->cs);
+    // `read` is what was read of the tip before the hold (ReadForDisconnect()); what it lacks is read here.
+    bool DisconnectTip(BlockValidationState& state, DisconnectedBlockTransactions* disconnectpool, DisconnectRead read = {}) EXCLUSIVE_LOCKS_REQUIRED(cs_main, m_mempool->cs);
+    //! Read a block of the active chain and its undo data for its disconnect, from positions copied under
+    //! cs_main, with no lock taken. What could not be read is left out.
+    DisconnectRead ReadForDisconnect(const CBlockIndex& index, const FlatFilePos& block_pos, const FlatFilePos& undo_pos) const;
 
     // Manual block validity manipulation:
     /** Mark a block as precious and reorganize.
@@ -1240,6 +1259,11 @@ protected:
      * @returns true unless a system error occurred
      */
     bool PlanConnectStep(BlockValidationState& state, ConnectStep& step) EXCLUSIVE_LOCKS_REQUIRED(cs_main, m_mempool->cs);
+    //! What a step towards `target` would read for a reorganisation (ReorgReads); nothing when it disconnects
+    //! no block.
+    std::optional<ReorgReads> PlanReorgReads(const CBlockIndex& target) const EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+    //! Make the reads planned by PlanReorgReads() on the block I/O threads and wait for them.
+    void ReadForReorg(ReorgReads& reads) noexcept LOCKS_EXCLUDED(::cs_main);
     //! Place the next at most 32 blocks towards the target in step.batch. False when the target has been reached.
     bool PlanNextBatch(ConnectStep& step) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
     //! Re-add disconnected transactions to the mempool and run the end-of-step checks. False, with `state`

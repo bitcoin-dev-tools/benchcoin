@@ -7,6 +7,8 @@
 #include <coins.h>
 #include <consensus/amount.h>
 #include <consensus/validation.h>
+#include <flatfile.h>
+#include <hash.h>
 #include <logging.h>
 #include <node/blockstorage.h>
 #include <node/kernel_notifications.h>
@@ -26,6 +28,7 @@
 #include <test/util/validation.h>
 #include <tinyformat.h>
 #include <uint256.h>
+#include <undo.h>
 #include <util/check.h>
 #include <util/string.h>
 #include <util/threadpool.h>
@@ -392,6 +395,79 @@ static void CheckReorgAnnouncementOrder(TestChain100Setup& setup, bool periodic_
 BOOST_FIXTURE_TEST_CASE(reorg_announces_readded_transactions_before_connected_blocks, TestChain100Setup)
 {
     CheckReorgAnnouncementOrder(*this);
+}
+
+//! A reorganisation from a branch of `depth` blocks to one of `depth + 1`: the blocks it disconnects are read
+//! before its hold, up to `read_ahead`, and it ends at the longer branch with that branch's coins.
+static void CheckReorgReadAhead(TestChain100Setup& setup, int depth, int read_ahead)
+{
+    ChainstateManager& chainman{*Assert(setup.m_node.chainman)};
+    Chainstate& chainstate{chainman.ActiveChainstate()};
+    const CScript long_script{CScript() << OP_TRUE};
+    const CScript short_script{CScript() << OP_2};
+    BlockValidationState state;
+
+    // The longer branch first, then set aside: each of its blocks is read before the hold that disconnects it.
+    std::vector<CBlock> long_branch;
+    for (int i{0}; i < depth + 1; ++i) long_branch.push_back(setup.CreateAndProcessBlock({}, long_script));
+    CBlockIndex* const long_first{WITH_LOCK(::cs_main, return chainman.m_blockman.LookupBlockIndex(long_branch.front().GetHash()))};
+    BOOST_REQUIRE(chainstate.InvalidateBlock(state, long_first));
+    BOOST_REQUIRE_EQUAL(WITH_LOCK(::cs_main, return chainstate.m_chain.Height()), 100);
+    std::vector<CBlock> short_branch;
+    for (int i{0}; i < depth; ++i) short_branch.push_back(setup.CreateAndProcessBlock({}, short_script));
+    BOOST_REQUIRE_EQUAL(WITH_LOCK(::cs_main, return chainstate.m_chain.Tip()->GetBlockHash()), short_branch.back().GetHash());
+
+    // The longer branch back. The step ends with the block that gives the tip more work than it had, the
+    // branch's last, so all of the branch is its to connect.
+    {
+        LOCK(::cs_main);
+        chainstate.ResetBlockFailureFlags(long_first);
+        chainman.RecalculateBestHeader();
+    }
+    {
+        ASSERT_DEBUG_LOG(strprintf("Read %d blocks to disconnect ahead of a reorganisation from %s to %s",
+                                   std::min(depth, read_ahead),
+                                   short_branch.back().GetHash().ToString(), long_branch.back().GetHash().ToString()));
+        BOOST_REQUIRE(chainstate.ActivateBestChain(state));
+    }
+    setup.m_node.validation_signals->SyncWithValidationInterfaceQueue();
+
+    LOCK(::cs_main);
+    BOOST_REQUIRE_EQUAL(chainstate.m_chain.Tip()->GetBlockHash(), long_branch.back().GetHash());
+    for (const CBlock& block : short_branch) BOOST_CHECK(!chainstate.CoinsTip().HaveCoin(COutPoint{block.vtx[0]->GetHash(), 0}));
+    for (const CBlock& block : long_branch) BOOST_CHECK(chainstate.CoinsTip().HaveCoin(COutPoint{block.vtx[0]->GetHash(), 0}));
+}
+
+BOOST_FIXTURE_TEST_CASE(reorg_reads_its_blocks_before_its_hold, TestChain100Setup)
+{
+    CheckReorgReadAhead(*this, /*depth=*/2, /*read_ahead=*/16);
+}
+
+//! Deeper than what is read ahead: the disconnected blocks past the first 16 are read under the hold.
+BOOST_FIXTURE_TEST_CASE(deep_reorg_reads_the_rest_under_its_hold, TestChain100Setup)
+{
+    CheckReorgReadAhead(*this, /*depth=*/18, /*read_ahead=*/16);
+}
+
+//! Undo data read from a position copied under cs_main, with no lock taken, is what the index's read gives;
+//! the hash of another parent does not pass its checksum.
+BOOST_FIXTURE_TEST_CASE(undo_read_from_a_copied_position, TestChain100Setup)
+{
+    ChainstateManager& chainman{*Assert(m_node.chainman)};
+    node::BlockManager& blockman{chainman.m_blockman};
+    const CMutableTransaction tx{CreateValidMempoolTransaction(m_coinbase_txns[0], 0, 1, coinbaseKey, GetScriptForRawPubKey(coinbaseKey.GetPubKey()), 49 * COIN)};
+    CreateAndProcessBlock({tx}, CScript() << OP_TRUE);
+    blockman.SettleUndoWrites();
+    const CBlockIndex* const tip{WITH_LOCK(::cs_main, return chainman.ActiveChain().Tip())};
+    const FlatFilePos pos{WITH_LOCK(::cs_main, return tip->GetUndoPos())};
+    BOOST_REQUIRE(!pos.IsNull());
+
+    CBlockUndo by_index, by_pos, wrong_parent;
+    BOOST_REQUIRE(blockman.ReadBlockUndo(by_index, *tip));
+    BOOST_REQUIRE(blockman.ReadBlockUndo(by_pos, pos, tip->pprev->GetBlockHash()));
+    BOOST_REQUIRE_EQUAL(by_pos.vtxundo.size(), 1U);
+    BOOST_CHECK((HashWriter{} << by_pos).GetHash() == (HashWriter{} << by_index).GetHash());
+    BOOST_CHECK(!blockman.ReadBlockUndo(wrong_parent, pos, tip->GetBlockHash()));
 }
 
 //! The same with a write-out run started at every block, inside the reorganisation's step too: a run's settle

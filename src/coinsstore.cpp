@@ -14,6 +14,7 @@
 #include <condition_variable>
 #include <exception>
 #include <functional>
+#include <unordered_map>
 #include <limits>
 #include <map>
 #include <stdexcept>
@@ -614,6 +615,31 @@ void CoinsStore::VisitShards(const std::vector<uint32_t>& shard_of, Work work) c
         LOCK(shard.mutex);
         work(shard, items(b));
     }
+}
+
+std::vector<std::pair<COutPoint, Coin>> CoinsStore::Fetch(std::vector<COutPoint>&& outpoints) const
+{
+    std::vector<uint32_t> shard_of;
+    std::vector<uint64_t> hashes;
+    shard_of.reserve(outpoints.size());
+    hashes.reserve(outpoints.size());
+    for (const COutPoint& outpoint : outpoints) {
+        shard_of.push_back(ShardIndex(outpoint));
+        hashes.push_back(KeyHash(outpoint));
+    }
+    std::vector<std::pair<COutPoint, Coin>> found;
+    found.reserve(outpoints.size());
+    VisitShards(shard_of, [&](Shard& shard, std::span<const uint32_t> items) EXCLUSIVE_LOCKS_REQUIRED(shard.mutex) {
+        shard.map.PrefetchAll(hashes, items);
+        for (const uint32_t i : items) {
+            const COutPoint& outpoint{outpoints[i]};
+            const auto it{shard.map.find(outpoint, hashes[i])};
+            if (it == shard.map.end() || it->second.coin.IsSpent()) continue;
+            Reference(it->second);
+            found.emplace_back(outpoint, it->second.coin);
+        }
+    });
+    return found;
 }
 
 // ---------------------------------------------------------------------------------------------------------
@@ -1236,4 +1262,125 @@ void CoinsStore::SanityCheck() const
     assert(DynamicMemoryUsage() == total_bytes);
     assert(GetCacheSize() == total_entries);
     assert(SumTotals(&Totals::dirty) == total_dirty);
+}
+
+// ---------------------------------------------------------------------------------------------------------
+// BlockApplyView
+
+BlockApplyView::BlockApplyView(CoinsStore& store, util::NotNullSharedPtr<ThreadPool> thread_pool, bool deterministic)
+    : CoinsViewOverlay(&store, std::move(thread_pool), deterministic), m_store{store}
+{
+}
+
+BlockApplyView::~BlockApplyView()
+{
+    StopFetching(); // the prefetch workers read the view
+}
+
+void BlockApplyView::Prefetch(const CBlock& block)
+{
+    size_t inputs{0};
+    for (size_t i{1}; i < block.vtx.size(); ++i) inputs += block.vtx[i]->vin.size();
+    std::vector<COutPoint> outpoints;
+    outpoints.reserve(inputs);
+    for (size_t i{1}; i < block.vtx.size(); ++i) {
+        for (const CTxIn& in : block.vtx[i]->vin) {
+            outpoints.push_back(in.prevout);
+        }
+    }
+    for (auto& [outpoint, coin] : m_store.Fetch(std::move(outpoints))) {
+        const size_t usage{coin.DynamicMemoryUsage()};
+        if (cacheCoins.try_emplace(outpoint, std::move(coin)).second) cachedCoinsUsage += usage;
+    }
+}
+
+bool BlockApplyView::SpendCoin(const COutPoint& outpoint, Coin* moveto)
+{
+    Coin local;
+    Coin& spent{moveto ? *moveto : local};
+    if (!CoinsViewOverlay::SpendCoin(outpoint, &spent)) return false;
+    // What the view keeps of a coin the base had is the spend. It keeps with it which coin that was, for
+    // the store to compare at the apply (CoinsStore::Change::known_coin).
+    if (const auto it{cacheCoins.find(outpoint)}; it != cacheCoins.end()) {
+        it->second.coin.nHeight = spent.nHeight;
+        it->second.coin.fCoinBase = spent.fCoinBase;
+    }
+    return true;
+}
+
+void BlockApplyView::CommitAlone(const CBlock& block, const CBlockUndo& undo)
+{
+    std::vector<CoinsStore::Change> changes;
+    changes.reserve(m_dirty_count);
+    const uint32_t own_height{static_cast<uint32_t>(m_height)};
+    for (auto& [outpoint, entry] : cacheCoins) {
+        if (!entry.IsDirty()) continue;
+        // A dirty spent entry is the spend of a coin the base had (a fresh one spent is erased from the view
+        // instead); a dirty unspent entry is a create, which overwrote a coin the base had unless fresh.
+        // The coin spent is known by its height (SpendCoin()), unless it is one the block made itself over
+        // a coin of the base: the store then holds what was there before.
+        const bool known_coin{entry.coin.IsSpent() && entry.coin.nHeight != own_height};
+        // Only a coinbase may overwrite an unspent coin (the chain's two BIP30 duplicates): a transaction
+        // that creates over one repeats an earlier transaction whose inputs are spent, and its block is
+        // invalid. The rule relies on BIP30 or BIP34 keeping such a block out: with neither
+        // (-test=bip30_off on a chain where BIP34 is not active yet) a block that spends an output and
+        // makes it again with a repeated transaction is not handled.
+        const bool may_overwrite{!entry.IsFresh() && !entry.coin.IsSpent() && entry.coin.IsCoinBase()};
+        // The entry itself: the store takes the coin from where it is, and the view is emptied after.
+        changes.push_back({.outpoint = &outpoint, .coin = &entry.coin, .possible_overwrite = may_overwrite, .known_coin = known_coin});
+    }
+    // The coins the block spent, by outpoint, made only once a spend misses the store.
+    std::unordered_map<COutPoint, const Coin*, SaltedOutpointHasher> spent;
+    const auto base_coin{[&](const COutPoint& outpoint) -> const Coin* {
+        if (spent.empty() && undo.vtxundo.size() + 1 == block.vtx.size()) {
+            for (size_t i{1}; i < block.vtx.size(); ++i) {
+                const CTransaction& tx{*block.vtx[i]};
+                const CTxUndo& tx_undo{undo.vtxundo[i - 1]};
+                if (tx_undo.vprevout.size() != tx.vin.size()) continue;
+                for (size_t j{0}; j < tx.vin.size(); ++j) spent.emplace(tx.vin[j].prevout, &tx_undo.vprevout[j]);
+            }
+        }
+        const auto it{spent.find(outpoint)};
+        return it == spent.end() ? nullptr : it->second;
+    }};
+    // Nothing changes the store beside the block: what it read is what it changes.
+    Assert(m_store.ApplyConfirmed(std::move(changes), m_height, /*report=*/nullptr, base_coin) == 0);
+    // The store has taken the entries' coins: the view is emptied here, as a window block's is, and not by the
+    // reset that follows the block's publication.
+    ChangesCommitted();
+}
+
+void BlockApplyView::ChangesCommitted()
+{
+    const size_t entries{cacheCoins.size()};
+    cacheCoins.clear();
+    // The map's pool hands the nodes it took back out in the order they were freed, which after a few
+    // blocks is no order: every entry the next block makes, finds or walks here is then somewhere else in
+    // memory last touched many blocks ago. A new pool hands them out by address. The map is sized for as
+    // many entries again, so that it does not grow step by step in every block.
+    ReallocateCache();
+    cacheCoins.reserve(entries);
+    cachedCoinsUsage = 0;
+    m_dirty_count = 0;
+}
+
+void BlockApplyView::ConfirmCommitted(int height)
+{
+    StopFetching(); // the prefetch workers read the view
+    m_store.SetBestBlock(GetBestBlock(), height);
+    Reset();
+}
+
+std::optional<Coin> BlockApplyView::ReadBase(const COutPoint& outpoint) const
+{
+    // A window block's read leaves the coin in the tier, clean (SetKeepBaseReads()).
+    return m_keep_base_reads ? m_store.GetCoin(outpoint) : m_store.PeekCoin(outpoint);
+}
+
+void BlockApplyView::Reset() noexcept
+{
+    StopFetching(); // the prefetch workers read the view
+    m_keep_base_reads = false;
+    m_height = -1;
+    CoinsViewOverlay::Reset();
 }

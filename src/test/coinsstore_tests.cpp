@@ -5,11 +5,13 @@
 #include <coins.h>
 #include <coinsstore.h>
 #include <dbwrapper.h>
+#include <primitives/block.h>
 #include <script/script.h>
 #include <test/util/coinsstore.h>
 #include <test/util/random.h>
 #include <test/util/setup_common.h>
 #include <txdb.h>
+#include <undo.h>
 #include <util/threadpool.h>
 #include <util/byte_units.h>
 
@@ -1406,6 +1408,98 @@ BOOST_AUTO_TEST_CASE(run_after_a_disconnect_below_the_written_head_is_final)
     store.SanityCheck();
 }
 
+//! Only a coinbase may overwrite an unspent coin (the chain's two BIP30 duplicates): committed through the
+//! view, the second coinbase stands and the first is overwritten for good.
+BOOST_AUTO_TEST_CASE(block_apply_view_coinbase_over_a_confirmed_coin)
+{
+    CCoinsViewDB db{MemoryDb("store"), {}};
+    CoinsStore store{&db, 4, true};
+    store.SetBestBlock(uint256::ONE, 1);
+    const COutPoint cb{Txid::FromUint256(uint256{11}), 0};
+    const Coin cb_coin{CTxOut{CAmount{5000}, CScript{} << OP_TRUE}, 1, /*fCoinBaseIn=*/true};
+    store.AddCoin(cb, Coin{cb_coin}, false); // confirmed, dirty: the database does not have it yet
+    util::NotNull pool{std::make_shared<ThreadPool>("test")}; // no workers: lookups are served inline
+    BlockApplyView view{store, pool, /*deterministic=*/true};
+    const CBlock block;
+    const CBlockUndo undo;
+
+    view.SetHeight(2);
+    view.AddCoin(cb, Coin{CTxOut{CAmount{6000}, CScript{} << OP_TRUE}, 2, /*fCoinBaseIn=*/true}, /*possible_overwrite=*/true);
+    view.SetBestBlock(uint256{2});
+    view.CommitAlone(block, undo);
+    view.ConfirmCommitted(2);
+    const auto second{store.PeekCoin(cb)};
+    BOOST_REQUIRE(second);
+    BOOST_CHECK_EQUAL(second->out.nValue, CAmount{6000});
+    BOOST_CHECK_EQUAL(second->nHeight, 2U);
+    store.SanityCheck();
+}
+
+//! The view commits a valid block's changes to the store as the changes of its height: readers see nothing
+//! before, everything after, and a block whose view is given back leaves no trace.
+BOOST_AUTO_TEST_CASE(block_apply_view_commits_a_block)
+{
+    CCoinsViewDB db{MemoryDb("store"), {}};
+    CoinsStore store{&db, 4, true};
+    store.SetBestBlock(uint256::ONE, 1);
+    const COutPoint old_coin{Txid::FromUint256(uint256{10}), 0};
+    store.AddCoin(old_coin, RandomCoin(m_rng, 1), false);
+    util::NotNull pool{std::make_shared<ThreadPool>("test")}; // no workers: lookups are served inline
+    BlockApplyView view{store, pool, /*deterministic=*/true};
+    const CBlock block;
+    const CBlockUndo undo;
+
+    // A block that spends old_coin, creates a and b, and spends a within itself.
+    const COutPoint a{Txid::FromUint256(uint256{20}), 0};
+    const COutPoint b{Txid::FromUint256(uint256{21}), 0};
+    BOOST_CHECK(!view.InUse());
+    view.SetHeight(2);
+    BOOST_CHECK(view.InUse());
+    BOOST_CHECK(view.HaveCoin(old_coin));
+    Coin spent;
+    BOOST_CHECK(view.SpendCoin(old_coin, &spent));
+    BOOST_CHECK(!spent.IsSpent());
+    view.AddCoin(a, RandomCoin(m_rng, 2), false);
+    view.AddCoin(b, RandomCoin(m_rng, 2), false);
+    BOOST_CHECK(view.HaveCoin(a));
+    BOOST_CHECK(view.SpendCoin(a));
+    BOOST_CHECK(!view.HaveCoin(a));
+    view.SetBestBlock(uint256{2});
+    // Readers see nothing of it yet.
+    BOOST_CHECK(store.HaveCoin(old_coin));
+    BOOST_CHECK(!store.HaveCoin(b));
+    view.CommitAlone(block, undo);
+    BOOST_CHECK(!store.HaveCoin(old_coin));
+    BOOST_CHECK(store.HaveCoin(b));
+    BOOST_CHECK(!store.HaveCoinInCache(a)); // created and spent inside the block: no trace
+    view.ConfirmCommitted(2);
+    BOOST_CHECK(!view.InUse());
+    BOOST_CHECK(store.GetBestBlock() == uint256{2});
+    store.SanityCheck();
+
+    // A block whose view is given back leaves the store as it was.
+    view.SetHeight(3);
+    const COutPoint c{Txid::FromUint256(uint256{22}), 0};
+    view.AddCoin(c, RandomCoin(m_rng, 3), false);
+    BOOST_CHECK(view.SpendCoin(b));
+    view.Release();
+    BOOST_CHECK(!view.InUse());
+    BOOST_CHECK(store.HaveCoin(b));
+    BOOST_CHECK(!store.HaveCoinInCache(c));
+    store.SanityCheck();
+
+    // As does a view destroyed with a block.
+    {
+        BlockApplyView other{store, pool, true};
+        other.SetHeight(3);
+        other.AddCoin(c, RandomCoin(m_rng, 3), false);
+        BOOST_CHECK(other.SpendCoin(b));
+    }
+    BOOST_CHECK(store.HaveCoin(b));
+    BOOST_CHECK(!store.HaveCoinInCache(c));
+    store.SanityCheck();
+}
+
 //! The map nodes one thread frees, more than a thread keeps, serve another thread's insertions, and the
 //! coins that land in them are whole.
 BOOST_AUTO_TEST_CASE(freed_nodes_serve_another_thread)
@@ -1631,6 +1725,342 @@ BOOST_AUTO_TEST_CASE(block_spend_keeps_the_owed_erase_height)
     BOOST_CHECK_MESSAGE(!db.HaveCoin(x) || store.WrittenHeight() < 2,
                         "the database settled at " << store.WrittenHeight() << " with a coin spent at 2");
     store.SanityCheck();
+}
+
+//! A base that counts its reads.
+class ReadCountingBase final : public CCoinsViewBacked
+{
+public:
+    using CCoinsViewBacked::CCoinsViewBacked;
+    mutable int m_reads{0};
+    std::optional<Coin> GetCoin(const COutPoint& outpoint) const override
+    {
+        ++m_reads;
+        return CCoinsViewBacked::GetCoin(outpoint);
+    }
+    std::optional<Coin> PeekCoin(const COutPoint& outpoint) const override
+    {
+        ++m_reads;
+        return CCoinsViewBacked::PeekCoin(outpoint);
+    }
+};
+
+//! A window block's view reads a coin that only the database holds once: the read brings the coin into the
+//! tier, and the spend finds it there at the commit. Given back, the view leaves the coin as the database
+//! has it. Without the switch (a block at the tip) the read leaves nothing behind and the commit reads again.
+BOOST_AUTO_TEST_CASE(block_apply_view_reads_a_database_coin_once)
+{
+    CCoinsViewDB db{MemoryDb("store"), {}};
+    ReadCountingBase base{&db};
+    CoinsStore store{&base, 4, true};
+    store.SetBestBlock(uint256::ONE, 1);
+    const COutPoint spent_coin{Txid::FromUint256(uint256{10}), 0};
+    const COutPoint kept_coin{Txid::FromUint256(uint256{11}), 0};
+    store.AddCoin(spent_coin, RandomCoin(m_rng, 1), false);
+    store.AddCoin(kept_coin, RandomCoin(m_rng, 1), false);
+    store.Sync();
+    store.EvictClean(0);
+    BOOST_REQUIRE_EQUAL(store.GetCacheSize(), 0U); // both coins are in the database only
+    util::NotNull pool{std::make_shared<ThreadPool>("test")}; // no workers: lookups are served inline
+    BlockApplyView view{store, pool, /*deterministic=*/true};
+    // No undo data: a spend that misses the store at the commit reads the base.
+    const CBlock block;
+    const CBlockUndo undo;
+
+    base.m_reads = 0;
+    view.SetHeight(2);
+    view.SetKeepBaseReads(true);
+    BOOST_CHECK(view.SpendCoin(spent_coin));
+    BOOST_CHECK_EQUAL(base.m_reads, 1);
+    BOOST_CHECK(store.HaveCoinInCache(spent_coin)); // clean, as the database has it
+    view.SetBestBlock(uint256{2});
+    view.CommitAlone(block, undo);
+    view.ConfirmCommitted(2);
+    BOOST_CHECK_EQUAL(base.m_reads, 1); // the commit found the entry
+    BOOST_CHECK(!store.HaveCoin(spent_coin));
+    store.SanityCheck();
+    store.Sync();
+    BOOST_CHECK(!db.PeekCoin(spent_coin).has_value()); // the erase was owed and is written
+
+    base.m_reads = 0;
+    view.SetHeight(3);
+    view.SetKeepBaseReads(true);
+    BOOST_CHECK(view.SpendCoin(kept_coin));
+    BOOST_CHECK_EQUAL(base.m_reads, 1);
+    view.Release();
+    BOOST_CHECK(store.HaveCoin(kept_coin));
+    BOOST_CHECK_EQUAL(base.m_reads, 1);
+    store.SanityCheck();
+    store.Sync();
+    BOOST_CHECK(db.PeekCoin(kept_coin).has_value());
+
+    // The switch went with the block: the next one reads as at the tip.
+    store.EvictClean(0);
+    BOOST_REQUIRE(!store.HaveCoinInCache(kept_coin));
+    base.m_reads = 0;
+    view.SetHeight(3);
+    BOOST_CHECK(view.SpendCoin(kept_coin));
+    BOOST_CHECK_EQUAL(base.m_reads, 1);
+    BOOST_CHECK(!store.HaveCoinInCache(kept_coin));
+    view.SetBestBlock(uint256{3});
+    view.CommitAlone(block, undo);
+    BOOST_CHECK_EQUAL(base.m_reads, 2);
+    view.ConfirmCommitted(3);
+    BOOST_CHECK(!store.HaveCoin(kept_coin));
+    store.SanityCheck();
+}
+
+//! A base whose read of one outpoint waits, once, until the test lets it go, and that counts its reads by kind:
+//! GetCoin() is the store's read that keeps the coin, PeekCoin() the one that does not.
+class GatedBase final : public CCoinsViewBacked
+{
+public:
+    using CCoinsViewBacked::CCoinsViewBacked;
+    COutPoint m_gated;
+    std::shared_future<void> m_open;
+    mutable std::promise<void> m_entered;
+    mutable std::atomic<int> m_gets{0};
+    mutable std::atomic<int> m_peeks{0};
+    mutable std::atomic<bool> m_gated_read_done{false};
+    std::optional<Coin> GetCoin(const COutPoint& outpoint) const override
+    {
+        ++m_gets;
+        return Gated(outpoint, [&] { return CCoinsViewBacked::GetCoin(outpoint); });
+    }
+    std::optional<Coin> PeekCoin(const COutPoint& outpoint) const override
+    {
+        ++m_peeks;
+        return Gated(outpoint, [&] { return CCoinsViewBacked::PeekCoin(outpoint); });
+    }
+
+private:
+    mutable std::atomic_flag m_gate_taken{};
+    template <typename F>
+    std::optional<Coin> Gated(const COutPoint& outpoint, F read) const
+    {
+        if (outpoint != m_gated || m_gate_taken.test_and_set()) return read();
+        m_entered.set_value();
+        m_open.wait();
+        std::optional<Coin> coin{read()};
+        m_gated_read_done = true;
+        return coin;
+    }
+};
+
+//! The view's reset, with a prefetch worker reading the base for the view, waits for that read before it clears
+//! the block's state (BlockApplyView::Reset()), and the next block reads as the reset left the view: the first
+//! block's read kept its coin in the store (SetKeepBaseReads()), the next block's leaves nothing there.
+BOOST_AUTO_TEST_CASE(block_apply_view_reset_waits_for_its_prefetch)
+{
+    CCoinsViewDB db{MemoryDb("store"), {}};
+    const COutPoint first{Txid::FromUint256(uint256{10}), 0};
+    const COutPoint second{Txid::FromUint256(uint256{11}), 0};
+    {
+        CCoinsViewCache cache{&db};
+        cache.AddCoin(first, RandomCoin(m_rng, 1), false);
+        cache.AddCoin(second, RandomCoin(m_rng, 1), false);
+        cache.SetBestBlock(uint256::ONE);
+        cache.Flush();
+    }
+    GatedBase base{&db};
+    base.m_gated = first;
+    std::promise<void> open;
+    base.m_open = open.get_future().share();
+    std::future<void> entered{base.m_entered.get_future()};
+    CoinsStore store{&base, 4, true};
+    store.SetBestBlock(uint256::ONE, 1);
+    util::NotNull pool{std::make_shared<ThreadPool>("test")};
+    pool->Start(2);
+    // A block whose one transaction after the coinbase spends `outpoint`.
+    const auto spending{[](const COutPoint& outpoint) {
+        CMutableTransaction coinbase;
+        coinbase.vin.emplace_back();
+        coinbase.vout.emplace_back(1, CScript{} << OP_TRUE);
+        CMutableTransaction tx;
+        tx.vin.emplace_back(outpoint);
+        tx.vout.emplace_back(1, CScript{} << OP_TRUE);
+        CBlock block;
+        block.vtx = {MakeTransactionRef(std::move(coinbase)), MakeTransactionRef(std::move(tx))};
+        return block;
+    }};
+    const CBlock block_first{spending(first)};
+    const CBlock block_second{spending(second)};
+    {
+        BlockApplyView view{store, pool, /*deterministic=*/true};
+        view.SetHeight(2);
+        view.SetKeepBaseReads(true);
+        std::thread opener;
+        {
+            const auto guard{view.StartFetching(block_first)};
+            // A worker reads `first` from the base for the view, and waits there.
+            entered.wait();
+            opener = std::thread{[&open] { open.set_value(); }};
+        } // the view's reset
+        BOOST_CHECK(base.m_gated_read_done); // the reset returned after the read
+        opener.join();
+        BOOST_CHECK(!view.InUse());
+        BOOST_CHECK_EQUAL(base.m_gets.load(), 1);
+        BOOST_CHECK_EQUAL(base.m_peeks.load(), 0);
+        BOOST_CHECK(store.HaveCoinInCache(first)); // kept, clean, as the switch asked
+
+        // The reset cleared the switch: the next block's read peeks and leaves nothing in the store.
+        view.SetHeight(3);
+        {
+            const auto guard{view.StartFetching(block_second)};
+            BOOST_CHECK(view.HaveCoin(second));
+        }
+        BOOST_CHECK_EQUAL(base.m_gets.load(), 1);
+        BOOST_CHECK_EQUAL(base.m_peeks.load(), 1);
+        BOOST_CHECK(!store.HaveCoinInCache(second));
+    }
+    pool->Stop();
+    store.SanityCheck();
+}
+
+//! A block connected alone gives its undo data to the commit: the spend of a coin that only the database
+//! holds is made from the coin there, without a second read of the base, and the erase is owed and
+//! written. Undo data that does not fit the block or one of its transactions is not used, and the commit
+//! reads the base as it does without any. A coin given for the spend that is not the one the block
+//! validated against is a conflict.
+BOOST_AUTO_TEST_CASE(block_apply_view_takes_a_missed_coin_from_the_undo)
+{
+    CCoinsViewDB db{MemoryDb("store"), {}};
+    ReadCountingBase base{&db};
+    CoinsStore store{&base, 4, true};
+    store.SetBestBlock(uint256::ONE, 1);
+    const Coin coin{RandomCoin(m_rng, 1)};
+
+    // A block: a coinbase and one transaction that spends a coin of the block's own, with the undo data
+    // of that spend.
+    struct Alone {
+        COutPoint outpoint;
+        CBlock block;
+        CBlockUndo undo;
+    };
+    const auto make_block{[&](uint8_t n) {
+        Alone made;
+        made.outpoint = COutPoint{Txid::FromUint256(uint256{n}), 0};
+        store.AddCoin(made.outpoint, Coin{coin}, false);
+        made.block.vtx.push_back(MakeTransactionRef(CMutableTransaction{}));
+        CMutableTransaction spender;
+        spender.vin.emplace_back(made.outpoint);
+        made.block.vtx.push_back(MakeTransactionRef(spender));
+        made.undo.vtxundo.emplace_back();
+        made.undo.vtxundo[0].vprevout.push_back(coin);
+        return made;
+    }};
+    const Alone fits{make_block(10)};
+    // Undo data for another number of transactions is not the block's.
+    Alone other_count{make_block(11)};
+    other_count.undo.vtxundo.emplace_back();
+    // Nor is a transaction's undo data with another number of coins than the transaction has inputs.
+    Alone longer{make_block(12)};
+    longer.undo.vtxundo[0].vprevout.push_back(coin);
+    const COutPoint wrong{Txid::FromUint256(uint256{13}), 0};
+    store.AddCoin(wrong, Coin{coin}, false);
+    store.Sync();
+    store.EvictClean(0);
+    BOOST_REQUIRE_EQUAL(store.GetCacheSize(), 0U); // the coins are in the database only
+    util::NotNull pool{std::make_shared<ThreadPool>("test")}; // no workers: lookups are served inline
+    BlockApplyView view{store, pool, /*deterministic=*/true};
+
+    // The block connected and committed: the reads of the base that took.
+    int height{1};
+    const auto commit{[&](const Alone& alone) {
+        ++height;
+        base.m_reads = 0;
+        view.SetHeight(height);
+        BOOST_CHECK(view.SpendCoin(alone.outpoint));
+        BOOST_CHECK_EQUAL(base.m_reads, 1);
+        BOOST_CHECK(!store.HaveCoinInCache(alone.outpoint)); // at the tip the lookup leaves nothing behind
+        view.SetBestBlock(uint256{static_cast<uint8_t>(height)});
+        view.CommitAlone(alone.block, alone.undo);
+        const int reads{base.m_reads};
+        view.ConfirmCommitted(height);
+        BOOST_CHECK(!store.HaveCoin(alone.outpoint));
+        store.SanityCheck();
+        return reads;
+    }};
+    BOOST_CHECK_EQUAL(commit(fits), 1); // the commit took the coin from the undo data
+    store.Sync();
+    BOOST_CHECK(!db.PeekCoin(fits.outpoint).has_value()); // the erase was owed and is written
+    BOOST_CHECK_EQUAL(commit(other_count), 2);
+    BOOST_CHECK_EQUAL(commit(longer), 2);
+    store.Sync();
+    BOOST_CHECK(!db.PeekCoin(other_count.outpoint).has_value());
+    BOOST_CHECK(!db.PeekCoin(longer.outpoint).has_value());
+
+    // A coin given for a spend that misses the store, and not the one the block validated its spend
+    // against: a conflict, as for any other coin met in place of the known one. Nothing is spent and the
+    // base is not asked.
+    Coin known{coin};
+    known.out.SetNull();
+    Coin given{coin};
+    given.fCoinBase = true;
+    std::vector<CoinsStore::Change> changes;
+    changes.push_back({.outpoint = &wrong, .coin = &known, .possible_overwrite = false, .known_coin = true});
+    CoinsStore::ConfirmedReport report;
+    base.m_reads = 0;
+    BOOST_CHECK_EQUAL(store.ApplyConfirmed(std::move(changes), height + 1, &report, [&](const COutPoint&) -> const Coin* { return &given; }), 1U);
+    BOOST_CHECK_EQUAL(base.m_reads, 0);
+    BOOST_REQUIRE_EQUAL(report.conflicted.size(), 1U);
+    BOOST_CHECK(*report.conflicted[0] == wrong);
+    BOOST_CHECK(store.HaveCoin(wrong));
+    store.SanityCheck();
+}
+
+BOOST_AUTO_TEST_CASE(block_apply_view_takes_the_missed_coins_of_several_inputs_from_the_undo)
+{
+    CCoinsViewDB db{MemoryDb("store"), {}};
+    ReadCountingBase base{&db};
+    CoinsStore store{&base, 4, true};
+    // Three coins, each made at a height of its own: one is told from another.
+    std::vector<COutPoint> outpoints;
+    std::vector<Coin> coins;
+    for (uint8_t i{0}; i < 3; ++i) {
+        store.SetBestBlock(uint256{static_cast<uint8_t>(1 + i)}, 1 + i);
+        outpoints.emplace_back(Txid::FromUint256(uint256{static_cast<uint8_t>(20 + i)}), 0);
+        coins.push_back(RandomCoin(m_rng, 1 + i));
+        store.AddCoin(outpoints.back(), Coin{coins.back()}, false);
+    }
+    store.Sync();
+    store.EvictClean(0);
+    BOOST_REQUIRE_EQUAL(store.GetCacheSize(), 0U); // the coins are in the database only
+    util::NotNull pool{std::make_shared<ThreadPool>("test")}; // no workers: lookups are served inline
+    BlockApplyView view{store, pool, /*deterministic=*/true};
+
+    // The block: a coinbase, a transaction with two inputs and one with one. The undo data has an entry
+    // for each transaction but the coinbase, with a coin for each input in the inputs' order.
+    CBlock block;
+    block.vtx.push_back(MakeTransactionRef(CMutableTransaction{}));
+    CMutableTransaction two_inputs;
+    two_inputs.vin.emplace_back(outpoints[0]);
+    two_inputs.vin.emplace_back(outpoints[1]);
+    block.vtx.push_back(MakeTransactionRef(two_inputs));
+    CMutableTransaction one_input;
+    one_input.vin.emplace_back(outpoints[2]);
+    block.vtx.push_back(MakeTransactionRef(one_input));
+    CBlockUndo undo;
+    undo.vtxundo.resize(2);
+    undo.vtxundo[0].vprevout.push_back(coins[0]);
+    undo.vtxundo[0].vprevout.push_back(coins[1]);
+    undo.vtxundo[1].vprevout.push_back(coins[2]);
+
+    // One read for each coin, at the lookups; the commit takes all three from the undo data. Each is the
+    // coin its input was validated against, which the commit would meet as a conflict otherwise: none
+    // went to another input's outpoint.
+    base.m_reads = 0;
+    view.SetHeight(4);
+    for (const COutPoint& outpoint : outpoints) BOOST_CHECK(view.SpendCoin(outpoint));
+    BOOST_CHECK_EQUAL(base.m_reads, 3);
+    view.SetBestBlock(uint256{4});
+    view.CommitAlone(block, undo);
+    BOOST_CHECK_EQUAL(base.m_reads, 3);
+    view.ConfirmCommitted(4);
+    store.SanityCheck();
+    for (const COutPoint& outpoint : outpoints) BOOST_CHECK(!store.HaveCoin(outpoint));
+    store.Sync();
+    for (const COutPoint& outpoint : outpoints) BOOST_CHECK(!db.HaveCoin(outpoint));
 }
 
 BOOST_AUTO_TEST_SUITE_END()

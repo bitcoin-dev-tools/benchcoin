@@ -53,7 +53,6 @@ struct Chain {
             .params = Consensus(),
             .now = NodeClock::now(),
             .deployments = deployments,
-            .script_flags = GetBlockScriptFlags(block_hash, deployments, Consensus()),
             .check_scripts = check_scripts,
             .block_hash = block_hash,
             .prev_block_hash = prev_hash,

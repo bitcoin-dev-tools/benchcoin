@@ -41,7 +41,6 @@ BOOST_FIXTURE_TEST_CASE(context_matches_the_block_index, TestChain100Setup)
     BOOST_CHECK_EQUAL(ctx.deployments.cltv, DeploymentActiveAfter(tip, chainman, Consensus::DEPLOYMENT_CLTV));
     BOOST_CHECK_EQUAL(ctx.deployments.csv, DeploymentActiveAfter(tip, chainman, Consensus::DEPLOYMENT_CSV));
     BOOST_CHECK_EQUAL(ctx.deployments.segwit, DeploymentActiveAfter(tip, chainman, Consensus::DEPLOYMENT_SEGWIT));
-    BOOST_CHECK(ctx.script_flags == GetBlockScriptFlags(hash, ctx.deployments, chainman.GetConsensus()));
     // Regtest has no block that BIP34 would vouch for, so BIP30 is checked.
     BOOST_CHECK(ctx.enforce_bip30);
     for (const int height : {0, 1, tip->nHeight / 2, tip->nHeight}) {

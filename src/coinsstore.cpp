@@ -21,7 +21,9 @@
 #include <utility>
 #include <vector>
 
-#ifndef WIN32
+#ifdef WIN32
+#include <windows.h>
+#else
 #include <sys/mman.h>
 #endif
 
@@ -62,6 +64,61 @@ void* CoinsStore::HintedRegion(size_t bytes)
     (void)madvise(region, bytes, MADV_HUGEPAGE);
 #endif
     return region;
+}
+
+void* CoinsStore::MapNodeRegion()
+{
+    constexpr size_t bytes{NODE_REGION_BYTES};
+    static_assert(std::has_single_bit(bytes));
+#ifdef WIN32
+    // A reservation of twice the size shows an aligned address; the region is reserved there alone, and
+    // committed once it is. Another thread may reserve the address in between, and then the search starts again.
+    void* region{nullptr};
+    while (!region) {
+        void* const probe{VirtualAlloc(nullptr, 2 * bytes, MEM_RESERVE, PAGE_NOACCESS)};
+        if (!probe) NodeRegionUnavailable(bytes);
+        const uintptr_t aligned{(reinterpret_cast<uintptr_t>(probe) + bytes - 1) & ~uintptr_t{bytes - 1}};
+        VirtualFree(probe, 0, MEM_RELEASE);
+        region = VirtualAlloc(reinterpret_cast<void*>(aligned), bytes, MEM_RESERVE, PAGE_READWRITE);
+    }
+    if (!VirtualAlloc(region, bytes, MEM_COMMIT, PAGE_READWRITE)) NodeRegionUnavailable(bytes);
+    return region;
+#else
+    // Twice the size is mapped, and what lies before and after the aligned part goes back.
+    void* const mapping{mmap(nullptr, 2 * bytes, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0)};
+    if (mapping == MAP_FAILED) NodeRegionUnavailable(bytes);
+    const uintptr_t start{reinterpret_cast<uintptr_t>(mapping)};
+    const uintptr_t aligned{(start + bytes - 1) & ~uintptr_t{bytes - 1}};
+    if (aligned > start) munmap(mapping, aligned - start);
+    if (aligned + bytes < start + 2 * bytes) munmap(reinterpret_cast<void*>(aligned + bytes), start + bytes - aligned);
+    void* const region{reinterpret_cast<void*>(aligned)};
+#ifdef MADV_HUGEPAGE
+    (void)madvise(region, bytes, MADV_HUGEPAGE);
+#endif
+    return region;
+#endif
+}
+
+void CoinsStore::UnmapNodeRegion(void* region) noexcept
+{
+#ifdef WIN32
+    VirtualFree(region, 0, MEM_RELEASE);
+#else
+    munmap(region, NODE_REGION_BYTES);
+#endif
+}
+
+void CoinsStore::NodeRegionUnavailable(size_t region_bytes)
+{
+    LogError("The system gave no memory for a node region of the coins cache (%u MiB).", region_bytes >> 20);
+    std::abort();
+}
+
+void CoinsStore::NodeNumbersExhausted(size_t regions, size_t region_bytes)
+{
+    LogError("The coins cache has used all %u node regions of %u MiB the process can number (%u GiB of nodes); it is not "
+             "given more memory than that.", regions, region_bytes >> 20, (uint64_t{regions} * region_bytes) >> 30);
+    std::abort();
 }
 
 int64_t CoinsStore::NodeBytes()
@@ -117,7 +174,7 @@ void CoinsStore::Resized(Shard& shard) const
     const int64_t delta{static_cast<int64_t>(entries) - static_cast<int64_t>(shard.entries)};
     int64_t bytes{NodeBytes() * delta};
     if (buckets != shard.buckets) {
-        bytes += static_cast<int64_t>(memusage::MallocUsage(sizeof(void*) * buckets)) - static_cast<int64_t>(memusage::MallocUsage(sizeof(void*) * shard.buckets));
+        bytes += static_cast<int64_t>(memusage::MallocUsage(Map::BUCKET_BYTES * buckets)) - static_cast<int64_t>(memusage::MallocUsage(Map::BUCKET_BYTES * shard.buckets));
     }
     Totals& totals{MyTotals()};
     totals.entries.fetch_add(delta, std::memory_order_relaxed);
@@ -1266,7 +1323,7 @@ void CoinsStore::SanityCheck() const
         assert(dirty == shard.dirty_count);
         assert(shard.map.size() == shard.entries);
         assert(shard.map.bucket_count() == shard.buckets);
-        total_bytes += NodeBytes() * shard.map.size() + memusage::MallocUsage(sizeof(void*) * shard.map.bucket_count()) + memusage::DynamicUsage(shard.dirty_spans) + usage;
+        total_bytes += NodeBytes() * shard.map.size() + memusage::MallocUsage(Map::BUCKET_BYTES * shard.map.bucket_count()) + memusage::DynamicUsage(shard.dirty_spans) + usage;
         total_entries += shard.map.size();
         total_dirty += dirty;
         // The span sums are the dirty entries' bytes.

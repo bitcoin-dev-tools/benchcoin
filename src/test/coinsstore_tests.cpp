@@ -1505,9 +1505,9 @@ BOOST_AUTO_TEST_CASE(created_scripts_given_apart_from_their_coins)
     RunBase base{&db};
     CoinsStore store{&base, 4, true};
     store.SetBestBlock(uint256{1}, 1);
-    // A push of 34 bytes is a 35-byte script, at the inline limit; one of 35 bytes is past it.
-    const CScript inline_script{CScript{} << std::vector<unsigned char>(34, 0x51)};
-    const CScript heap_script{CScript{} << std::vector<unsigned char>(35, 0x52)};
+    // A push of one byte less than the inline limit is a script at the limit; a push of as many bytes is past it.
+    const CScript inline_script{CScript{} << std::vector<unsigned char>(StoredCoin::INLINE - 1, 0x51)};
+    const CScript heap_script{CScript{} << std::vector<unsigned char>(StoredCoin::INLINE, 0x52)};
     BOOST_REQUIRE_EQUAL(inline_script.size(), StoredCoin::INLINE);
     BOOST_REQUIRE_EQUAL(heap_script.size(), StoredCoin::INLINE + 1);
     const COutPoint a{Txid::FromUint256(uint256{10}), 0};
@@ -2410,9 +2410,54 @@ BOOST_AUTO_TEST_CASE(stored_coin_round_trip)
     StoredCoin spent;
     spent = Coin{};
     BOOST_CHECK(same(spent.ToCoin(), Coin{}));
-    // Every standard output script is inline.
-    for (const size_t standard : {size_t{22}, size_t{23}, size_t{25}, size_t{34}, size_t{35}}) {
-        BOOST_CHECK_EQUAL(StoredCoin{make_coin(standard, 1, 1, false)}.DynamicMemoryUsage(), 0U);
+    // Every standard output script is inline: P2WPKH, P2SH, P2PKH, P2WSH, P2TR and P2PK with a compressed key.
+    const std::vector<unsigned char> hash20(20, 0x5a), hash32(32, 0xa5);
+    std::vector<unsigned char> key33(33, 0x7e);
+    key33[0] = 0x03;
+    for (const CScript& standard : {CScript() << OP_0 << hash20, CScript() << OP_HASH160 << hash20 << OP_EQUAL,
+                                    CScript() << OP_DUP << OP_HASH160 << hash20 << OP_EQUALVERIFY << OP_CHECKSIG,
+                                    CScript() << OP_0 << hash32, CScript() << OP_1 << hash32, CScript() << key33 << OP_CHECKSIG}) {
+        const Coin coin{CTxOut{1, standard}, 1, false};
+        StoredCoin stored;
+        stored = coin;
+        BOOST_CHECK_EQUAL(stored.DynamicMemoryUsage(), 0U);
+        BOOST_CHECK(same(stored.ToCoin(), coin));
+    }
+}
+
+//! The standard outputs over StoredCoin::INLINE bytes are kept by their 32 bytes and made again exactly; a script that
+//! only resembles one is kept on the heap as it is. The amount takes seven bytes: every amount an output may carry.
+BOOST_AUTO_TEST_CASE(stored_coin_kinds_round_trip)
+{
+    const auto same{[](const Coin& a, const Coin& b) {
+        return a.out == b.out && a.nHeight == b.nHeight && a.fCoinBase == b.fCoinBase && a.IsSpent() == b.IsSpent();
+    }};
+    std::vector<unsigned char> hash32(32), key33(33);
+    for (size_t i{0}; i < hash32.size(); ++i) hash32[i] = static_cast<unsigned char>(i * 13 + 1);
+    for (size_t i{0}; i < key33.size(); ++i) key33[i] = static_cast<unsigned char>(i * 7 + 3);
+    const auto key_with{[&](unsigned char prefix) { auto key{key33}; key[0] = prefix; return key; }};
+    std::vector<unsigned char> hash31(hash32.begin(), hash32.end() - 1), hash33{hash32};
+    hash33.push_back(0x42);
+    const std::vector<std::pair<CScript, bool>> scripts{
+        {CScript() << OP_0 << hash32, true},
+        {CScript() << OP_1 << hash32, true},
+        {CScript() << key_with(0x02) << OP_CHECKSIG, true},
+        {CScript() << key_with(0x03) << OP_CHECKSIG, true},
+        {CScript() << OP_2 << hash32, false},                    // a witness version without its kind
+        {CScript() << OP_0 << hash31 << OP_NOP, false},          // 34 bytes, the push not of 32
+        {CScript() << key_with(0x04) << OP_CHECKSIG, false},     // 35 bytes, no compressed key
+        {CScript() << key_with(0x02) << OP_CHECKSIGVERIFY, false},
+        {CScript() << hash33 << OP_DROP, false},                 // 35 bytes, a push of 33 that is no key
+    };
+    for (const auto& [script, kept_inline] : scripts) {
+        for (const CAmount amount : {CAmount{0}, CAmount{1}, MAX_MONEY, CAmount{(int64_t{1} << 56) - 2}}) {
+            const Coin coin{CTxOut{amount, script}, 123456, /*fCoinBaseIn=*/true};
+            StoredCoin stored;
+            stored = coin;
+            BOOST_CHECK(same(stored.ToCoin(), coin));
+            BOOST_CHECK_EQUAL(stored.DynamicMemoryUsage() == 0, kept_inline);
+            BOOST_CHECK_EQUAL(stored.Amount(), amount);
+        }
     }
 }
 

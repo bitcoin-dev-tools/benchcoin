@@ -6,6 +6,7 @@
 #define BITCOIN_COINSSTORE_H
 
 #include <coins.h>
+#include <script/script.h>
 #include <coins_entry_machine.h>
 #include <crypto/common.h>
 #include <kernel/caches.h>
@@ -17,6 +18,7 @@
 #include <util/check.h>
 #include <util/hasher.h>
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <bit>
@@ -37,37 +39,41 @@
 
 /**
  * A coin as the store's entries hold it: the amount, the height and the coinbase flag of a Coin, and its output
- * script inline up to INLINE (35) bytes, so that the common output scripts, the 34-byte P2WSH and P2TR outputs
- * included, take no allocation of their own, as in a Coin, whose CScript keeps 36 bytes inline. A longer script
- * is on the heap here too. The bytes are kept as they are: a Coin converted to a StoredCoin and back is the same
- * coin. 48 bytes aligned to four, where a Coin is 56 aligned to eight, so that an entry and its key pack without
- * padding (CoinsStore::Map::Cell).
+ * script inline up to INLINE (32) bytes, which covers P2PKH, P2SH and P2WPKH outputs as they are. The three standard
+ * outputs that are longer are kept as their 32 bytes of key or hash, the kind saying what goes around them: P2WSH and
+ * P2TR (34 bytes) and P2PK with a compressed key (35). Any other longer script is on the heap. Nothing is lost: a
+ * Coin converted to a StoredCoin and back is the same coin. 44 bytes aligned to four, where a Coin is 56 aligned to
+ * eight, so that an entry and its key pack without padding (CoinsStore::Map::Cell).
  */
 class StoredCoin
 {
-    //! The amount, as bytes: an amount would align the coin to eight.
-    unsigned char m_value[sizeof(CAmount)]{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
-    CAmount Value() const
+    //! The amount in seven bytes, as bytes (an amount would align the coin to eight): every amount an output may
+    //! carry (MoneyRange()) fits, and all seven bytes set is the spent marker.
+    static constexpr uint64_t SPENT_VALUE{(uint64_t{1} << 56) - 1};
+    unsigned char m_value[7]{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
+    void SetValue(CAmount amount)
     {
-        CAmount value;
-        std::memcpy(&value, m_value, sizeof(value));
-        return value;
+        Assert(amount == -1 || (amount >= 0 && static_cast<uint64_t>(amount) < SPENT_VALUE));
+        const uint64_t value{amount == -1 ? SPENT_VALUE : static_cast<uint64_t>(amount)};
+        for (size_t i{0}; i < sizeof(m_value); ++i) m_value[i] = static_cast<unsigned char>(value >> (8 * i));
     }
-    void SetValue(CAmount value) { std::memcpy(m_value, &value, sizeof(value)); }
 
 public:
-    static constexpr size_t INLINE{35};
+    static constexpr size_t INLINE{32};
     //! The amount, read without making a Coin.
-    CAmount Amount() const { return Value(); }
+    CAmount Amount() const
+    {
+        uint64_t value{0};
+        for (size_t i{0}; i < sizeof(m_value); ++i) value |= uint64_t{m_value[i]} << (8 * i);
+        return value == SPENT_VALUE ? CAmount{-1} : static_cast<CAmount>(value);
+    }
 
     StoredCoin() = default;
-    StoredCoin(const Coin& coin) { Assign(coin); }
-    StoredCoin(const StoredCoin& other) { CopyFrom(other); }
-    StoredCoin(StoredCoin&& other) noexcept { MoveFrom(other); }
+    StoredCoin(const StoredCoin&) = delete;
+    StoredCoin& operator=(const StoredCoin&) = delete;
     StoredCoin& operator=(const Coin& coin)
     {
-        Release();
-        Assign(coin);
+        AssignOutput(coin.out.nValue, coin.nHeight, coin.fCoinBase, coin.out.scriptPubKey);
         return *this;
     }
     //! As the assignment of a Coin of these parts, without the Coin.
@@ -78,22 +84,6 @@ public:
         nHeight = height;
         fCoinBase = coinbase;
         SetScript(script.data(), script.size());
-    }
-    StoredCoin& operator=(const StoredCoin& other)
-    {
-        if (this != &other) {
-            Release();
-            CopyFrom(other);
-        }
-        return *this;
-    }
-    StoredCoin& operator=(StoredCoin&& other) noexcept
-    {
-        if (this != &other) {
-            Release();
-            MoveFrom(other);
-        }
-        return *this;
     }
     ~StoredCoin() { Release(); }
 
@@ -112,8 +102,14 @@ public:
         Coin coin;
         if (IsSpent()) return coin;
         coin.out.nValue = Amount();
-        const unsigned char* bytes{Script()};
-        coin.out.scriptPubKey.assign(bytes, bytes + ScriptSize());
+        if (m_kind == HEAP) {
+            const unsigned char* bytes{HeapBlock() + sizeof(uint32_t)};
+            coin.out.scriptPubKey.assign(bytes, bytes + HeapSize());
+        } else {
+            unsigned char bytes[INLINE + 3];
+            const size_t size{Expand(bytes)};
+            coin.out.scriptPubKey.assign(bytes, bytes + size);
+        }
         coin.nHeight = nHeight;
         coin.fCoinBase = fCoinBase;
         return coin;
@@ -122,21 +118,24 @@ public:
 
     //! As Coin::IsSpent() (CTxOut::IsNull()).
     bool IsSpent() const { return Amount() == -1; }
-    //! As Coin::DynamicMemoryUsage(): the heap memory of a script longer than INLINE bytes.
-    size_t DynamicMemoryUsage() const { return m_size == HEAP ? memusage::MallocUsage(sizeof(uint32_t) + ScriptSize()) : 0; }
+    //! As Coin::DynamicMemoryUsage(): the heap memory of a script kept on the heap.
+    size_t DynamicMemoryUsage() const { return m_kind == HEAP ? memusage::MallocUsage(sizeof(uint32_t) + HeapSize()) : 0; }
 
+private:
+    //! The script's kind: its length where it is inline as it is (0 to INLINE), one of the standard outputs kept as
+    //! their 32 bytes, or HEAP, where m_bytes holds the pointer and the allocation the script's length (four bytes)
+    //! and then its bytes.
+    static constexpr uint8_t P2WSH{INLINE + 1}, P2TR{INLINE + 2}, P2PK_EVEN{INLINE + 3}, P2PK_ODD{INLINE + 4}, HEAP{0xff};
+    static_assert(P2PK_ODD < HEAP && INLINE >= sizeof(unsigned char*));
+    uint8_t m_kind{0};
+
+public:
     //! One type for both, as in Coin: a compiler that starts a new unit where the type changes (MSVC) would
     //! not pack a bool into the height's word.
     uint32_t nHeight : 31 {0};
     uint32_t fCoinBase : 1 {0};
 
 private:
-    //! The marker in m_size of a script on the heap: m_bytes holds the pointer, the allocation the script's
-    //! length (four bytes) and then its bytes.
-    static constexpr uint8_t HEAP{0xff};
-    static_assert(INLINE < HEAP && INLINE >= sizeof(unsigned char*));
-
-    uint8_t m_size{0};
     unsigned char m_bytes[INLINE];
 
     unsigned char* HeapBlock() const
@@ -145,19 +144,52 @@ private:
         std::memcpy(&block, m_bytes, sizeof(block));
         return block;
     }
-    size_t ScriptSize() const
+    size_t HeapSize() const
     {
-        if (m_size != HEAP) return m_size;
         uint32_t size;
         std::memcpy(&size, HeapBlock(), sizeof(size));
         return size;
     }
-    const unsigned char* Script() const { return m_size == HEAP ? HeapBlock() + sizeof(uint32_t) : m_bytes; }
+    //! The script of a coin not on the heap, written to `out` (INLINE + 3 bytes at most). Returns its length.
+    size_t Expand(unsigned char* out) const
+    {
+        switch (m_kind) {
+        case P2WSH:
+        case P2TR:
+            out[0] = m_kind == P2WSH ? OP_0 : OP_1;
+            out[1] = 32;
+            std::memcpy(out + 2, m_bytes, 32);
+            return 34;
+        case P2PK_EVEN:
+        case P2PK_ODD:
+            out[0] = 33;
+            out[1] = m_kind == P2PK_EVEN ? 0x02 : 0x03;
+            std::memcpy(out + 2, m_bytes, 32);
+            out[34] = OP_CHECKSIG;
+            return 35;
+        default: {
+            // Inline as it is: the kind is the script's length, at most INLINE.
+            const size_t size{std::min<size_t>(m_kind, INLINE)};
+            if (size) std::memcpy(out, m_bytes, size);
+            return size;
+        }
+        }
+    }
     void SetScript(const unsigned char* bytes, size_t size)
     {
         if (size <= INLINE) {
-            m_size = static_cast<uint8_t>(size);
+            m_kind = static_cast<uint8_t>(size);
             if (size) std::memcpy(m_bytes, bytes, size);
+            return;
+        }
+        if (size == 34 && (bytes[0] == OP_0 || bytes[0] == OP_1) && bytes[1] == 32) {
+            m_kind = bytes[0] == OP_0 ? P2WSH : P2TR;
+            std::memcpy(m_bytes, bytes + 2, 32);
+            return;
+        }
+        if (size == 35 && bytes[0] == 33 && (bytes[1] == 0x02 || bytes[1] == 0x03) && bytes[34] == OP_CHECKSIG) {
+            m_kind = bytes[1] == 0x02 ? P2PK_EVEN : P2PK_ODD;
+            std::memcpy(m_bytes, bytes + 2, 32);
             return;
         }
         auto* block{new unsigned char[sizeof(uint32_t) + size]};
@@ -165,40 +197,15 @@ private:
         std::memcpy(block, &size32, sizeof(size32));
         std::memcpy(block + sizeof(uint32_t), bytes, size);
         std::memcpy(m_bytes, &block, sizeof(block));
-        m_size = HEAP;
-    }
-    void Assign(const Coin& coin)
-    {
-        SetValue(coin.out.nValue);
-        nHeight = coin.nHeight;
-        fCoinBase = coin.fCoinBase;
-        const CScript& script{coin.out.scriptPubKey};
-        SetScript(script.data(), script.size());
-    }
-    void CopyFrom(const StoredCoin& other)
-    {
-        std::memcpy(m_value, other.m_value, sizeof(m_value));
-        nHeight = other.nHeight;
-        fCoinBase = other.fCoinBase;
-        SetScript(other.Script(), other.ScriptSize());
-    }
-    void MoveFrom(StoredCoin& other) noexcept
-    {
-        std::memcpy(m_value, other.m_value, sizeof(m_value));
-        nHeight = other.nHeight;
-        fCoinBase = other.fCoinBase;
-        m_size = other.m_size;
-        std::memcpy(m_bytes, other.m_bytes, INLINE);
-        other.m_size = 0;
-        other.SetValue(-1);
+        m_kind = HEAP;
     }
     void Release() noexcept
     {
-        if (m_size == HEAP) delete[] HeapBlock();
-        m_size = 0;
+        if (m_kind == HEAP) delete[] HeapBlock();
+        m_kind = 0;
     }
 };
-static_assert(sizeof(StoredCoin) == 48 && alignof(StoredCoin) == 4);
+static_assert(sizeof(StoredCoin) == 44 && alignof(StoredCoin) == 4);
 
 /**
  * The young tier of the UTXO set: the in-memory layer above the coins
@@ -510,17 +517,20 @@ private:
         StoredCoin coin;
         //! The height the entry is filed under, the write-out's age: the last change's as a rule, and an
         //! earlier one's where that change is owed still, or where a change finds the entry dirty
-        //! (coins_entry::Height).
-        int32_t height{0};
-        bool dirty : 1 {false};
-        bool fresh : 1 {false};
-        bool collected : 1 {false};
+        //! (coins_entry::Height). A block height, below MAX_FILED_HEIGHT (Enter()). It and the flags share
+        //! one word, of one type for all, as a compiler that starts a new unit where the type changes (MSVC)
+        //! would not pack them.
+        uint32_t height : 25 {0};
+        uint32_t dirty : 1 {0};
+        uint32_t fresh : 1 {0};
+        uint32_t collected : 1 {0};
         //! A lookup found the entry since eviction last passed over it.
-        bool referenced : 1 {false};
+        uint32_t referenced : 1 {0};
         //! The coin was made over an erase the database is owed still (coins_entry::OWED).
-        bool owed : 1 {false};
-        uint8_t list : 2 {LIST_NONE};
+        uint32_t owed : 1 {0};
+        uint32_t list : 2 {LIST_NONE};
     };
+    static constexpr int MAX_FILED_HEIGHT{1 << 25};
     //! The huge page size the hint below is made for (x86-64's; elsewhere the hint is as harmless as none).
     static constexpr size_t HUGE_PAGE_BYTES{size_t{2} << 20};
     //! Memory of a multiple of HUGE_PAGE_BYTES, aligned to it, that the system is asked to back with huge
@@ -562,7 +572,7 @@ private:
         static constexpr size_t MAX_KEPT{1024};
         static constexpr size_t REGION_BYTES{NODE_REGION_BYTES};
         static constexpr unsigned SLOT_BITS{static_cast<unsigned>(std::bit_width(REGION_BYTES / sizeof(T)))};
-        //! 2^13 regions of 32 MiB for 96-byte nodes, 256 GiB of them.
+        //! 2^13 regions of 32 MiB for 88-byte nodes, 256 GiB of them.
         static constexpr size_t MAX_REGIONS{size_t{1} << (32 - SLOT_BITS)};
         //! The regions by number, each written once, when the depot takes it. Constant-initialized and never
         //! destroyed (trivially destructible), so a lookup needs no guard and nodes may outlive static objects.
@@ -582,8 +592,24 @@ private:
             std::byte* const base{s_regions[number >> SLOT_BITS].load(std::memory_order_relaxed)};
             return reinterpret_cast<T*>(base + (number & ((uint32_t{1} << SLOT_BITS) - 1)) * sizeof(T));
         }
-        //! The next full list after this one in the depot: the second word of a list's first node.
-        static void*& NextList(void* list) { return static_cast<void**>(list)[1]; }
+        //! A free node's links are node numbers, as the map's are, so that a node needs no pointer's alignment: the
+        //! next node of its list in its first word, and in a list's first node the next full list in the depot in
+        //! its second.
+        static void* Link(const void* node, size_t word)
+        {
+            uint32_t number;
+            std::memcpy(&number, static_cast<const std::byte*>(node) + word * sizeof(number), sizeof(number));
+            return At(number);
+        }
+        static void SetLink(void* node, size_t word, const void* to)
+        {
+            const uint32_t number{to ? Number(static_cast<const T*>(to)) : 0};
+            std::memcpy(static_cast<std::byte*>(node) + word * sizeof(number), &number, sizeof(number));
+        }
+        static void* Next(const void* node) { return Link(node, 0); }
+        static void SetNext(void* node, const void* to) { SetLink(node, 0, to); }
+        static void* NextList(const void* list) { return Link(list, 1); }
+        static void SetNextList(void* list, const void* to) { SetLink(list, 1, to); }
         //! Full lists, each MAX_KEPT nodes, for whichever thread next runs out, and the region new ones are
         //! carved from. Never destroyed, so that a thread may end at any time.
         struct Depot {
@@ -601,18 +627,18 @@ private:
             void Give(void* list) EXCLUSIVE_LOCKS_REQUIRED(!mutex)
             {
                 LOCK(mutex);
-                NextList(list) = lists;
+                SetNextList(list, lists);
                 lists = list;
             }
             void GiveLoose(void* nodes) EXCLUSIVE_LOCKS_REQUIRED(!mutex)
             {
                 LOCK(mutex);
                 while (nodes) {
-                    void* next{*static_cast<void**>(nodes)};
-                    *static_cast<void**>(nodes) = loose;
+                    void* next{Next(nodes)};
+                    SetNext(nodes, loose);
                     loose = nodes;
                     if (++loose_count == MAX_KEPT) {
-                        NextList(loose) = lists;
+                        SetNextList(loose, lists);
                         lists = std::exchange(loose, nullptr);
                         loose_count = 0;
                     }
@@ -657,7 +683,7 @@ private:
                     if (nodes) {
                         // Linked outside the lock: the first touch of the memory is where the system supplies it.
                         for (size_t i{0}; i < MAX_KEPT; ++i) {
-                            *reinterpret_cast<void**>(nodes + i * sizeof(T)) = i + 1 < MAX_KEPT ? nodes + (i + 1) * sizeof(T) : nullptr;
+                            SetNext(nodes + i * sizeof(T), i + 1 < MAX_KEPT ? nodes + (i + 1) * sizeof(T) : nullptr);
                         }
                         return nodes;
                     }
@@ -696,8 +722,8 @@ private:
         };
         static Kept& Mine()
         {
-            // A free node holds two pointers (the links of its lists), and nodes lie back to back from an aligned start.
-            static_assert(sizeof(T) >= 2 * sizeof(void*) && sizeof(T) % alignof(void*) == 0 && alignof(T) <= alignof(void*));
+            // A free node holds two node numbers (the links of its lists), and nodes lie back to back from an aligned start.
+            static_assert(sizeof(T) >= 2 * sizeof(uint32_t) && sizeof(T) % alignof(uint32_t) == 0 && alignof(T) <= alignof(uint32_t));
             thread_local Kept kept;
             return kept;
         }
@@ -710,7 +736,9 @@ private:
             if (KeptGone()) {
                 // One node of a list of the depot's (which is never destroyed), the rest back to it.
                 void* node{Shared().Take()};
-                Shared().GiveLoose(std::exchange(*static_cast<void**>(node), nullptr));
+                void* rest{Next(node)};
+                SetNext(node, nullptr);
+                Shared().GiveLoose(rest);
                 return static_cast<T*>(node);
             }
             Kept& kept{Mine()};
@@ -720,7 +748,7 @@ private:
                 kept.count = MAX_KEPT;
             }
             void* node{kept.head};
-            kept.head = *static_cast<void**>(node);
+            kept.head = Next(node);
             --kept.count;
             return static_cast<T*>(node);
         }
@@ -728,7 +756,7 @@ private:
         {
             Assert(n == 1);
             if (KeptGone()) {
-                *reinterpret_cast<void**>(p) = nullptr;
+                SetNext(p, nullptr);
                 Shared().GiveLoose(p);
                 return;
             }
@@ -739,7 +767,7 @@ private:
                 kept.spare = std::exchange(kept.head, nullptr);
                 kept.count = 0;
             }
-            *reinterpret_cast<void**>(p) = kept.head;
+            SetNext(p, kept.head);
             kept.head = p;
             ++kept.count;
         }
@@ -755,7 +783,7 @@ private:
      * A shard's table: chained, with nodes that never move (a run in flight points at them),
      * of the std::unordered_map interface as far as the store uses it. The bucket array is a power of two
      * and a chain ends at a link of zero. A caller with many keys for one shard hashes them first and asks
-     * for their buckets and nodes ahead (Prefetch(), PrefetchNode()).
+     * for their buckets and nodes ahead (PrefetchAll()).
      */
     class Map
     {
@@ -766,13 +794,12 @@ private:
             Node node;
         };
         //! The node follows the link without padding, so that the link and the key are a cell's first bytes.
-        //! Cells lie back to back from the start of their region, which is aligned to its size (NodeAllocator):
-        //! a cell a multiple of half a line long and at most a line and a half starts at a line's start or at its
-        //! middle, and lies on two lines (PrefetchNode()).
+        //! Cells lie back to back in their region (NodeAllocator) and are not a multiple of half a cache line
+        //! long: a cell starts anywhere in a line and may lie across three (PrefetchAll()).
         static constexpr size_t NODE_OFFSET{sizeof(uint32_t)};
         static constexpr size_t LINE_BYTES{64};
         static_assert(NODE_OFFSET + sizeof(COutPoint) <= LINE_BYTES && alignof(Node) <= alignof(uint32_t) && sizeof(Cell) == NODE_OFFSET + sizeof(Node));
-        static_assert(sizeof(Cell) % (LINE_BYTES / 2) == 0 && sizeof(Cell) <= LINE_BYTES + LINE_BYTES / 2);
+        static_assert(sizeof(Cell) <= 2 * LINE_BYTES);
         static Cell* CellAt(uint32_t number) { return NodeAllocator<Cell>::At(number); }
         static uint32_t CellNumber(const Cell* cell) { return NodeAllocator<Cell>::Number(cell); }
         //! A bucket is the number of its chain's first cell.
@@ -827,27 +854,21 @@ private:
             }
             return {};
         }
-        //! Ask for the bucket of a hash ahead of its probe.
-        void Prefetch(uint64_t hash) const
-        {
-            if (m_bucket_count != 0) Ahead(&m_buckets[hash & (m_bucket_count - 1)]);
-        }
-        //! Ask for the first node of the bucket's chain: both lines of the cell, its link and key on the first and
-        //! the rest of the entry on the second. Reads the bucket.
-        void PrefetchNode(uint64_t hash) const
-        {
-            if (m_bucket_count == 0) return;
-            if (const Cell* cell{CellAt(m_buckets[hash & (m_bucket_count - 1)])}) {
-                const char* const first{reinterpret_cast<const char*>(cell)};
-                Ahead(first);
-                Ahead(first + LINE_BYTES);
-            }
-        }
-        //! Ask for every item's bucket, then every chain's first node, before the first probe waits for one.
+        //! Ask for every item's bucket, then every chain's first node, before the first probe waits for one: every
+        //! line of the node's cell, its link and key first and the rest of the entry at the end. A line asked for
+        //! twice costs nothing.
         void PrefetchAll(std::span<const uint64_t> hashes, std::span<const uint32_t> items) const
         {
-            for (const uint32_t i : items) Prefetch(hashes[i]);
-            for (const uint32_t i : items) PrefetchNode(hashes[i]);
+            if (m_bucket_count == 0) return;
+            for (const uint32_t i : items) Ahead(&m_buckets[hashes[i] & (m_bucket_count - 1)]);
+            for (const uint32_t i : items) {
+                if (const Cell* cell{CellAt(m_buckets[hashes[i] & (m_bucket_count - 1)])}) {
+                    const char* const first{reinterpret_cast<const char*>(cell)};
+                    Ahead(first);
+                    Ahead(first + LINE_BYTES);
+                    Ahead(first + sizeof(Cell) - 1);
+                }
+            }
         }
         iterator find(const COutPoint& key) const { return find(key, KeyHash(key)); }
         iterator find(const COutPoint& key, uint64_t hash) const
@@ -1045,11 +1066,12 @@ private:
         Assert(to != REFUSED);
         Assert(static_cast<bool>(to & SPENT) == entry.coin.IsSpent());
         Assert(height == entry.height || entry.list == LIST_NONE);
-        entry.height = height;
-        entry.dirty = to & DIRTY;
-        entry.fresh = to & FRESH;
-        entry.collected = to & COLLECTED;
-        entry.owed = to & OWED;
+        Assert(height >= 0 && height < MAX_FILED_HEIGHT);
+        entry.height = static_cast<uint32_t>(height);
+        entry.dirty = (to & DIRTY) != 0;
+        entry.fresh = (to & FRESH) != 0;
+        entry.collected = (to & COLLECTED) != 0;
+        entry.owed = (to & OWED) != 0;
     }
     //! `event` happened to the entry at `height` (the change's or the coin's, as the event has it). The entry was in `from` before and has its coin as the event leaves it. With the
     //! entry out of its shard's counts where the event changes how it is counted (Detach()).

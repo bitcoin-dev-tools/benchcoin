@@ -19,6 +19,7 @@ BOOST_AUTO_TEST_SUITE(interfaces_tests)
 BOOST_FIXTURE_TEST_CASE(findBlock, TestChain100Setup)
 {
     LOCK(Assert(m_node.chainman)->GetMutex());
+    BLOCK_FILE_WORK_UNDER_CS_MAIN("a test");
     auto& chain = m_node.chain;
     const CChain& active = Assert(m_node.chainman)->ActiveChain();
 

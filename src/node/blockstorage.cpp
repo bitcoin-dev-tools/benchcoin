@@ -651,8 +651,22 @@ BlockManager::IndexBatch BlockManager::PrepareBlockIndexBatch()
                       std::move(block_syncs), std::move(undo_syncs)};
 }
 
+//! The BLOCK_FILE_WORK_UNDER_CS_MAIN scopes open on this thread.
+static thread_local int t_file_work_under_main{0};
+
+BlockFileWorkUnderMain::BlockFileWorkUnderMain(const char*) { ++t_file_work_under_main; }
+BlockFileWorkUnderMain::~BlockFileWorkUnderMain() { --t_file_work_under_main; }
+
+//! In front of block and undo file work that takes no lock itself: not under cs_main, unless its caller
+//! says that it is meant to be (BlockFileWorkUnderMain).
+static void AssertFileWorkOffMain()
+{
+    if (t_file_work_under_main == 0) AssertLockNotHeld(::cs_main);
+}
+
 bool BlockManager::SyncBatchFiles(IndexBatch& batch)
 {
+    AssertFileWorkOffMain();
     const auto sync{[&](const FlatFileSeq& seq, std::vector<FlatFilePos>& owed, const bilingual_str& error) {
         while (!owed.empty()) {
             // Not after a sync that failed anywhere, as in SyncWrittenFiles(): the file may be one of these.
@@ -698,6 +712,7 @@ bool BlockManager::SyncWrittenFiles()
 bool BlockManager::LoadBlockIndexDB(const std::optional<uint256>& snapshot_blockhash)
 {
     AssertLockHeld(::cs_main);
+    BLOCK_FILE_WORK_UNDER_CS_MAIN("loading at the start: every block file is opened");
     if (!LoadBlockIndex(snapshot_blockhash)) {
         return false;
     }
@@ -760,6 +775,7 @@ bool BlockManager::LoadBlockIndexDB(const std::optional<uint256>& snapshot_block
 void BlockManager::ScanAndUnlinkAlreadyPrunedFiles()
 {
     AssertLockHeld(::cs_main);
+    BLOCK_FILE_WORK_UNDER_CS_MAIN("files pruned before are removed: at the start, or for a coins write that lacks room");
     int max_blockfile{this->MaxBlockfileNum()};
     if (!m_have_pruned) {
         return;
@@ -996,6 +1012,7 @@ bool BlockManager::ClaimChunks(Preallocation& prealloc, const FlatFileSeq& seq, 
 
 bool BlockManager::Preallocate(Preallocation& prealloc, const FlatFileSeq& seq, const FlatFilePos& pos, uint64_t size)
 {
+    AssertFileWorkOffMain();
     const uint64_t need{seq.Chunks(pos.nPos + size)};
     // The allocated end of the file, or nothing to do. Entries are never removed.
     const auto allocated{[&]() -> std::optional<uint64_t> {
@@ -1053,6 +1070,7 @@ uint64_t BlockManager::CalculateCurrentUsage()
 
 void BlockManager::UnlinkPrunedFiles(const std::set<int>& setFilesToPrune) const
 {
+    AssertFileWorkOffMain();
     std::error_code ec;
     for (std::set<int>::iterator it = setFilesToPrune.begin(); it != setFilesToPrune.end(); ++it) {
         FlatFilePos pos(*it, 0);
@@ -1066,12 +1084,14 @@ void BlockManager::UnlinkPrunedFiles(const std::set<int>& setFilesToPrune) const
 
 AutoFile BlockManager::OpenBlockFile(const FlatFilePos& pos, bool fReadOnly) const
 {
+    AssertFileWorkOffMain();
     return AutoFile{m_block_file_seq.Open(pos, fReadOnly), m_obfuscation};
 }
 
 /** Open an undo file (rev?????.dat) */
 AutoFile BlockManager::OpenUndoFile(const FlatFilePos& pos, bool fReadOnly) const
 {
+    AssertFileWorkOffMain();
     return AutoFile{m_undo_file_seq.Open(pos, fReadOnly), m_obfuscation};
 }
 
@@ -1298,6 +1318,7 @@ std::optional<FlatFilePos> BlockManager::UndoFileFinishedBy(const CBlockIndex& b
 
 void BlockManager::FinishUndoFile(const FlatFilePos& undo_end)
 {
+    AssertFileWorkOffMain();
     // Reported, not propagated: the undo data is written, the file may be left untrimmed. Remembered by the
     // latch (SyncFailed()), not in the set of unsynced files, which is not touched here: no later sync of
     // the file may stand in for this one.
@@ -1328,6 +1349,7 @@ void BlockManager::OnUndoWritten(CBlockIndex& block, const FlatFilePos& pos)
 bool BlockManager::WriteBlockUndo(const CBlockUndo& blockundo, BlockValidationState& state, CBlockIndex& block)
 {
     AssertLockHeld(::cs_main);
+    BLOCK_FILE_WORK_UNDER_CS_MAIN("the undo write in one call, of tests and benchmarks");
 
     // Write undo information to disk
     if (block.GetUndoPos().IsNull()) {
@@ -1551,6 +1573,7 @@ bool BlockManager::WriteBlockAt(const CBlock& block, FlatFilePos& pos)
 FlatFilePos BlockManager::WriteBlock(const CBlock& block, int nHeight)
 {
     AssertLockHeld(::cs_main);
+    BLOCK_FILE_WORK_UNDER_CS_MAIN("the block write in one call: the genesis block, tests and benchmarks");
     FlatFilePos pos{AllocateBlockPos(block, nHeight)};
     if (!WriteBlockAt(block, pos)) return FlatFilePos();
     return pos;

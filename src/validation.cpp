@@ -2411,6 +2411,7 @@ int ApplyTxInUndo(Coin&& undo, CCoinsViewCache& view, const COutPoint& out)
 DisconnectResult Chainstate::DisconnectBlock(const CBlock& block, const CBlockIndex* pindex, CCoinsViewCache& view)
 {
     AssertLockHeld(::cs_main);
+    BLOCK_FILE_WORK_UNDER_CS_MAIN("the undo data of a block disconnected under the lock, where it was not read before");
 
     CBlockUndo blockUndo;
     if (!m_blockman.ReadBlockUndo(blockUndo, *pindex)) {
@@ -3509,6 +3510,7 @@ bool Chainstate::FlushStateToDisk(
                 step(node::FlushStep::Unlink);
                 if (nManualPruneHeight > 0) {
                     // A request (pruneblockchain) returns once its files are gone.
+                    BLOCK_FILE_WORK_UNDER_CS_MAIN("pruneblockchain waits for its files to be removed");
                     m_blockman.UnlinkPrunedFiles(setFilesToPrune);
                 } else {
                     // Nothing waits for the files to go: removed on a block I/O thread, not under cs_main.
@@ -3657,6 +3659,7 @@ bool Chainstate::DisconnectTip(BlockValidationState& state, DisconnectedBlockTra
     // Read block from disk, unless it was read before the hold.
     std::shared_ptr<CBlock> pblock{std::move(read.block)};
     if (!pblock) {
+        BLOCK_FILE_WORK_UNDER_CS_MAIN("a block to disconnect that was not read before the hold");
         pblock = std::make_shared<CBlock>();
         if (!m_blockman.ReadBlock(*pblock, *pindexDelete)) {
             LogError("DisconnectTip(): Failed to read block\n");
@@ -5893,7 +5896,12 @@ bool Chainstate::ActivateBestChain(BlockValidationState& state, std::shared_ptr<
                         staged->staged_bytes = std::max(staged->staged_bytes, block_bytes);
                         LogDebug(BCLog::BENCH, "  - Using block from the cache");
                     } else if (!staged->windowed) {
-                        if (!reorg_lock_main) AssertLockNotHeld(::cs_main);
+                        std::optional<node::BlockFileWorkUnderMain> under_hold;
+                        if (reorg_lock_main) {
+                            under_hold.emplace("a reorganisation's block to connect that is not in memory");
+                        } else {
+                            AssertLockNotHeld(::cs_main);
+                        }
                         std::shared_ptr<CBlock> pblockNew{m_chainman.NewBlock()};
                         if (!m_blockman.ReadBlock(*pblockNew, block_pos, pindexConnect->GetBlockHash())) {
                             LOCK(cs_main);
@@ -6091,6 +6099,7 @@ bool Chainstate::ActivateBestChain(BlockValidationState& state, std::shared_ptr<
                                 // an output that is there: it and the blocks above it leave the store again,
                                 // under this hold, before anything of the job is published.
                                 if (!TakeBackCommit(*job, [this](const CBlockIndex& index, CBlockUndo& undo) EXCLUSIVE_LOCKS_REQUIRED(cs_main) {
+                                        BLOCK_FILE_WORK_UNDER_CS_MAIN("the undo data of a window block taken back, written before the block was staged");
                                         const FlatFilePos pos{index.GetUndoPos()};
                                         return !pos.IsNull() && index.pprev && m_blockman.ReadBlockUndo(undo, pos, index.pprev->GetBlockHash());
                                     })) {
@@ -7348,6 +7357,7 @@ bool ChainstateManager::AcceptBlock(const std::shared_ptr<const CBlock>& pblock,
     if (!prepared.store) return true;
     bool written{true};
     if (prepared.write) {
+        BLOCK_FILE_WORK_UNDER_CS_MAIN("a block accepted in one call: the external block loader and tests");
         try {
             written = m_blockman.WriteBlockAt(*pblock, prepared.pos);
         } catch (const std::runtime_error& e) {
@@ -7773,6 +7783,7 @@ VerifyDBResult CVerifyDB::VerifyDB(
     int nCheckLevel, int nCheckDepth)
 {
     AssertLockHeld(cs_main);
+    BLOCK_FILE_WORK_UNDER_CS_MAIN("verifying at the start and for verifychain");
     chainstate.m_blockman.SettleUndoWrites();
 
     if (chainstate.m_chain.Tip() == nullptr || chainstate.m_chain.Tip()->pprev == nullptr) {
@@ -7935,6 +7946,7 @@ bool Chainstate::RollforwardBlock(const CBlockIndex* pindex, CCoinsViewCache& in
 bool Chainstate::ReplayBlocks()
 {
     LOCK(cs_main);
+    BLOCK_FILE_WORK_UNDER_CS_MAIN("replaying an interrupted write-out at the start");
 
     CCoinsView& db = this->CoinsDB();
     CCoinsViewCache cache(&db);

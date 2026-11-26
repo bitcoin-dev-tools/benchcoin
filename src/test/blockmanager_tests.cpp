@@ -160,6 +160,7 @@ BOOST_FIXTURE_TEST_CASE(blockmanager_block_data_availability, TestChain100Setup)
 BOOST_FIXTURE_TEST_CASE(blockmanager_block_data_part, TestChain100Setup)
 {
     LOCK(::cs_main);
+    BLOCK_FILE_WORK_UNDER_CS_MAIN("a test");
     auto& chainman{m_node.chainman};
     auto& blockman{chainman->m_blockman};
     const CBlockIndex& tip{*chainman->ActiveTip()};
@@ -188,6 +189,7 @@ BOOST_FIXTURE_TEST_CASE(blockmanager_block_data_part, TestChain100Setup)
 BOOST_FIXTURE_TEST_CASE(blockmanager_block_data_part_error, TestChain100Setup)
 {
     LOCK(::cs_main);
+    BLOCK_FILE_WORK_UNDER_CS_MAIN("a test");
     auto& chainman{m_node.chainman};
     auto& blockman{chainman->m_blockman};
     const CBlockIndex& tip{*chainman->ActiveTip()};
@@ -280,6 +282,7 @@ BOOST_AUTO_TEST_CASE(blockmanager_flush_block_file)
 
     // Blockstore is empty
     LOCK(::cs_main);
+    BLOCK_FILE_WORK_UNDER_CS_MAIN("a test");
     BOOST_CHECK_EQUAL(blockman.CalculateCurrentUsage(), 0);
 
     // Write the first block to a new location.
@@ -521,6 +524,7 @@ BOOST_FIXTURE_TEST_CASE(blockmanager_left_file_synced_before_the_index_records_i
 BOOST_FIXTURE_TEST_CASE(blockmanager_left_file_synced_by_the_index_batch, LeftBlockFileSetup)
 {
     LOCK(::cs_main);
+    BLOCK_FILE_WORK_UNDER_CS_MAIN("a test");
     CheckLeftFileTrimmedNotSynced();
     auto batch{blockman.PrepareBlockIndexBatch()};
     BOOST_CHECK(std::ranges::any_of(batch.block_syncs, [&](const FlatFilePos& owed) { return owed.nFile == first.nFile; }));

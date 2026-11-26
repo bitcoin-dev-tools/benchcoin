@@ -501,17 +501,20 @@ private:
         StoredCoin coin;
         //! The height the entry is filed under, the write-out's age: the last change's as a rule, and an
         //! earlier one's where that change is owed still, or where a change finds the entry dirty
-        //! (coins_entry::Height).
-        int32_t height{0};
-        bool dirty : 1 {false};
-        bool fresh : 1 {false};
-        bool collected : 1 {false};
+        //! (coins_entry::Height). A block height, below MAX_FILED_HEIGHT (Enter()). It and the flags share
+        //! one word, of one type for all, as a compiler that starts a new unit where the type changes (MSVC)
+        //! would not pack them.
+        uint32_t height : 25 {0};
+        uint32_t dirty : 1 {0};
+        uint32_t fresh : 1 {0};
+        uint32_t collected : 1 {0};
         //! A lookup found the entry since eviction last passed over it.
-        bool referenced : 1 {false};
+        uint32_t referenced : 1 {0};
         //! The coin was made over an erase the database is owed still (coins_entry::OWED).
-        bool owed : 1 {false};
-        uint8_t list : 2 {LIST_NONE};
+        uint32_t owed : 1 {0};
+        uint32_t list : 2 {LIST_NONE};
     };
+    static constexpr int MAX_FILED_HEIGHT{1 << 25};
     //! The huge page size the hint below is made for (x86-64's; elsewhere the hint is as harmless as none).
     static constexpr size_t HUGE_PAGE_BYTES{size_t{2} << 20};
     //! Memory of a multiple of HUGE_PAGE_BYTES, aligned to it, that the system is asked to back with huge
@@ -550,7 +553,7 @@ private:
         static constexpr size_t MAX_KEPT{1024};
         static constexpr size_t REGION_BYTES{NODE_REGION_BYTES};
         static constexpr unsigned SLOT_BITS{static_cast<unsigned>(std::bit_width(REGION_BYTES / sizeof(T)))};
-        //! 2^13 regions of 32 MiB for 96-byte nodes, 256 GiB of them.
+        //! 2^13 regions of 32 MiB for 92-byte nodes, 256 GiB of them.
         static constexpr size_t MAX_REGIONS{size_t{1} << (32 - SLOT_BITS)};
         //! The regions by number, each written once, when the depot takes it. Constant-initialized and never
         //! destroyed (trivially destructible), so a lookup needs no guard and nodes may outlive static objects.
@@ -570,8 +573,24 @@ private:
             std::byte* const base{s_regions[number >> SLOT_BITS].load(std::memory_order_relaxed)};
             return reinterpret_cast<T*>(base + (number & ((uint32_t{1} << SLOT_BITS) - 1)) * sizeof(T));
         }
-        //! The next full list after this one in the depot: the second word of a list's first node.
-        static void*& NextList(void* list) { return static_cast<void**>(list)[1]; }
+        //! A free node's links are node numbers, as the map's are, so that a node needs no pointer's alignment: the
+        //! next node of its list in its first word, and in a list's first node the next full list in the depot in
+        //! its second.
+        static void* Link(const void* node, size_t word)
+        {
+            uint32_t number;
+            std::memcpy(&number, static_cast<const std::byte*>(node) + word * sizeof(number), sizeof(number));
+            return At(number);
+        }
+        static void SetLink(void* node, size_t word, const void* to)
+        {
+            const uint32_t number{to ? Number(static_cast<const T*>(to)) : 0};
+            std::memcpy(static_cast<std::byte*>(node) + word * sizeof(number), &number, sizeof(number));
+        }
+        static void* Next(const void* node) { return Link(node, 0); }
+        static void SetNext(void* node, const void* to) { SetLink(node, 0, to); }
+        static void* NextList(const void* list) { return Link(list, 1); }
+        static void SetNextList(void* list, const void* to) { SetLink(list, 1, to); }
         //! Full lists, each MAX_KEPT nodes, for whichever thread next runs out, and the region new ones are
         //! carved from. Never destroyed, so that a thread may end at any time.
         struct Depot {
@@ -589,18 +608,18 @@ private:
             void Give(void* list) EXCLUSIVE_LOCKS_REQUIRED(!mutex)
             {
                 LOCK(mutex);
-                NextList(list) = lists;
+                SetNextList(list, lists);
                 lists = list;
             }
             void GiveLoose(void* nodes) EXCLUSIVE_LOCKS_REQUIRED(!mutex)
             {
                 LOCK(mutex);
                 while (nodes) {
-                    void* next{*static_cast<void**>(nodes)};
-                    *static_cast<void**>(nodes) = loose;
+                    void* next{Next(nodes)};
+                    SetNext(nodes, loose);
                     loose = nodes;
                     if (++loose_count == MAX_KEPT) {
-                        NextList(loose) = lists;
+                        SetNextList(loose, lists);
                         lists = std::exchange(loose, nullptr);
                         loose_count = 0;
                     }
@@ -645,7 +664,7 @@ private:
                     if (nodes) {
                         // Linked outside the lock: the first touch of the memory is where the system supplies it.
                         for (size_t i{0}; i < MAX_KEPT; ++i) {
-                            *reinterpret_cast<void**>(nodes + i * sizeof(T)) = i + 1 < MAX_KEPT ? nodes + (i + 1) * sizeof(T) : nullptr;
+                            SetNext(nodes + i * sizeof(T), i + 1 < MAX_KEPT ? nodes + (i + 1) * sizeof(T) : nullptr);
                         }
                         return nodes;
                     }
@@ -684,8 +703,8 @@ private:
         };
         static Kept& Mine()
         {
-            // A free node holds two pointers (the links of its lists), and nodes lie back to back from an aligned start.
-            static_assert(sizeof(T) >= 2 * sizeof(void*) && sizeof(T) % alignof(void*) == 0 && alignof(T) <= alignof(void*));
+            // A free node holds two node numbers (the links of its lists), and nodes lie back to back from an aligned start.
+            static_assert(sizeof(T) >= 2 * sizeof(uint32_t) && sizeof(T) % alignof(uint32_t) == 0 && alignof(T) <= alignof(uint32_t));
             thread_local Kept kept;
             return kept;
         }
@@ -698,7 +717,9 @@ private:
             if (KeptGone()) {
                 // One node of a list of the depot's (which is never destroyed), the rest back to it.
                 void* node{Shared().Take()};
-                Shared().GiveLoose(std::exchange(*static_cast<void**>(node), nullptr));
+                void* rest{Next(node)};
+                SetNext(node, nullptr);
+                Shared().GiveLoose(rest);
                 return static_cast<T*>(node);
             }
             Kept& kept{Mine()};
@@ -708,7 +729,7 @@ private:
                 kept.count = MAX_KEPT;
             }
             void* node{kept.head};
-            kept.head = *static_cast<void**>(node);
+            kept.head = Next(node);
             --kept.count;
             return static_cast<T*>(node);
         }
@@ -716,7 +737,7 @@ private:
         {
             Assert(n == 1);
             if (KeptGone()) {
-                *reinterpret_cast<void**>(p) = nullptr;
+                SetNext(p, nullptr);
                 Shared().GiveLoose(p);
                 return;
             }
@@ -727,7 +748,7 @@ private:
                 kept.spare = std::exchange(kept.head, nullptr);
                 kept.count = 0;
             }
-            *reinterpret_cast<void**>(p) = kept.head;
+            SetNext(p, kept.head);
             kept.head = p;
             ++kept.count;
         }
@@ -755,13 +776,12 @@ private:
             Node node;
         };
         //! The node follows the link without padding, so that the link and the key are a cell's first bytes.
-        //! Cells lie back to back from the start of their region, which is aligned to its size (NodeAllocator):
-        //! a cell a multiple of half a line long and at most a line and a half starts at a line's start or at its
-        //! middle, and lies on two lines (PrefetchNode()).
+        //! Cells lie back to back in their region (NodeAllocator) and are not a multiple of half a cache line
+        //! long: a cell starts anywhere in a line and may lie across three (PrefetchNode()).
         static constexpr size_t NODE_OFFSET{sizeof(uint32_t)};
         static constexpr size_t LINE_BYTES{64};
         static_assert(NODE_OFFSET + sizeof(COutPoint) <= LINE_BYTES && alignof(Node) <= alignof(uint32_t) && sizeof(Cell) == NODE_OFFSET + sizeof(Node));
-        static_assert(sizeof(Cell) % (LINE_BYTES / 2) == 0 && sizeof(Cell) <= LINE_BYTES + LINE_BYTES / 2);
+        static_assert(sizeof(Cell) <= 2 * LINE_BYTES);
         static Cell* CellAt(uint32_t number) { return NodeAllocator<Cell>::At(number); }
         static uint32_t CellNumber(const Cell* cell) { return NodeAllocator<Cell>::Number(cell); }
         //! A bucket is the number of its chain's first cell.
@@ -821,8 +841,8 @@ private:
         {
             if (m_bucket_count != 0) Ahead(&m_buckets[hash & (m_bucket_count - 1)]);
         }
-        //! Ask for the first node of the bucket's chain: both lines of the cell, its link and key on the first and
-        //! the rest of the entry on the second. Reads the bucket.
+        //! Ask for the first node of the bucket's chain: every line of the cell, its link and key first and the
+        //! rest of the entry at the end. A line asked for twice costs nothing. Reads the bucket.
         void PrefetchNode(uint64_t hash) const
         {
             if (m_bucket_count == 0) return;
@@ -830,6 +850,7 @@ private:
                 const char* const first{reinterpret_cast<const char*>(cell)};
                 Ahead(first);
                 Ahead(first + LINE_BYTES);
+                Ahead(first + sizeof(Cell) - 1);
             }
         }
         //! Ask for every item's bucket, then every chain's first node, before the first probe waits for one.
@@ -1031,11 +1052,12 @@ private:
         Assert(to != REFUSED);
         Assert(static_cast<bool>(to & SPENT) == entry.coin.IsSpent());
         Assert(height == entry.height || entry.list == LIST_NONE);
-        entry.height = height;
-        entry.dirty = to & DIRTY;
-        entry.fresh = to & FRESH;
-        entry.collected = to & COLLECTED;
-        entry.owed = to & OWED;
+        Assert(height >= 0 && height < MAX_FILED_HEIGHT);
+        entry.height = static_cast<uint32_t>(height);
+        entry.dirty = (to & DIRTY) != 0;
+        entry.fresh = (to & FRESH) != 0;
+        entry.collected = (to & COLLECTED) != 0;
+        entry.owed = (to & OWED) != 0;
     }
     //! `event` happened to the entry at `height` (the change's or the coin's, as the event has it). The entry was in `from` before and has its coin as the event leaves it. With the
     //! entry out of its shard's counts where the event changes how it is counted (Detach()).

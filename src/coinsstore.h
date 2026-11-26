@@ -6,6 +6,7 @@
 #define BITCOIN_COINSSTORE_H
 
 #include <coins.h>
+#include <script/script.h>
 #include <coins_entry_machine.h>
 #include <crypto/common.h>
 #include <kernel/caches.h>
@@ -37,26 +38,33 @@
 
 /**
  * A coin as the store's entries hold it: the amount, the height and the coinbase flag of a Coin, and its output
- * script inline up to INLINE (35) bytes, so that the common output scripts, the 34-byte P2WSH and P2TR outputs
- * included, take no allocation of their own, as in a Coin, whose CScript keeps 36 bytes inline. A longer script
- * is on the heap here too. The bytes are kept as they are: a Coin converted to a StoredCoin and back is the same
- * coin. 48 bytes aligned to four, where a Coin is 56 aligned to eight, so that an entry and its key pack without
- * padding (CoinsStore::Map::Cell).
+ * script inline up to INLINE (32) bytes, which covers P2PKH, P2SH and P2WPKH outputs as they are. The three standard
+ * outputs that are longer are kept as their 32 bytes of key or hash, the kind saying what goes around them: P2WSH and
+ * P2TR (34 bytes) and P2PK with a compressed key (35). Any other longer script is on the heap. Nothing is lost: a
+ * Coin converted to a StoredCoin and back is the same coin. 44 bytes aligned to four, where a Coin is 56 aligned to
+ * eight, so that an entry and its key pack without padding (CoinsStore::Map::Cell).
  */
 class StoredCoin
 {
-    //! The amount, as bytes: an amount would align the coin to eight.
-    unsigned char m_value[sizeof(CAmount)]{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
+    //! The amount in seven bytes, as bytes (an amount would align the coin to eight): every amount an output may
+    //! carry (MoneyRange()) fits, and all seven bytes set is the spent marker.
+    static constexpr uint64_t SPENT_VALUE{(uint64_t{1} << 56) - 1};
+    unsigned char m_value[7]{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
     CAmount Value() const
     {
-        CAmount value;
-        std::memcpy(&value, m_value, sizeof(value));
-        return value;
+        uint64_t value{0};
+        for (size_t i{0}; i < sizeof(m_value); ++i) value |= uint64_t{m_value[i]} << (8 * i);
+        return value == SPENT_VALUE ? CAmount{-1} : static_cast<CAmount>(value);
     }
-    void SetValue(CAmount value) { std::memcpy(m_value, &value, sizeof(value)); }
+    void SetValue(CAmount amount)
+    {
+        Assert(amount == -1 || (amount >= 0 && static_cast<uint64_t>(amount) < SPENT_VALUE));
+        const uint64_t value{amount == -1 ? SPENT_VALUE : static_cast<uint64_t>(amount)};
+        for (size_t i{0}; i < sizeof(m_value); ++i) m_value[i] = static_cast<unsigned char>(value >> (8 * i));
+    }
 
 public:
-    static constexpr size_t INLINE{35};
+    static constexpr size_t INLINE{32};
     //! The amount, read without making a Coin.
     CAmount Amount() const { return Value(); }
 
@@ -112,8 +120,14 @@ public:
         Coin coin;
         if (IsSpent()) return coin;
         coin.out.nValue = Value();
-        const unsigned char* bytes{Script()};
-        coin.out.scriptPubKey.assign(bytes, bytes + ScriptSize());
+        if (m_kind == HEAP) {
+            const unsigned char* bytes{HeapBlock() + sizeof(uint32_t)};
+            coin.out.scriptPubKey.assign(bytes, bytes + HeapSize());
+        } else {
+            unsigned char bytes[INLINE + 3];
+            const size_t size{Expand(bytes)};
+            coin.out.scriptPubKey.assign(bytes, bytes + size);
+        }
         coin.nHeight = nHeight;
         coin.fCoinBase = fCoinBase;
         return coin;
@@ -122,21 +136,24 @@ public:
 
     //! As Coin::IsSpent() (CTxOut::IsNull()).
     bool IsSpent() const { return Value() == -1; }
-    //! As Coin::DynamicMemoryUsage(): the heap memory of a script longer than INLINE bytes.
-    size_t DynamicMemoryUsage() const { return m_size == HEAP ? memusage::MallocUsage(sizeof(uint32_t) + ScriptSize()) : 0; }
+    //! As Coin::DynamicMemoryUsage(): the heap memory of a script kept on the heap.
+    size_t DynamicMemoryUsage() const { return m_kind == HEAP ? memusage::MallocUsage(sizeof(uint32_t) + HeapSize()) : 0; }
 
+private:
+    //! The script's kind: its length where it is inline as it is (0 to INLINE), one of the standard outputs kept as
+    //! their 32 bytes, or HEAP, where m_bytes holds the pointer and the allocation the script's length (four bytes)
+    //! and then its bytes.
+    static constexpr uint8_t P2WSH{INLINE + 1}, P2TR{INLINE + 2}, P2PK_EVEN{INLINE + 3}, P2PK_ODD{INLINE + 4}, HEAP{0xff};
+    static_assert(P2PK_ODD < HEAP && INLINE >= sizeof(unsigned char*));
+    uint8_t m_kind{0};
+
+public:
     //! One type for both, as in Coin: a compiler that starts a new unit where the type changes (MSVC) would
     //! not pack a bool into the height's word.
     uint32_t nHeight : 31 {0};
     uint32_t fCoinBase : 1 {0};
 
 private:
-    //! The marker in m_size of a script on the heap: m_bytes holds the pointer, the allocation the script's
-    //! length (four bytes) and then its bytes.
-    static constexpr uint8_t HEAP{0xff};
-    static_assert(INLINE < HEAP && INLINE >= sizeof(unsigned char*));
-
-    uint8_t m_size{0};
     unsigned char m_bytes[INLINE];
 
     unsigned char* HeapBlock() const
@@ -145,19 +162,49 @@ private:
         std::memcpy(&block, m_bytes, sizeof(block));
         return block;
     }
-    size_t ScriptSize() const
+    size_t HeapSize() const
     {
-        if (m_size != HEAP) return m_size;
         uint32_t size;
         std::memcpy(&size, HeapBlock(), sizeof(size));
         return size;
     }
-    const unsigned char* Script() const { return m_size == HEAP ? HeapBlock() + sizeof(uint32_t) : m_bytes; }
+    //! The script of a coin not on the heap, written to `out` (INLINE + 3 bytes at most). Returns its length.
+    size_t Expand(unsigned char* out) const
+    {
+        switch (m_kind) {
+        case P2WSH:
+        case P2TR:
+            out[0] = m_kind == P2WSH ? OP_0 : OP_1;
+            out[1] = 32;
+            std::memcpy(out + 2, m_bytes, 32);
+            return 34;
+        case P2PK_EVEN:
+        case P2PK_ODD:
+            out[0] = 33;
+            out[1] = m_kind == P2PK_EVEN ? 0x02 : 0x03;
+            std::memcpy(out + 2, m_bytes, 32);
+            out[34] = OP_CHECKSIG;
+            return 35;
+        default:
+            if (m_kind) std::memcpy(out, m_bytes, m_kind);
+            return m_kind;
+        }
+    }
     void SetScript(const unsigned char* bytes, size_t size)
     {
         if (size <= INLINE) {
-            m_size = static_cast<uint8_t>(size);
+            m_kind = static_cast<uint8_t>(size);
             if (size) std::memcpy(m_bytes, bytes, size);
+            return;
+        }
+        if (size == 34 && (bytes[0] == OP_0 || bytes[0] == OP_1) && bytes[1] == 32) {
+            m_kind = bytes[0] == OP_0 ? P2WSH : P2TR;
+            std::memcpy(m_bytes, bytes + 2, 32);
+            return;
+        }
+        if (size == 35 && bytes[0] == 33 && (bytes[1] == 0x02 || bytes[1] == 0x03) && bytes[34] == OP_CHECKSIG) {
+            m_kind = bytes[1] == 0x02 ? P2PK_EVEN : P2PK_ODD;
+            std::memcpy(m_bytes, bytes + 2, 32);
             return;
         }
         auto* block{new unsigned char[sizeof(uint32_t) + size]};
@@ -165,7 +212,7 @@ private:
         std::memcpy(block, &size32, sizeof(size32));
         std::memcpy(block + sizeof(uint32_t), bytes, size);
         std::memcpy(m_bytes, &block, sizeof(block));
-        m_size = HEAP;
+        m_kind = HEAP;
     }
     void Assign(const Coin& coin)
     {
@@ -180,25 +227,30 @@ private:
         std::memcpy(m_value, other.m_value, sizeof(m_value));
         nHeight = other.nHeight;
         fCoinBase = other.fCoinBase;
-        SetScript(other.Script(), other.ScriptSize());
+        if (other.m_kind == HEAP) {
+            SetScript(other.HeapBlock() + sizeof(uint32_t), other.HeapSize());
+        } else {
+            m_kind = other.m_kind;
+            std::memcpy(m_bytes, other.m_bytes, INLINE);
+        }
     }
     void MoveFrom(StoredCoin& other) noexcept
     {
         std::memcpy(m_value, other.m_value, sizeof(m_value));
         nHeight = other.nHeight;
         fCoinBase = other.fCoinBase;
-        m_size = other.m_size;
+        m_kind = other.m_kind;
         std::memcpy(m_bytes, other.m_bytes, INLINE);
-        other.m_size = 0;
+        other.m_kind = 0;
         other.SetValue(-1);
     }
     void Release() noexcept
     {
-        if (m_size == HEAP) delete[] HeapBlock();
-        m_size = 0;
+        if (m_kind == HEAP) delete[] HeapBlock();
+        m_kind = 0;
     }
 };
-static_assert(sizeof(StoredCoin) == 48 && alignof(StoredCoin) == 4);
+static_assert(sizeof(StoredCoin) == 44 && alignof(StoredCoin) == 4);
 
 /**
  * The young tier of the UTXO set: the in-memory layer above the coins
@@ -553,7 +605,7 @@ private:
         static constexpr size_t MAX_KEPT{1024};
         static constexpr size_t REGION_BYTES{NODE_REGION_BYTES};
         static constexpr unsigned SLOT_BITS{static_cast<unsigned>(std::bit_width(REGION_BYTES / sizeof(T)))};
-        //! 2^13 regions of 32 MiB for 92-byte nodes, 256 GiB of them.
+        //! 2^13 regions of 32 MiB for 88-byte nodes, 256 GiB of them.
         static constexpr size_t MAX_REGIONS{size_t{1} << (32 - SLOT_BITS)};
         //! The regions by number, each written once, when the depot takes it. Constant-initialized and never
         //! destroyed (trivially destructible), so a lookup needs no guard and nodes may outlive static objects.

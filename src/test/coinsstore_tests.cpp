@@ -5,6 +5,8 @@
 #include <coins.h>
 #include <coinsstore.h>
 #include <dbwrapper.h>
+#include <kernel/coinstats.h>
+#include <node/blockstorage.h>
 #include <primitives/block.h>
 #include <script/script.h>
 #include <test/util/coinsstore.h>
@@ -14,12 +16,14 @@
 #include <undo.h>
 #include <util/threadpool.h>
 #include <util/byte_units.h>
+#include <validation.h>
 
 #include <boost/test/unit_test.hpp>
 
 #include <algorithm>
 #include <functional>
 #include <atomic>
+#include <fstream>
 #include <future>
 #include <limits>
 #include <map>
@@ -30,6 +34,10 @@
 #include <thread>
 #include <utility>
 #include <vector>
+
+#ifdef __linux__
+#include <unistd.h>
+#endif
 
 //! Parameters of an in-memory LevelDB for a test, every field named.
 static DBParams MemoryDb(const char* name)
@@ -2242,6 +2250,124 @@ BOOST_AUTO_TEST_CASE(stored_coin_round_trip)
     for (const size_t standard : {size_t{22}, size_t{23}, size_t{25}, size_t{34}, size_t{35}}) {
         BOOST_CHECK_EQUAL(StoredCoin{make_coin(standard, 1, 1, false)}.DynamicMemoryUsage(), 0U);
     }
+}
+
+//! A node's links hold its number, not its address (CoinsStore::NodeAllocator::Number()): with more entries
+//! than one region of nodes holds, numbers of several regions are in the chains, and every entry is still
+//! found, spent and counted where it belongs. About 80 MiB of nodes.
+BOOST_AUTO_TEST_CASE(node_numbers_span_regions)
+{
+    CCoinsViewDB db{MemoryDb("store"), {}};
+    CoinsStore store{&db, 4, true};
+    static constexpr uint32_t COINS{700'000};
+    const auto outpoint{[](uint32_t i) { return COutPoint{Txid::FromUint256(uint256{static_cast<uint8_t>(i % 251)}), i}; }};
+    for (uint32_t i{0}; i < COINS; ++i) {
+        const int height{static_cast<int>(1 + i / 100'000)};
+        if (i % 100'000 == 0) store.SetBestBlock(uint256{static_cast<uint8_t>(height)}, height);
+        store.AddCoin(outpoint(i), Coin{CTxOut{CAmount{i + 1}, CScript() << OP_TRUE}, height, false}, false);
+    }
+    BOOST_CHECK_EQUAL(store.GetCacheSize(), COINS);
+    store.SanityCheck();
+    // Written, the coins are no longer fresh: a spend keeps its entry as an erase owed to the database.
+    store.Sync();
+    BOOST_CHECK_EQUAL(store.GetDirtyCount(), 0U);
+    // Spends at a later height make clean entries dirty at their heights.
+    store.SetBestBlock(uint256{100}, 100);
+    store.SetChangeHeight(100);
+    uint32_t spent{0};
+    for (uint32_t i{0}; i < COINS; i += 3) {
+        BOOST_REQUIRE(store.SpendCoin(outpoint(i)));
+        ++spent;
+    }
+    BOOST_CHECK_EQUAL(store.GetCacheSize(), COINS);
+    BOOST_CHECK_EQUAL(store.GetDirtyCount(), spent);
+    store.SanityCheck();
+    for (uint32_t i{0}; i < COINS; ++i) {
+        const Coin& coin{store.AccessCoin(outpoint(i))};
+        if (i % 3 == 0) {
+            BOOST_REQUIRE(coin.IsSpent());
+        } else {
+            BOOST_REQUIRE_EQUAL(coin.out.nValue, CAmount{i + 1});
+        }
+    }
+    // Written out and evicted, every node goes back: the erases leave the database, no clean entry is left.
+    store.Sync();
+    store.SanityCheck();
+    BOOST_CHECK(!db.HaveCoin(outpoint(0)));
+    BOOST_CHECK(db.HaveCoin(outpoint(1)));
+    store.EvictClean(0);
+    BOOST_CHECK_EQUAL(store.GetCacheSize(), 0U);
+    store.SanityCheck();
+}
+
+//! A node region is aligned to its size, which NodeAllocator::Number() relies on, and holds no more address space than
+//! that size: an aligned operator new kept a mapping of twice the size for every region (glibc's does).
+BOOST_AUTO_TEST_CASE(node_regions_aligned_without_slack)
+{
+    constexpr size_t BYTES{CoinsStore::NodeRegionBytesForTest()};
+    constexpr size_t REGIONS{8};
+#ifdef __linux__
+    // The process's address space in pages, the first field of /proc/self/statm.
+    const auto address_space{[] {
+        std::ifstream statm{"/proc/self/statm"};
+        size_t pages{0};
+        statm >> pages;
+        return pages * size_t(sysconf(_SC_PAGESIZE));
+    }};
+    const size_t before{address_space()};
+#endif
+    std::vector<void*> regions;
+    for (size_t i{0}; i < REGIONS; ++i) {
+        auto* const region{static_cast<std::byte*>(CoinsStore::MapNodeRegionForTest())};
+        BOOST_REQUIRE_EQUAL(reinterpret_cast<uintptr_t>(region) % BYTES, 0U);
+        // Usable from the first byte to the last.
+        region[0] = std::byte{1};
+        region[BYTES - 1] = std::byte{2};
+        BOOST_CHECK(region[0] == std::byte{1} && region[BYTES - 1] == std::byte{2});
+        regions.push_back(region);
+    }
+#ifdef __linux__
+    const size_t grown{address_space() - before};
+    BOOST_CHECK_GE(grown, REGIONS * BYTES);
+    BOOST_CHECK_LT(grown, REGIONS * BYTES * 3 / 2);
+#endif
+    for (void* region : regions) CoinsStore::UnmapNodeRegionForTest(region);
+#ifdef __linux__
+    BOOST_CHECK_LT(address_space(), before + BYTES);
+#endif
+}
+
+//! A write-out run that is not final leaves the database without a best block until a later run closes its marker:
+//! there is then no block whose UTXO set the database holds, and the statistics are not given, for any hash type.
+//! Before the run opens the marker and after the final one closes it, they are.
+BOOST_FIXTURE_TEST_CASE(utxo_stats_refused_while_a_run_marker_is_open, TestChain100Setup)
+{
+    CCoinsViewDB db{MemoryDb("stats"), {}};
+    node::BlockManager& blockman{m_node.chainman->m_blockman};
+    const auto [tip_hash, tip_height]{WITH_LOCK(::cs_main, return std::pair(m_node.chainman->ActiveTip()->GetBlockHash(), m_node.chainman->ActiveHeight()))};
+    const auto write{[&](uint8_t txid, bool final) {
+        std::vector<CoinWrite> writes;
+        writes.push_back({COutPoint{Txid::FromUint256(uint256{txid}), 0}, Coin{CTxOut{CAmount{1000}, CScript{} << OP_TRUE}, 1, /*fCoinBaseIn=*/false}});
+        db.WriteRun(writes, tip_hash, tip_hash, final);
+    }};
+    const auto stats{[&](kernel::CoinStatsHashType type) { return kernel::ComputeUTXOStats(type, db, blockman); }};
+    write(10, /*final=*/true);
+    const auto before{stats(kernel::CoinStatsHashType::HASH_SERIALIZED)};
+    BOOST_REQUIRE(before);
+    BOOST_CHECK_EQUAL(before->nHeight, tip_height);
+    BOOST_CHECK_EQUAL(before->coins_count, 1U);
+
+    write(11, /*final=*/false);
+    BOOST_CHECK(db.GetBestBlock().IsNull());
+    for (const auto type : {kernel::CoinStatsHashType::HASH_SERIALIZED, kernel::CoinStatsHashType::MUHASH, kernel::CoinStatsHashType::NONE}) {
+        BOOST_CHECK(!stats(type));
+    }
+
+    db.WriteRun({}, tip_hash, tip_hash, /*final=*/true);
+    const auto after{stats(kernel::CoinStatsHashType::HASH_SERIALIZED)};
+    BOOST_REQUIRE(after);
+    BOOST_CHECK_EQUAL(after->nHeight, tip_height);
+    BOOST_CHECK_EQUAL(after->coins_count, 2U);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

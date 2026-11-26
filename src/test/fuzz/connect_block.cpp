@@ -118,6 +118,7 @@ static void LoadCurrentBlock(Chainstate& chainstate, CBlockIndex* current_block)
     }
 
     g_blocks[current_block->nHeight] = std::make_shared<CBlock>();
+    BLOCK_FILE_WORK_UNDER_CS_MAIN("a fuzz target that reads under its hold");
     Assert(chainstate.m_blockman.ReadBlock(*g_blocks[current_block->nHeight], *current_block));
 
     // Iterate all transaction outputs.

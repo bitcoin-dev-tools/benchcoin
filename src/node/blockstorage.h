@@ -191,6 +191,28 @@ enum class ReadRawError {
 };
 
 /**
+ * The check of the rule for block and undo file work (validation.h, "File I/O"). With DEBUG_LOCKORDER the
+ * block manager's file functions that take no lock themselves stop the node if their thread holds cs_main:
+ * the opening of a block or undo file, which every read and write makes, the allocation of file space, the
+ * sync of a batch's files, the finish of an undo file, the removal of pruned files and the release of files
+ * that were read. Without DEBUG_LOCKORDER nothing is checked.
+ *
+ * A caller that makes such work under cs_main on purpose, and waits for it there, says so with
+ * BLOCK_FILE_WORK_UNDER_CS_MAIN(why) in the scope of the work: the scopes are the list of the rule's
+ * exceptions. The functions that require cs_main, the syncs of a forced flush, are exceptions by their
+ * annotation and carry no check. Scopes nest.
+ */
+class BlockFileWorkUnderMain
+{
+public:
+    explicit BlockFileWorkUnderMain(const char* why);
+    ~BlockFileWorkUnderMain();
+    BlockFileWorkUnderMain(const BlockFileWorkUnderMain&) = delete;
+    BlockFileWorkUnderMain& operator=(const BlockFileWorkUnderMain&) = delete;
+};
+#define BLOCK_FILE_WORK_UNDER_CS_MAIN(why) const node::BlockFileWorkUnderMain BITCOIN_UNIQUE_NAME(file_work_under_main){why}
+
+/**
  * Maintains a tree of blocks (stored in `m_block_index`) which is consulted
  * to determine where the most-work tip is.
  *

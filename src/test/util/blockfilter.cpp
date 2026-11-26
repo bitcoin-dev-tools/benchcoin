@@ -15,6 +15,7 @@ using node::BlockManager;
 bool ComputeFilter(BlockFilterType filter_type, const CBlockIndex& block_index, BlockFilter& filter, const BlockManager& blockman)
 {
     LOCK(::cs_main);
+    BLOCK_FILE_WORK_UNDER_CS_MAIN("a test");
 
     CBlock block;
     if (!blockman.ReadBlock(block, block_index)) {

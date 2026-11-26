@@ -149,6 +149,7 @@ BOOST_FIXTURE_TEST_CASE(chainstate_update_tip, TestChain100Setup)
     std::shared_ptr<CBlock> pblockone = std::make_shared<CBlock>();
     {
         LOCK(::cs_main);
+        BLOCK_FILE_WORK_UNDER_CS_MAIN("a test");
         chainman.m_blockman.ReadBlock(*pblockone, *chainman.ActiveChain()[1]);
     }
 
@@ -303,6 +304,7 @@ BOOST_FIXTURE_TEST_CASE(index_batch_records_a_queued_undo_write, TestChain100Set
     auto& blockman{static_cast<TestBlockManager&>(chainman.m_blockman)};
     blockman.SettleUndoWrites();
     LOCK(::cs_main);
+    BLOCK_FILE_WORK_UNDER_CS_MAIN("a test");
     CBlockIndex* tip{chainman.ActiveChain().Tip()};
     const uint32_t status{tip->nStatus};
     const uint64_t undo_pos{tip->nUndoPos};

@@ -642,11 +642,18 @@ struct DeploymentFlags {
  *
  * Still made under cs_main, by a caller that waits for the result itself: the
  * syncs of a forced flush, the removal of files for pruneblockchain, the
- * external block loader, loading and verifying at the start, and of a
- * reorganisation the reads that were not made before its hold: of the blocks
- * of the new branch that are not in memory, of the blocks it disconnects past
- * the first 16, and of a step that follows one whose branch was invalid,
- * where the locks are not released in between.
+ * external block loader, loading and verifying at the start, the undo data
+ * read for a dumptxoutset rollback, the block read for a compact block
+ * announcement of a tip that is no longer in memory, and of a reorganisation
+ * the reads that were not made before its hold: of the blocks of the new
+ * branch that are not in memory, of the blocks it disconnects past the first
+ * 16, and of a step that follows one whose branch was invalid, where the locks
+ * are not released in between.
+ *
+ * The rule is checked with DEBUG_LOCKORDER: the block manager's file
+ * functions stop the node when their thread holds cs_main, and each of the
+ * exceptions above is a scope that says so
+ * (BLOCK_FILE_WORK_UNDER_CS_MAIN, node/blockstorage.h).
  */
 
 /**

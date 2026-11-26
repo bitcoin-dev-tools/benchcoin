@@ -6769,6 +6769,7 @@ bool PeerManagerImpl::SendMessages(CNode& node)
                     if (cached_cmpctblock_msg.has_value()) {
                         PushMessage(node, std::move(cached_cmpctblock_msg.value()));
                     } else {
+                        BLOCK_FILE_WORK_UNDER_CS_MAIN("a compact block announcement of a tip that is not the most recent block in memory");
                         CBlock block;
                         const bool ret{m_chainman.m_blockman.ReadBlock(block, *pBestIndex)};
                         assert(ret);

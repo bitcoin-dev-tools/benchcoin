@@ -1429,6 +1429,56 @@ BOOST_AUTO_TEST_CASE(owed_erase_survives_a_create)
     store.SanityCheck();
 }
 
+//! A spent entry the store keeps, an erase the database is owed, lies in a spent cell: the coin's bytes come
+//! off the tier's count, whichever way the spend comes (a confirmed spend, SpendCoin(), a child cache's
+//! batch). A coin made over one moves it back into a cell. A run writes the erases and the entries go.
+BOOST_AUTO_TEST_CASE(spent_entries_lie_in_spent_cells)
+{
+    CCoinsViewDB db{MemoryDb("store"), {}};
+    CoinsStore store{&db, 4, true};
+    store.SetBestBlock(uint256{1}, 1);
+    const auto coin_at{[](int height) { return Coin{CTxOut{CAmount{1000}, CScript{} << OP_TRUE}, height, /*fCoinBaseIn=*/false}; }};
+    const COutPoint x{Txid::FromUint256(uint256{10}), 0};
+    const COutPoint y{Txid::FromUint256(uint256{11}), 0};
+    const COutPoint z{Txid::FromUint256(uint256{12}), 0};
+    for (const COutPoint& outpoint : {x, y, z}) store.AddCoin(outpoint, coin_at(1), false);
+    store.Sync(); // in the database, clean in the store
+
+    // The first spend also gives its shard the array of dirty span sums; the bytes are compared from there on.
+    BOOST_CHECK_EQUAL(Spend(store, 2, x), 0U);
+    const size_t one_spent{store.DynamicMemoryUsage()};
+    store.SetChangeHeight(2);
+    BOOST_CHECK(store.SpendCoin(y));
+    BOOST_CHECK_EQUAL(store.DynamicMemoryUsage(), one_spent - sizeof(StoredCoin));
+    {
+        CCoinsViewCache child{&store};
+        BOOST_CHECK(child.SpendCoin(z));
+        child.Flush();
+    }
+    BOOST_CHECK_EQUAL(store.DynamicMemoryUsage(), one_spent - 2 * sizeof(StoredCoin));
+    BOOST_CHECK_EQUAL(store.GetCacheSize(), 3U);
+    BOOST_CHECK_EQUAL(store.GetDirtyCount(), 3U);
+    BOOST_CHECK(!store.HaveCoin(x) && !store.HaveCoin(y) && !store.HaveCoin(z));
+    store.SanityCheck();
+
+    // Block 3 makes x again: back in a cell, with the erase owed under the coin.
+    BOOST_CHECK_EQUAL(Create(store, 3, x, coin_at(3), false), 0U);
+    store.SetBestBlock(uint256{3}, 3);
+    BOOST_CHECK_EQUAL(store.DynamicMemoryUsage(), one_spent - sizeof(StoredCoin));
+    BOOST_CHECK(store.HaveCoin(x));
+    store.SanityCheck();
+
+    // A run writes both erases and the coin: the spent entries go, the coin stays, clean.
+    WriteOut(store, 3, 3, uint256{3});
+    BOOST_CHECK_EQUAL(store.GetCacheSize(), 1U);
+    BOOST_CHECK_EQUAL(store.GetDirtyCount(), 0U);
+    BOOST_CHECK(!db.HaveCoin(y) && !db.HaveCoin(z));
+    const auto coin{db.PeekCoin(x)};
+    BOOST_REQUIRE(coin.has_value());
+    BOOST_CHECK_EQUAL(coin->nHeight, 3U);
+    store.SanityCheck();
+}
+
 //! The tier's byte count stays exact for coins whose scripts are on the heap, through the two paths that
 //! empty an entry and keep it: a spend with no taker for the coin, and the spend of a coin made over an
 //! erase still owed. (An emptied script gives its memory back, CScript::clear().)

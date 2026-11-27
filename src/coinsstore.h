@@ -34,6 +34,7 @@
 #include <optional>
 #include <span>
 #include <tuple>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -500,13 +501,10 @@ public:
     bool FlushFailed() const { return m_flush_failed; }
 
 private:
-    //! How an entry is counted in its shard: among the dirty entries, by the span of its change height, or
-    //! among the clean ones; LIST_NONE while a change is made to it (Detach()).
-    enum List : uint8_t { LIST_NONE, LIST_DIRTY, LIST_CLEAN };
     /**
      * An entry is counted in its shard by its state: a dirty entry in the byte sum of its change height's
-     * span, where the write-out's bound is found, a clean one among the entries eviction may take. There
-     * are no lists: a write-out run and eviction walk the shard's map.
+     * span, where the write-out's bound is found, a clean one among the entries eviction may take; a
+     * write-out run and eviction walk the shard's map.
      *
      * The flags other than `referenced`, with whether the coin is spent, are the entry's state: what
      * each flag means, which states there are and what leads from one to another is said in
@@ -514,13 +512,12 @@ private:
      * and the height are written by Transit() and Enter() alone.
      */
     struct Entry {
-        StoredCoin coin;
         //! The height the entry is filed under, the write-out's age: the last change's as a rule, and an
         //! earlier one's where that change is owed still, or where a change finds the entry dirty
         //! (coins_entry::Height). A block height, below MAX_FILED_HEIGHT (Enter()). It and the flags share
         //! one word, of one type for all, as a compiler that starts a new unit where the type changes (MSVC)
-        //! would not pack them.
-        uint32_t height : 25 {0};
+        //! would not pack them. The word comes before the coin: a spent cell is a cell without its coin.
+        uint32_t height : 24 {0};
         uint32_t dirty : 1 {0};
         uint32_t fresh : 1 {0};
         uint32_t collected : 1 {0};
@@ -528,9 +525,14 @@ private:
         uint32_t referenced : 1 {0};
         //! The coin was made over an erase the database is owed still (coins_entry::OWED).
         uint32_t owed : 1 {0};
-        uint32_t list : 2 {LIST_NONE};
+        //! Out of its shard's counts: inserted just now, or while a change is made to it (Detach()).
+        uint32_t detached : 1 {1};
+        //! The entry lies in a spent cell (Map::SpentCell): it has no coin, and is spent. `coin` is not there
+        //! to be read (SpentEntry(), CoinUsage()).
+        uint32_t spent_cell : 1 {0};
+        StoredCoin coin;
     };
-    static constexpr int MAX_FILED_HEIGHT{1 << 25};
+    static constexpr int MAX_FILED_HEIGHT{1 << 24};
     //! The huge page size the hint below is made for (x86-64's; elsewhere the hint is as harmless as none).
     static constexpr size_t HUGE_PAGE_BYTES{size_t{2} << 20};
     //! Memory of a multiple of HUGE_PAGE_BYTES, aligned to it, that the system is asked to back with huge
@@ -566,14 +568,16 @@ private:
     //! A node has a number of 32 bits, which links hold in place of its address (Number(), At()): its
     //! region's number in the high bits and its place in the region in the low ones. A region is aligned
     //! to its size and begins with its number, in a slot of its own, so that no node has the number 0.
-    template <typename T>
+    //! KIND is a bit every number of this allocator's nodes carries and no other allocator's does, so that a
+    //! map whose chains link nodes of two allocators knows which one a number names (Map::CellAt()).
+    template <typename T, uint32_t KIND = 0>
     struct NodeAllocator {
         using value_type = T;
         static constexpr size_t MAX_KEPT{1024};
         static constexpr size_t REGION_BYTES{NODE_REGION_BYTES};
         static constexpr unsigned SLOT_BITS{static_cast<unsigned>(std::bit_width(REGION_BYTES / sizeof(T)))};
-        //! 2^13 regions of 32 MiB for 88-byte nodes, 256 GiB of them.
-        static constexpr size_t MAX_REGIONS{size_t{1} << (32 - SLOT_BITS)};
+        //! 2^12 regions of 32 MiB for 88-byte nodes, 128 GiB of them: the number's top bit is the kind's.
+        static constexpr size_t MAX_REGIONS{size_t{1} << (31 - SLOT_BITS)};
         //! The regions by number, each written once, when the depot takes it. Constant-initialized and never
         //! destroyed (trivially destructible), so a lookup needs no guard and nodes may outlive static objects.
         static inline std::atomic<std::byte*> s_regions[MAX_REGIONS]{};
@@ -584,11 +588,12 @@ private:
             const uintptr_t base{address & ~uintptr_t{REGION_BYTES - 1}};
             uint32_t region;
             std::memcpy(&region, reinterpret_cast<const void*>(base), sizeof(region));
-            return (region << SLOT_BITS) | static_cast<uint32_t>((address - base) / sizeof(T));
+            return KIND | (region << SLOT_BITS) | static_cast<uint32_t>((address - base) / sizeof(T));
         }
         static T* At(uint32_t number)
         {
             if (number == 0) return nullptr;
+            number &= ~KIND;
             std::byte* const base{s_regions[number >> SLOT_BITS].load(std::memory_order_relaxed)};
             return reinterpret_cast<T*>(base + (number & ((uint32_t{1} << SLOT_BITS) - 1)) * sizeof(T));
         }
@@ -663,7 +668,7 @@ private:
                         } else if (fresh_bytes >= LIST_BYTES || unused) {
                             if (fresh_bytes < LIST_BYTES) {
                                 // The remainder, less than a list, is left behind. The region's first slot holds
-                                // its number; past the last number (256 GiB of nodes) there is none to give.
+                                // its number; past the last number (MAX_REGIONS) there is none to give.
                                 const uint32_t number{regions++};
                                 if (number >= MAX_REGIONS) NodeNumbersExhausted(MAX_REGIONS, REGION_BYTES);
                                 std::byte* const next{std::exchange(unused, nullptr)};
@@ -728,8 +733,8 @@ private:
             return kept;
         }
         NodeAllocator() = default;
-        template <typename U>
-        NodeAllocator(const NodeAllocator<U>&) noexcept {}
+        template <typename U, uint32_t K>
+        NodeAllocator(const NodeAllocator<U, K>&) noexcept {}
         T* allocate(size_t n)
         {
             Assert(n == 1);
@@ -800,8 +805,32 @@ private:
         static constexpr size_t LINE_BYTES{64};
         static_assert(NODE_OFFSET + sizeof(COutPoint) <= LINE_BYTES && alignof(Node) <= alignof(uint32_t) && sizeof(Cell) == NODE_OFFSET + sizeof(Node));
         static_assert(sizeof(Cell) <= 2 * LINE_BYTES);
-        static Cell* CellAt(uint32_t number) { return NodeAllocator<Cell>::At(number); }
-        static uint32_t CellNumber(const Cell* cell) { return NodeAllocator<Cell>::Number(cell); }
+        //! A spent entry's cell: the link, the key and the entry's word, a cell's first bytes without the coin.
+        //! A spent entry the store keeps is dirty and has no coin to say (an erase the database is owed), so
+        //! it lies in one of these (Entry::spent_cell); reached through a Cell* whose coin is never read.
+        struct SpentCell {
+            uint32_t chain;
+            COutPoint key;
+            uint32_t word;
+        };
+        // The entry's members share one access and lie in their order: the word first, then the coin, unpadded.
+        static_assert(sizeof(Entry) == sizeof(uint32_t) + sizeof(StoredCoin) && alignof(Entry) == alignof(uint32_t));
+        static_assert(sizeof(SpentCell) == NODE_OFFSET + sizeof(COutPoint) + sizeof(uint32_t) && sizeof(Cell) == sizeof(SpentCell) + sizeof(StoredCoin));
+        static constexpr uint32_t SPENT_KIND{uint32_t{1} << 31};
+        using CellAllocator = NodeAllocator<Cell>;
+        using SpentAllocator = NodeAllocator<SpentCell, SPENT_KIND>;
+        //! What a spent cell saves against a cell.
+        static constexpr size_t SPENT_SAVING{sizeof(Cell) - sizeof(SpentCell)};
+        static Cell* CellAt(uint32_t number)
+        {
+            if (number & SPENT_KIND) return reinterpret_cast<Cell*>(SpentAllocator::At(number));
+            return CellAllocator::At(number);
+        }
+        static uint32_t CellNumber(const Cell* cell)
+        {
+            if (cell->node.second.spent_cell) return SpentAllocator::Number(reinterpret_cast<const SpentCell*>(cell));
+            return CellAllocator::Number(cell);
+        }
         //! A bucket is the number of its chain's first cell.
         static constexpr size_t BUCKET_BYTES{sizeof(uint32_t)};
         class iterator
@@ -886,7 +915,7 @@ private:
             if (const iterator it{find(key, hash)}; it != end()) return {it, false};
             if (m_size == m_bucket_count) Rebucket(m_bucket_count == 0 ? MIN_BUCKETS : m_bucket_count * 2);
             const size_t bucket{hash & (m_bucket_count - 1)};
-            Cell* cell{::new (NodeAllocator<Cell>{}.allocate(1)) Cell{{}, Node(std::piecewise_construct, std::forward_as_tuple(key), std::tuple<>())}};
+            Cell* cell{::new (CellAllocator{}.allocate(1)) Cell{{}, Node(std::piecewise_construct, std::forward_as_tuple(key), std::tuple<>())}};
             cell->chain = m_buckets[bucket];
             m_buckets[bucket] = CellNumber(cell);
             ++m_size;
@@ -904,12 +933,31 @@ private:
             --m_size;
             return next;
         }
-        size_t erase(const COutPoint& key)
+        //! The entry, spent and without a coin to keep, moves into a spent cell in the chain's place of its cell.
+        //! Nothing may hold the old cell: no run is in flight (the store's writes assert it).
+        iterator shrink(iterator it)
         {
-            const iterator it{find(key)};
-            if (it == end()) return 0;
-            erase(it);
-            return 1;
+            Cell* const old{it.m_cell};
+            Assume(old->node.second.spent_cell == 0 && old->node.second.coin.IsSpent() && old->node.second.coin.DynamicMemoryUsage() == 0);
+            auto* const spent{::new (SpentAllocator{}.allocate(1)) SpentCell{old->chain, old->node.first, 0}};
+            std::memcpy(&spent->word, static_cast<const void*>(&old->node.second), sizeof(spent->word));
+            Cell* const cell{reinterpret_cast<Cell*>(spent)};
+            cell->node.second.spent_cell = 1;
+            Replace(it.m_bucket, old, cell);
+            Free(old);
+            return {this, it.m_bucket, cell};
+        }
+        //! The entry of a spent cell moves into a cell, its coin spent, for a coin to be written into it.
+        iterator grow(iterator it)
+        {
+            Cell* const old{it.m_cell};
+            Assume(old->node.second.spent_cell != 0);
+            Cell* const cell{::new (CellAllocator{}.allocate(1)) Cell{old->chain, Node(std::piecewise_construct, std::forward_as_tuple(old->node.first), std::tuple<>())}};
+            std::memcpy(static_cast<void*>(&cell->node.second), &reinterpret_cast<const SpentCell*>(old)->word, sizeof(uint32_t));
+            cell->node.second.spent_cell = 0;
+            Replace(it.m_bucket, old, cell);
+            Free(old);
+            return {this, it.m_bucket, cell};
         }
         //! Only rehash(0) of an empty map is used: the bucket array goes back.
         void rehash(size_t)
@@ -932,8 +980,21 @@ private:
         }
         static void Free(Cell* cell)
         {
+            if (cell->node.second.spent_cell) {
+                // A spent cell holds a link, a key and a word, nothing to destroy.
+                SpentAllocator{}.deallocate(reinterpret_cast<SpentCell*>(cell), 1);
+                return;
+            }
             std::destroy_at(cell);
-            NodeAllocator<Cell>{}.deallocate(cell, 1);
+            CellAllocator{}.deallocate(cell, 1);
+        }
+        //! The chain of `bucket` links `to` where it linked `from`, which keeps its own link.
+        void Replace(size_t bucket, const Cell* from, Cell* to)
+        {
+            const uint32_t number{CellNumber(from)};
+            uint32_t* link{&m_buckets[bucket]};
+            while (*link != number) link = &CellAt(*link)->chain;
+            *link = CellNumber(to);
         }
         void Rebucket(size_t count)
         {
@@ -1025,8 +1086,8 @@ private:
      */
     static constexpr int DIRTY_SPAN_BITS{10};
     static size_t SpanOf(int height);
-    //! The list for dirty entries of this change height; the shard's array grows to hold it.
-    Bucket& DirtyBucket(Shard& shard, int height) const EXCLUSIVE_LOCKS_REQUIRED(shard.mutex);
+    //! The byte sum of the dirty entries of this change height's span; the shard's array grows to hold it.
+    int64_t& DirtySpan(Shard& shard, int height) const EXCLUSIVE_LOCKS_REQUIRED(shard.mutex);
     //! Give the shard's array of dirty span sums back: it has no dirty entry left.
     void FreeDirtySpans(Shard& shard) const EXCLUSIVE_LOCKS_REQUIRED(shard.mutex);
     //! The memory of a shard's coins grows or shrinks.
@@ -1045,17 +1106,21 @@ private:
     static void Reference(Entry& entry) { if (!entry.referenced) entry.referenced = true; }
     using State = coins_entry::State;
     using Event = coins_entry::Event;
+    //! Whether the entry is spent: in a spent cell, or with its coin spent.
+    static bool SpentEntry(const Entry& entry) { return entry.spent_cell || entry.coin.IsSpent(); }
+    //! A coin put over the entry and filed under `height` owes the database the entry's erase
+    //! (Event::CoinOverErase): the entry is dirty, spent and filed lower, an erase the database does not have
+    //! yet, which a run bounded below the coin still writes (CollectChunk()).
+    static bool OwesErase(const Entry& entry, int height) { return entry.dirty && SpentEntry(entry) && entry.height < height; }
+    //! The memory of the entry's coin beside its cell (none in a spent cell).
+    static size_t CoinUsage(const Entry& entry) { return entry.spent_cell ? 0 : entry.coin.DynamicMemoryUsage(); }
     //! The entry's state: its flags, and whether its coin is spent.
     static State StateOf(const Entry& entry)
     {
         using namespace coins_entry;
         return static_cast<State>((entry.dirty ? DIRTY : 0) | (entry.fresh ? FRESH : 0) | (entry.collected ? COLLECTED : 0) |
-                                  (entry.owed ? OWED : 0) | (entry.coin.IsSpent() ? SPENT : 0));
+                                  (entry.owed ? OWED : 0) | (SpentEntry(entry) ? SPENT : 0));
     }
-    //! A coin put over the entry and filed under `height` owes the database the entry's erase
-    //! (Event::CoinOverErase): the entry is dirty, spent and filed lower, an erase the database does not have
-    //! yet, which a run bounded below the coin still writes (CollectChunk()).
-    static bool OwesErase(const Entry& entry, int height) { return entry.dirty && entry.coin.IsSpent() && entry.height < height; }
     //! Put the entry in the state `to`, which the machine answered and which the entry's coin agrees
     //! with, and file it under `height`, which the machine answered as well. An event the machine refuses
     //! is a defect of the store's logic, and stops the node here. The span sums are by height: an entry
@@ -1064,8 +1129,8 @@ private:
     {
         using namespace coins_entry;
         Assert(to != REFUSED);
-        Assert(static_cast<bool>(to & SPENT) == entry.coin.IsSpent());
-        Assert(height == entry.height || entry.list == LIST_NONE);
+        Assert(static_cast<bool>(to & SPENT) == SpentEntry(entry));
+        Assert(height == entry.height || entry.detached);
         Assert(height >= 0 && height < MAX_FILED_HEIGHT);
         entry.height = static_cast<uint32_t>(height);
         entry.dirty = (to & DIRTY) != 0;
@@ -1096,24 +1161,30 @@ private:
     void CollectChunk(Shard& shard, WriteOutRun& run, uint64_t limit, uint64_t& size, std::vector<CoinWrite>& writes, std::vector<Node*>& nodes) const EXCLUSIVE_LOCKS_REQUIRED(shard.mutex);
     //! A collected entry's value is in the database: clean (erased when spent), unless changed since.
     void SettleNode(Shard& shard, Node& node) const EXCLUSIVE_LOCKS_REQUIRED(shard.mutex);
-    void SpendEntry(Shard& shard, Map::iterator it, Coin* moveto) EXCLUSIVE_LOCKS_REQUIRED(shard.mutex);
     //! What a lookup has of an entry it found, with the shard held: a copy of the coin, if there is one.
     static std::optional<Coin> SeenCoin(Entry& entry);
     /**
-     * Visit the shards of a block's items, `shard_of[i]` being item i's: `work(shard, items)` runs once
-     * for every shard that has any, with its lock held and the indices of its items in their order. The
-     * walk passes over a shard another thread holds, coming back for those at the end: there is no order
-     * between shards to keep.
+     * Visit the shards of `count` items, `key(i)` being item i's outpoint: `work(shard, items, hashes)` runs
+     * once for every shard that has any, with its lock held, the buckets and nodes of its items asked for
+     * ahead, the indices of its items in their order and every item's key hash. The walk passes over a
+     * shard another thread holds, coming back for those at the end: there is no order between shards to keep.
      */
-    template <typename Work>
-    void VisitShards(const std::vector<uint32_t>& shard_of, Work work) const;
+    template <typename Key, typename Work>
+    void VisitShards(size_t count, Key key, Work work) const;
     //! Erase an entry, keeping the shard's counts right.
     void EraseEntry(Shard& shard, Map::iterator it) const EXCLUSIVE_LOCKS_REQUIRED(shard.mutex);
-    //! The same for an entry reached over a list, erased by its key: a cell has no link back, so the erase
-    //! walks the chain from its bucket either way.
-    void EraseEntry(Shard& shard, Node& node) const EXCLUSIVE_LOCKS_REQUIRED(shard.mutex);
+    //! Write a coin into an entry, inserted just now or there before: out of its shard's counts and into a cell
+    //! where it was there, then `assign(coin)` writes the coin and answers the event and its height, and the
+    //! entry is counted again as its state calls for.
+    template <typename Assign>
+    void Refile(Shard& shard, Map::iterator it, bool inserted, Assign assign) const EXCLUSIVE_LOCKS_REQUIRED(shard.mutex);
     //! Erase an entry that is out of its shard's counts and whose coin's usage is taken off the books already.
     void EraseDetached(Shard& shard, Map::iterator it) const EXCLUSIVE_LOCKS_REQUIRED(shard.mutex);
+    //! A detached entry that is spent and stays (an erase the database is owed) moves into a spent cell; the
+    //! iterator to it, moved or not. A collected entry stays where it is (a run holds a pointer to it).
+    Map::iterator ShrinkDetached(Shard& shard, Map::iterator it) const EXCLUSIVE_LOCKS_REQUIRED(shard.mutex);
+    //! A detached entry in a spent cell moves into a cell, for a coin to be written into it.
+    Map::iterator GrowDetached(Shard& shard, Map::iterator it) const EXCLUSIVE_LOCKS_REQUIRED(shard.mutex);
     struct Wipe;
     struct WipeWorker;
     //! A flush's worker: takes its shards from the highest down, and writes what it took out of them.
@@ -1128,7 +1199,8 @@ private:
     //! ApplyConfirmed()'s create and spend of one entry, at `height`, with the shard held. A create over a coin it
     //! may not overwrite never comes here: ApplyConfirmed() reports it as a conflict instead.
     void CreateLocked(Shard& shard, const COutPoint& outpoint, uint64_t hash, Coin&& coin, const CScript* script, bool possible_overwrite, int height) EXCLUSIVE_LOCKS_REQUIRED(shard.mutex);
-    void SpendEntryAt(Shard& shard, Map::iterator it, int height) EXCLUSIVE_LOCKS_REQUIRED(shard.mutex);
+    //! The spend of an entry at `height`, its coin moved to `moveto` where given.
+    void SpendEntryAt(Shard& shard, Map::iterator it, int height, Coin* moveto = nullptr) EXCLUSIVE_LOCKS_REQUIRED(shard.mutex);
 
     /**
      * The change height an unspent coin arriving one by one is tagged with (AddCoin(), BatchWrite()). A coin

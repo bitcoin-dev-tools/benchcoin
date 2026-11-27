@@ -20,21 +20,29 @@ add_executable(test_bitcoin
   bip32_tests.cpp
   bip324_tests.cpp
   bip352_tests.cpp
+  blockcache_tests.cpp
   blockchain_tests.cpp
   blockencodings_tests.cpp
   blockfilter_index_tests.cpp
   blockfilter_tests.cpp
+  blockindex_machine_tests.cpp
   blockmanager_tests.cpp
   blockpolicyestimator_tests.cpp
+  blockstore_machine_tests.cpp
   bloom_tests.cpp
   bswap_tests.cpp
   btcsignals_tests.cpp
+  byte_account_tests.cpp
   caches_tests.cpp
   chain_tests.cpp
   chainstate_write_tests.cpp
   checkqueue_tests.cpp
   cluster_linearize_tests.cpp
+  txhashing_tests.cpp
+  coins_entry_machine_tests.cpp
   coins_tests.cpp
+  connect_machine_tests.cpp
+  coinsstore_tests.cpp
   coinscachepair_tests.cpp
   coinstatsindex_tests.cpp
   coinsviewoverlay_tests.cpp
@@ -45,13 +53,16 @@ add_executable(test_bitcoin
   dbwrapper_tests.cpp
   denialofservice_tests.cpp
   descriptor_tests.cpp
+  effects_tests.cpp
   disconnected_transactions.cpp
+  durability_machine_tests.cpp
   fees_util_tests.cpp
   feefrac_tests.cpp
   feerounder_tests.cpp
   flatfile_tests.cpp
   fs_tests.cpp
   getarg_tests.cpp
+  handoff_machine_tests.cpp
   hash_tests.cpp
   headers_sync_chainwork_tests.cpp
   httpserver_tests.cpp
@@ -59,11 +70,13 @@ add_executable(test_bitcoin
   interfaces_tests.cpp
   key_io_tests.cpp
   key_tests.cpp
+  lifecycle_tests.cpp
   logging_tests.cpp
   mempool_tests.cpp
   mempool_fee_estimator_tests.cpp
   merkle_tests.cpp
   merkleblock_tests.cpp
+  message_tip_rule_tests.cpp
   miner_tests.cpp
   miniminer_tests.cpp
   miniscript_tests.cpp
@@ -115,6 +128,7 @@ add_executable(test_bitcoin
   testnet4_miner_tests.cpp
   threadpool_tests.cpp
   timeoffsets_tests.cpp
+  tip_snapshot_tests.cpp
   torcontrol_tests.cpp
   transaction_tests.cpp
   translation_tests.cpp
@@ -131,13 +145,17 @@ add_executable(test_bitcoin
   util_check_tests.cpp
   util_not_null_tests.cpp
   util_expected_tests.cpp
+  util_machine_tests.cpp
   util_string_tests.cpp
   util_tests.cpp
   util_threadnames_tests.cpp
   util_trace_tests.cpp
+  util_worker_task_tests.cpp
   validation_block_tests.cpp
   validation_chainstate_tests.cpp
   validation_chainstatemanager_tests.cpp
+  validation_context_tests.cpp
+  validation_core_tests.cpp
   validation_flush_tests.cpp
   validation_tests.cpp
   validationinterface_tests.cpp

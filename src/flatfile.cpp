@@ -10,6 +10,7 @@
 #include <util/log.h>
 #include <util/overflow.h>
 
+#include <cerrno>
 #include <stdexcept>
 
 FlatFileSeq::FlatFileSeq(fs::path dir, const char* prefix, uint64_t chunk_size)
@@ -40,8 +41,12 @@ FILE* FlatFileSeq::Open(const FlatFilePos& pos, bool read_only) const
     fs::path path = FileName(pos);
     fs::create_directories(path.parent_path());
     FILE* file = fsbridge::fopen(path, read_only ? "rb": "rb+");
-    if (!file && !read_only)
-        file = fsbridge::fopen(path, "wb+");
+    if (!file && !read_only) {
+        // Created only if it does not exist, never truncated: files are written and synced on several threads,
+        // and another one may create the file and write to it between the two calls.
+        file = fsbridge::fopen(path, "wb+x");
+        if (!file && errno == EEXIST) file = fsbridge::fopen(path, "rb+");
+    }
     if (!file) {
         LogError("Unable to open file %s", fs::PathToString(path));
         return nullptr;
@@ -85,6 +90,33 @@ uint64_t FlatFileSeq::Allocate(const FlatFilePos& pos, uint64_t add_size, bool& 
     return 0;
 }
 
+uint64_t FlatFileSeq::Chunks(uint64_t size) const
+{
+    return CeilDiv(size, m_chunk_size);
+}
+
+uint64_t FlatFileSeq::AllocateChunks(int file, uint64_t from, uint64_t to, bool& out_of_space) const
+{
+    out_of_space = false;
+    if (to <= from) return 0;
+    const FlatFilePos pos(file, from * m_chunk_size);
+    const uint64_t new_size{to * m_chunk_size};
+    const uint64_t inc_size{new_size - pos.nPos};
+    if (!CheckDiskSpace(m_dir, inc_size)) {
+        out_of_space = true;
+        return 0;
+    }
+    FILE* file_handle{Open(pos)};
+    if (!file_handle) return 0;
+    LogDebug(BCLog::VALIDATION, "Pre-allocating up to position 0x%x in %s%05u.dat\n", new_size, m_prefix, pos.nFile);
+    AllocateFileRange(file_handle, pos.nPos, inc_size);
+    if (fclose(file_handle) != 0) {
+        LogError("Cannot close file %s%05u.dat after extending it with %u bytes", m_prefix, pos.nFile, new_size);
+        return 0;
+    }
+    return inc_size;
+}
+
 bool FlatFileSeq::Flush(const FlatFilePos& pos, bool finalize) const
 {
     FILE* file = Open(FlatFilePos(pos.nFile, 0)); // Avoid fseek to nPos
@@ -113,4 +145,20 @@ bool FlatFileSeq::Flush(const FlatFilePos& pos, bool finalize) const
         return false;
     }
     return true;
+}
+
+bool FlatFileSeq::Truncate(const FlatFilePos& pos) const
+{
+    FILE* file = Open(FlatFilePos(pos.nFile, 0)); // Avoid fseek to nPos
+    if (!file) {
+        LogError("%s: failed to open file %d", __func__, pos.nFile);
+        return false;
+    }
+    const bool truncated{TruncateFile(file, pos.nPos)};
+    if (!truncated) LogError("%s: failed to truncate file %d", __func__, pos.nFile);
+    if (fclose(file) != 0) {
+        LogError("Failed to close file %d after truncating it", pos.nFile);
+        return false;
+    }
+    return truncated;
 }

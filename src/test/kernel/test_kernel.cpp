@@ -21,6 +21,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <iostream>
+#include <limits>
 #include <map>
 #include <memory>
 #include <optional>
@@ -890,6 +891,9 @@ BOOST_AUTO_TEST_CASE(btck_chainman_tests)
     BOOST_CHECK(!chainman_opts.SetDatabaseCacheBytes(4_MiB - 1));
     if constexpr (sizeof(void*) == 4) BOOST_CHECK(!chainman_opts.SetDatabaseCacheBytes(2_GiB));
     BOOST_CHECK(chainman_opts.SetDatabaseCacheBytes(4_MiB));
+    chainman_opts.SetBlockCacheBytes(0);
+    chainman_opts.SetBlockCacheBytes(std::numeric_limits<uint64_t>::max());
+    chainman_opts.SetBlockCacheBytes(16_MiB);
     BOOST_CHECK(!chainman_opts.SetWipeDbs(/*wipe_block_tree=*/true, /*wipe_chainstate=*/false));
     BOOST_CHECK(chainman_opts.SetWipeDbs(/*wipe_block_tree=*/true, /*wipe_chainstate=*/true));
     BOOST_CHECK(chainman_opts.SetWipeDbs(/*wipe_block_tree=*/false, /*wipe_chainstate=*/true));

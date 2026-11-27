@@ -247,6 +247,49 @@ BOOST_AUTO_TEST_CASE(processnewblock_signals_ordering)
  * or consistent with the chain state after the reorg, and not just consistent
  * with some intermediate state during the reorg.
  */
+// The three steps of ProcessNewBlock() with something happening between them: the block's parent is marked
+// invalid while the block is written, and a second copy of a block arrives while the first is being stored.
+BOOST_AUTO_TEST_CASE(staged_block_results)
+{
+    ChainstateManager& chainman{*Assert(m_node.chainman)};
+    const auto tip_hash{[&] { return WITH_LOCK(cs_main, return chainman.ActiveChain().Tip()->GetBlockHash()); }};
+
+    // A block on top of the tip is accepted and its place claimed; then the tip is invalidated.
+    const auto parent{GoodBlock(tip_hash())};
+    BOOST_REQUIRE(chainman.ProcessNewBlock(parent, /*force_processing=*/true, /*min_pow_checked=*/true, /*new_block=*/nullptr));
+    BOOST_REQUIRE(tip_hash() == parent->GetHash());
+    ChainstateManager::NewBlockInProcess failing;
+    BOOST_REQUIRE(chainman.AcceptNewBlock(failing, GoodBlock(parent->GetHash()), /*force_processing=*/true, /*min_pow_checked=*/true, /*activate_async=*/false));
+    BOOST_REQUIRE(failing.prepared.store && failing.prepared.write && failing.new_block);
+    {
+        BlockValidationState state;
+        CBlockIndex* parent_index{WITH_LOCK(cs_main, return chainman.m_blockman.LookupBlockIndex(parent->GetHash()))};
+        BOOST_REQUIRE(chainman.ActiveChainstate().InvalidateBlock(state, parent_index));
+    }
+    chainman.WriteNewBlock(failing);
+    // Written, but not recorded as stored, and not a new block after all.
+    BOOST_CHECK(!chainman.FinishNewBlock(failing));
+    BOOST_CHECK(!failing.new_block);
+    BOOST_CHECK(failing.state.GetResult() == BlockValidationResult::BLOCK_CACHED_INVALID);
+    BOOST_CHECK(!WITH_LOCK(cs_main, return failing.prepared.pindex->nStatus & BLOCK_HAVE_DATA));
+
+    // Two copies of one block: the second finds the first being stored and stores nothing.
+    const auto block{GoodBlock(tip_hash())};
+    ChainstateManager::NewBlockInProcess first, second;
+    BOOST_REQUIRE(chainman.AcceptNewBlock(first, block, /*force_processing=*/true, /*min_pow_checked=*/true, /*activate_async=*/false));
+    BOOST_REQUIRE(first.prepared.store && first.new_block);
+    BOOST_REQUIRE(chainman.AcceptNewBlock(second, block, /*force_processing=*/true, /*min_pow_checked=*/true, /*activate_async=*/false));
+    BOOST_CHECK(!second.prepared.store);
+    BOOST_CHECK(!second.new_block);
+    chainman.WriteNewBlock(first);
+    BOOST_CHECK(chainman.FinishNewBlock(first));
+    chainman.WriteNewBlock(second);
+    BOOST_CHECK(chainman.FinishNewBlock(second));
+    BOOST_CHECK(first.new_block);
+    BOOST_CHECK(!second.new_block);
+    BOOST_CHECK(tip_hash() == block->GetHash());
+}
+
 BOOST_AUTO_TEST_CASE(mempool_locks_reorg)
 {
     bool ignored;

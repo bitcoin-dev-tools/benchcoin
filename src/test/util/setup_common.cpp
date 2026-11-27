@@ -9,6 +9,7 @@
 #include <chain.h>
 #include <chainparams.h>
 #include <coins.h>
+#include <common/args.h>
 #include <common/system.h>
 #include <consensus/amount.h>
 #include <consensus/consensus.h>
@@ -314,12 +315,14 @@ ChainTestingSetup::ChainTestingSetup(const ChainType chainType, TestOpts opts)
             .worker_threads_num = EnableFuzzDeterminism() ? 0 : 2,
             .prevoutfetch_threads_num = EnableFuzzDeterminism() ? 0 : 2,
         };
+        chainman_opts.test_write_out_every_block = HasTestOption(*m_node.args, "write_out_every_block");
         if (opts.min_validation_cache) {
             chainman_opts.script_execution_cache_bytes = 0;
             chainman_opts.signature_cache_bytes = 0;
         }
         const BlockManager::Options blockman_opts{
             .chainparams = chainman_opts.chainparams,
+            .fast_prune = m_node.args->GetBoolArg("-fastprune", false), // from TestOpts::extra_args
             .blocks_dir = m_args.GetBlocksDirPath(),
             .notifications = chainman_opts.notifications,
             .block_tree_db_params = DBParams{
@@ -410,6 +413,7 @@ TestingSetup::TestingSetup(
     PeerManager::Options peerman_opts;
     ApplyArgsManOptions(*m_node.args, peerman_opts);
     peerman_opts.deterministic_rng = true;
+    peerman_opts.blocks_on_message_handler = true;
     peerman_opts.get_block_filter_index = [this](BlockFilterType filter_type) {
         return node::GetBlockFilterIndex(m_node, filter_type);
     };

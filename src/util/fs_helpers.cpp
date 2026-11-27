@@ -222,9 +222,9 @@ void AllocateFileRange(FILE* file, uint64_t offset, uint64_t length)
     ftruncate(fileno(file), static_cast<off_t>(offset) + length);
 #else
 #if defined(HAVE_POSIX_FALLOCATE)
-    // Version using posix_fallocate
-    off_t nEndPos = (off_t)offset + length;
-    if (0 == posix_fallocate(fileno(file), 0, nEndPos)) return;
+    // Version using posix_fallocate, for the range alone: where the filesystem lacks fallocate, glibc emulates it
+    // by writing to every block of the range, and bytes before `offset` may be written by another thread meanwhile.
+    if (0 == posix_fallocate(fileno(file), (off_t)offset, (off_t)length)) return;
 #endif
     // Fallback version
     // TODO: just write one byte per block

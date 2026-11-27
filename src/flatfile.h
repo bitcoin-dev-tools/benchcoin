@@ -72,6 +72,18 @@ public:
      */
     uint64_t Allocate(const FlatFilePos& pos, uint64_t add_size, bool& out_of_space) const;
 
+    /** The number of chunks that hold the first `size` bytes of a file. */
+    uint64_t Chunks(uint64_t size) const;
+
+    /**
+     * Allocate the chunks [`from`, `to`) of a file: what Allocate() does for a position, split from
+     * the arithmetic that decides it, so that the one who writes can allocate where another claimed.
+     *
+     * @param[out] out_of_space Whether the allocation failed due to insufficient disk space.
+     * @return The number of bytes successfully allocated.
+     */
+    uint64_t AllocateChunks(int file, uint64_t from, uint64_t to, bool& out_of_space) const;
+
     /**
      * Commit a file to disk, and optionally truncate off extra pre-allocated bytes if final.
      *
@@ -80,6 +92,14 @@ public:
      * @return true on success, false on failure.
      */
     bool Flush(const FlatFilePos& pos, bool finalize = false) const;
+
+    /**
+     * Truncate off a file's pre-allocated bytes, without committing it to disk.
+     *
+     * @param[in] pos The first unwritten position in the file.
+     * @return true on success, false on failure.
+     */
+    bool Truncate(const FlatFilePos& pos) const;
 };
 
 #endif // BITCOIN_FLATFILE_H

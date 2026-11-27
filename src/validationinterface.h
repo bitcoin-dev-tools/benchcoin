@@ -47,6 +47,25 @@ struct NewMempoolTransactionInfo;
  * the BlockConnected() callback without worrying about explicit
  * synchronization. No ordering should be assumed across
  * ValidationInterface() subscribers.
+ *
+ * Each callback states the thread it runs on. "A background thread" is the
+ * thread that runs the signal queue: one callback at a time, in the order
+ * the events were queued, with no lock of the sender held. That holds for
+ * a queue with a thread of its own, as in the node. With a task runner
+ * that runs each task where it is queued (the kernel library's default,
+ * some tests), these callbacks run inside the sender's cs_main, on the
+ * thread that queues them. For a block disconnected that is the thread
+ * that processes the block, with the mempool's lock held too, and so it is
+ * for the tip update outside initial block download. In initial block
+ * download the tip update is queued where BlockConnected is, behind it.
+ * BlockConnected is queued behind the block's undo write, by the
+ * thread that applies that write's completion: the one that processes the
+ * block, the one that runs the deferred I/O, or one that waits for the
+ * queue or reads undo data, whatever else that thread is doing. The three
+ * synchronous callbacks (ActiveTipChange, BlockChecked, NewPoWValidBlock)
+ * run on the thread that processes the block; BlockChecked and
+ * NewPoWValidBlock inside the sender's cs_main, ActiveTipChange inside it
+ * or right after it is released (see there).
  */
 class CValidationInterface {
 protected:
@@ -67,6 +86,11 @@ protected:
     virtual void UpdatedBlockTip(const CBlockIndex *pindexNew, const CBlockIndex *pindexFork, bool fInitialDownload) {}
     /**
      * Notifies listeners any time the block chain tip changes, synchronously.
+     *
+     * Called on the thread that changed the tip: with cs_main held from
+     * ActivateBestChain(), after cs_main is released from InvalidateBlock().
+     * In the second case the tip may have moved again by the time the
+     * callback runs.
      */
     virtual void ActiveTipChange(const CBlockIndex& new_tip, bool is_ibd) {};
     /**
@@ -153,13 +177,22 @@ protected:
     /**
      * Notifies listeners of a block validation result.
      * If the provided BlockValidationState IsValid, the provided block
-     * is guaranteed to be the current best block at the time the
-     * callback was generated (not necessarily now).
+     * is about to become the tip of its chainstate: the callback is generated
+     * after the block was checked and before the tip moves to it. A block
+     * whose write-out fails does not become the tip.
+     * The chainstate is not the current one while it validates a snapshot in
+     * the background.
+     *
+     * Called on the thread that processes the block, with cs_main held,
+     * before the tip moves to the block.
      */
     virtual void BlockChecked(const std::shared_ptr<const CBlock>&, const BlockValidationState&) {}
     /**
      * Notifies listeners that a block which builds directly on our current tip
      * has been received and connected to the headers tree, though not validated yet.
+     *
+     * Called on the thread that processes the block, with cs_main held,
+     * before the block is written.
      */
     virtual void NewPoWValidBlock(const CBlockIndex *pindex, const std::shared_ptr<const CBlock>& block) {};
     friend class ValidationSignals;
@@ -180,7 +213,8 @@ public:
 
     ~ValidationSignals();
 
-    /** Call any remaining callbacks on the calling thread */
+    /** Call any remaining callbacks on the calling thread. Not a wait: the
+     *  thread that ran the queue has stopped by then. */
     void FlushBackgroundCallbacks();
 
     size_t CallbacksPending();
@@ -223,13 +257,25 @@ public:
      */
     void SyncWithValidationInterfaceQueue() LOCKS_EXCLUDED(cs_main);
 
-    void UpdatedBlockTip(const CBlockIndex *, const CBlockIndex *, bool fInitialDownload);
+    /**
+     * Add a function that SyncWithValidationInterfaceQueue() runs first, beside
+     * those added before. Validation uses it to settle its effects executor,
+     * whose completion queue carries BlockConnected, so that a sync also waits
+     * for those. A hook returns false once its owner is gone and is dropped
+     * then: an owner may go before the signals or after them, and does not call
+     * into them as it goes.
+     */
+    void AddPreSyncHook(std::function<bool()> hook);
+
+    // UpdatedBlockTip, BlockConnected and BlockDisconnected are queued under
+    // cs_main, in the order the chain changed (precondition O7 in validation.h).
+    void UpdatedBlockTip(const CBlockIndex *, const CBlockIndex *, bool fInitialDownload) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
     void ActiveTipChange(const CBlockIndex&, bool);
     void TransactionAddedToMempool(const NewMempoolTransactionInfo&, uint64_t mempool_sequence);
     void TransactionRemovedFromMempool(const CTransactionRef&, MemPoolRemovalReason, uint64_t mempool_sequence);
     void MempoolTransactionsRemovedForBlock(std::shared_ptr<const CBlock>, std::vector<RemovedMempoolTransactionInfo>, unsigned int block_height);
-    void BlockConnected(const kernel::ChainstateRole&, std::shared_ptr<const CBlock>, const CBlockIndex* pindex);
-    void BlockDisconnected(std::shared_ptr<const CBlock>, const CBlockIndex* pindex);
+    void BlockConnected(const kernel::ChainstateRole&, std::shared_ptr<const CBlock>, const CBlockIndex* pindex) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+    void BlockDisconnected(std::shared_ptr<const CBlock>, const CBlockIndex* pindex) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
     void ChainStateFlushed(const kernel::ChainstateRole&, const CBlockLocator&);
     void BlockChecked(const std::shared_ptr<const CBlock>&, const BlockValidationState&);
     void NewPoWValidBlock(const CBlockIndex *, const std::shared_ptr<const CBlock>&);

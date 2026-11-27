@@ -1132,6 +1132,8 @@ public:
 
     virtual void WarningUnsetHandler(Warning warning) {}
 
+    //! After it no later write of the block index and the chainstate succeeds in this run: stop processing
+    //! blocks and restart to write again (btck_NotificationInterfaceCallbacks::flush_error).
     virtual void FlushErrorHandler(std::string_view error) {}
 
     virtual void FatalErrorHandler(std::string_view error) {}
@@ -1317,6 +1319,11 @@ public:
     bool SetDatabaseCacheBytes(uint64_t database_cache_bytes)
     {
         return btck_chainstate_manager_options_set_database_cache_bytes(get(), database_cache_bytes) == 0;
+    }
+
+    void SetBlockCacheBytes(uint64_t block_cache_bytes)
+    {
+        btck_chainstate_manager_options_set_block_cache_bytes(get(), block_cache_bytes);
     }
 
     bool SetWipeDbs(bool wipe_block_tree, bool wipe_chainstate)

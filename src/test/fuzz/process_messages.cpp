@@ -89,6 +89,7 @@ FUZZ_TARGET(process_messages, .init = initialize_process_messages)
                                      PeerManager::Options{
                                          .reconcile_txs = true,
                                          .deterministic_rng = true,
+                                         .blocks_on_message_handler = true,
                                          .get_block_filter_index = [&node](BlockFilterType filter_type) {
                                              return node::GetBlockFilterIndex(node, filter_type);
                                          },

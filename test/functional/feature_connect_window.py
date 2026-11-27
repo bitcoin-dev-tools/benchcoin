@@ -1,0 +1,231 @@
+#!/usr/bin/env python3
+# Copyright (c) 2026-present The Bitcoin Core developers
+# Distributed under the MIT software license, see the accompanying
+# file COPYING or http://www.opensource.org/licenses/mit-license.php.
+"""Validate several blocks at once during initial block download (the connect window).
+
+A node syncing a chain of transaction-heavy blocks validates up to -connectwindow
+of them in parallel, each against the published UTXO set and the outputs of the
+blocks below it in the window. The confirmed chain and UTXO set must be those of
+validating the blocks one at a time, an invalid block inside the window must fail
+with the same reason and leave the node on the best valid chain, and the node
+must still take the rest of the chain afterwards. The invalid block is run in two
+forms: one spends an outpoint no block creates, the other spends a coin that the
+block below it in the window has spent. Depending on the workers' timing the
+second finds the coin gone, or still finds it and meets the block below as a
+conflict when the two are committed; the conflict count is logged, not required.
+Both are reported with the reason of a missing input.
+
+With --bip30-off no node checks a block for BIP30: the window's path on mainnet
+above BIP34's height, where a create need not be new.
+"""
+
+import random
+import re
+import time
+
+from decimal import Decimal
+
+from test_framework.blocktools import (
+    COINBASE_MATURITY,
+    add_witness_commitment,
+    create_block,
+    create_coinbase,
+)
+from test_framework.messages import (
+    CBlock,
+    CBlockHeader,
+    COutPoint,
+    CTransaction,
+    CTxIn,
+    CTxOut,
+    from_hex,
+    msg_headers,
+)
+from test_framework.p2p import P2PDataStore
+from test_framework.script import CScript, OP_TRUE
+from test_framework.test_framework import BitcoinTestFramework
+from test_framework.util import assert_equal
+from test_framework.wallet import MiniWallet
+
+# Sized for a few seconds: enough blocks for the window to fill and overlap, not a benchmark.
+NUM_TX_BLOCKS = 12
+TXS_PER_BLOCK = 25
+FORK_LENGTH = 6
+INVALID_AT = 3  # the invalid block's position in the fork, 1-based
+
+
+class ConnectWindowTest(BitcoinTestFramework):
+    def add_options(self, parser):
+        parser.add_argument("--bip30-off", action="store_true", dest="bip30_off", default=False,
+                            help="Run with BIP30 off (-test=bip30_off), as on mainnet above BIP34's height")
+
+    def set_test_params(self):
+        self.setup_clean_chain = True
+        self.num_nodes = 5
+        # The framework gives every node one connect thread; the window needs several to overlap.
+        self.extra_args = [
+            [],
+            ["-connectwindow=4", "-prevoutfetchthreads=4"],
+            ["-connectwindow=1", "-prevoutfetchthreads=4"],
+            ["-connectwindow=4", "-prevoutfetchthreads=4"],
+            ["-connectwindow=4", "-prevoutfetchthreads=4"],
+        ]
+        if self.options.bip30_off:
+            self.extra_args = [args + ["-test=bip30_off"] for args in self.extra_args]
+
+    def setup_network(self):
+        # Nodes are connected once the source chain exists, so that they sync it in initial block download.
+        self.setup_nodes()
+
+    def build_source_chain(self):
+        node = self.nodes[0]
+        # Blocks dated two days back keep the syncing nodes in initial block download for the whole chain.
+        self.mocktime = int(time.time()) - 2 * 24 * 3600
+        node.setmocktime(self.mocktime)
+        wallet = self.wallet = MiniWallet(node)
+        self.generate(wallet, 101, sync_fun=self.no_op)
+        self.log.info(f"Mining {NUM_TX_BLOCKS} blocks of {TXS_PER_BLOCK} chained transactions each")
+        utxo = wallet.get_utxo()
+        for _ in range(NUM_TX_BLOCKS):
+            # Each block's chain starts from the last output of the block below, so every block depends on the
+            # one below it: validated side by side, the first spend of a block finds its input in the window's
+            # outputs, where the lower block's transactions are.
+            chain = wallet.send_self_transfer_chain(from_node=node, chain_length=TXS_PER_BLOCK, utxo_to_spend=utxo)
+            utxo = chain[-1]["new_utxo"]
+            self.generate(node, 1, sync_fun=self.no_op)
+        assert_equal(node.getmempoolinfo()["size"], 0)
+
+    def check_same_state(self, nodes):
+        best = nodes[0].getbestblockhash()
+        utxo = nodes[0].gettxoutsetinfo()["hash_serialized_3"]
+        for node in nodes[1:]:
+            assert_equal(node.getbestblockhash(), best)
+            assert_equal(node.gettxoutsetinfo()["hash_serialized_3"], utxo)
+
+    def stop_and_check_window_used(self, i, used):
+        """Stop the node and check its shutdown summary: the window's counters are logged only if it was used.
+        Returns the number of blocks retried alone."""
+        expected = ["Coin store checked"] + (["Connect window:"] if used else [])
+        unexpected = [] if used else ["Connect window:"]
+        log_start = self.nodes[i].debug_log_size(mode="rb")
+        with self.nodes[i].assert_debug_log(expected_msgs=expected, unexpected_msgs=unexpected):
+            self.stop_node(i)
+        # The check saw the coins the node worked with: it runs before the last flush empties the store.
+        with open(self.nodes[i].debug_log_path, "rb") as log:
+            log.seek(log_start)
+            stopping = log.read().decode("utf-8", errors="replace")
+        assert max(int(n) for n in re.findall(r"Coin store checked, (\d+) entries", stopping)) > 0
+        if not used:
+            return 0
+        with open(self.nodes[i].debug_log_path, encoding="utf-8") as log:
+            summary = [line for line in log if "Connect window:" in line][-1]
+        pattern = r"(\d+) blocks validated.*?(\d+) conflicts, (\d+) blocks retried alone"
+        blocks, conflicts, retries = (int(n) for n in re.search(pattern, summary).groups())
+        assert blocks > 0
+        self.log.info(f"node {i}: {blocks} blocks in the window, {conflicts} conflicts, {retries} retried alone")
+        return retries
+
+    def test_sync(self):
+        self.log.info("Sync the chain with a window of four and of one, and compare chains and UTXO sets")
+        for i in (1, 2):
+            self.connect_nodes(i, 0)
+        self.sync_blocks(self.nodes[:3])
+        self.check_same_state(self.nodes[:3])
+        self.stop_and_check_window_used(1, used=True)
+        self.stop_and_check_window_used(2, used=False)
+
+        self.log.info("Reindex the chainstate through the window: every block is on disk, so the window is full")
+        # Over the network the blocks arrived one at a time and were mostly validated alone. Here the connect
+        # loop reads them from disk as fast as the workers take them, so blocks overlap and a transaction
+        # that spends the block below finds its coin in the window's outputs.
+        self.start_node(1, extra_args=self.extra_args[1] + ["-reindex-chainstate"])
+        self.wait_until(lambda: self.nodes[1].getblockcount() == self.nodes[0].getblockcount(), timeout=120)
+        self.check_same_state([self.nodes[0], self.nodes[1]])
+        self.stop_and_check_window_used(1, used=True)
+
+        self.log.info("Reindex the blocks as well: the genesis block is accepted again from the block files")
+        self.start_node(1, extra_args=self.extra_args[1] + ["-reindex"])
+        self.wait_until(lambda: self.nodes[1].getblockcount() == self.nodes[0].getblockcount(), timeout=120)
+        self.check_same_state([self.nodes[0], self.nodes[1]])
+        self.stop_and_check_window_used(1, used=True)
+
+    def test_invalid_block_in_window(self, i, *, conflict):
+        node0, node3 = self.nodes[0], self.nodes[i]
+        height = node0.getblockcount()
+        self.log.info(f"Serve a fresh node the chain and a longer fork with an invalid block inside it ({'a coin spent by the block below' if conflict else 'an input that does not exist'})")
+
+        main_blocks = [from_hex(CBlock(), node0.getblock(node0.getblockhash(h), 0)) for h in range(1, height + 1)]
+        fork_base_height = height - FORK_LENGTH // 2
+        fork_base = main_blocks[fork_base_height - 1]
+        fork_blocks = []
+        if conflict:
+            # Two transactions that spend one coin, which the main chain leaves unspent and which is mature
+            # at the fork's base.
+            utxo = self.wallet.get_utxo()
+            assert utxo["height"] + COINBASE_MATURITY <= fork_base_height + 1
+            first_spend = self.wallet.create_self_transfer(utxo_to_spend=utxo)["tx"]
+            second_spend = self.wallet.create_self_transfer(utxo_to_spend=utxo, fee_rate=Decimal("0.005"))["tx"]
+            assert first_spend.txid_hex != second_spend.txid_hex
+        prev_hash, prev_time = fork_base.hash_int, fork_base.nTime
+        for n in range(1, FORK_LENGTH + 1):
+            h = fork_base_height + n
+            txlist = []
+            if conflict and n == INVALID_AT - 1:
+                txlist.append(first_spend)
+            elif conflict and n == INVALID_AT:
+                # Spends the coin the block below has spent. Validated side by side, this block may still
+                # find the coin, and the two blocks then meet as a conflict when they are committed;
+                # or it finds the coin gone. Either way it fails as it would have failed alone.
+                txlist.append(second_spend)
+            elif n == INVALID_AT:
+                # Spends an output that does not exist.
+                bogus = CTransaction()
+                bogus.vin.append(CTxIn(COutPoint(random.getrandbits(256), 0), b""))
+                bogus.vout.append(CTxOut(1, CScript([OP_TRUE])))
+                txlist.append(bogus)
+            block = create_block(prev_hash, create_coinbase(h), ntime=prev_time + 1, txlist=txlist)
+            if conflict and txlist:
+                add_witness_commitment(block)
+            block.solve()
+            fork_blocks.append(block)
+            prev_hash, prev_time = block.hash_int, block.nTime
+
+        peer = node3.add_p2p_connection(P2PDataStore())
+        for block in main_blocks + fork_blocks:
+            peer.block_store[block.hash_int] = block
+        peer.last_block_hash = fork_blocks[-1].hash_int
+        # Both branches' headers: the fork has more work and is validated first, up to its invalid block.
+        with node3.assert_debug_log(["bad-txns-inputs-missingorspent"]):
+            peer.send_without_ping(msg_headers(headers=[CBlockHeader(b) for b in main_blocks]))
+            peer.send_without_ping(msg_headers(headers=[CBlockHeader(b) for b in fork_blocks]))
+            self.wait_until(lambda: any(t["status"] == "invalid" for t in node3.getchaintips()), timeout=120)
+        # The fork's blocks below the invalid one were valid and stay connected: the node ends on the last of
+        # them, and nothing of the invalid block or those above it is left in its state.
+        tips = {t["hash"]: t["status"] for t in node3.getchaintips()}
+        assert_equal(tips[fork_blocks[-1].hash_hex], "invalid")
+        assert_equal(node3.getbestblockhash(), fork_blocks[INVALID_AT - 2].hash_hex)
+        assert_equal(node3.getblockcount(), fork_base_height + INVALID_AT - 1)
+        # A peer whose best block is invalid is not asked for more blocks, so the source node
+        # supplies the main chain.
+        node3.disconnect_p2ps()
+
+        self.log.info("The node reorgs to the main chain and keeps taking blocks afterwards")
+        self.connect_nodes(i, 0)
+        self.generate(node0, 3, sync_fun=self.no_op)
+        self.sync_blocks([node0, node3])
+        self.check_same_state([node0, node3])
+        # The invalid block failed in the window, which decides nothing, and was connected again alone.
+        assert self.stop_and_check_window_used(i, used=True) >= 1
+
+    def run_test(self):
+        for node in self.nodes:
+            assert_equal(node.getdeploymentinfo()["deployments"]["bip34"]["height"], 1)
+        self.build_source_chain()
+        self.test_sync()
+        self.test_invalid_block_in_window(3, conflict=False)
+        self.test_invalid_block_in_window(4, conflict=True)
+
+
+if __name__ == '__main__':
+    ConnectWindowTest(__file__).main()

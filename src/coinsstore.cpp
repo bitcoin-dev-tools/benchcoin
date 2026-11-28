@@ -21,17 +21,16 @@
 #include <utility>
 #include <vector>
 
-#ifdef WIN32
-#include <windows.h>
-#else
+#ifndef WIN32
 #include <sys/mman.h>
 #endif
 
 CoinsStore::CoinsStore(CCoinsView* base_view, size_t shards, bool deterministic)
-    : CCoinsViewCache(base_view, deterministic), m_shards(std::max<size_t>(1, shards))
+    : CCoinsViewCache(base_view, deterministic), m_key_hasher{deterministic}, m_shards(std::max<size_t>(1, shards))
 {
     for (Shard& shard : m_shards) {
         LOCK(shard.mutex);
+        shard.map.Use(m_pools, m_key_hasher);
         Resized(shard); // whatever bucket array an empty map has
     }
 }
@@ -66,66 +65,33 @@ void* CoinsStore::HintedRegion(size_t bytes)
     return region;
 }
 
-void* CoinsStore::MapNodeRegion()
+CoinsStore::PoolRegions::~PoolRegions()
 {
-    constexpr size_t bytes{NODE_REGION_BYTES};
-    static_assert(std::has_single_bit(bytes));
-#ifdef WIN32
-    // A reservation of twice the size shows an aligned address; the region is reserved there alone, and
-    // committed once it is. Another thread may reserve the address in between, and then the search starts again.
-    void* region{nullptr};
-    while (!region) {
-        void* const probe{VirtualAlloc(nullptr, 2 * bytes, MEM_RESERVE, PAGE_NOACCESS)};
-        if (!probe) NodeRegionUnavailable(bytes);
-        const uintptr_t aligned{(reinterpret_cast<uintptr_t>(probe) + bytes - 1) & ~uintptr_t{bytes - 1}};
-        VirtualFree(probe, 0, MEM_RELEASE);
-        region = VirtualAlloc(reinterpret_cast<void*>(aligned), bytes, MEM_RESERVE, PAGE_READWRITE);
+    for (const auto& region : m_regions) {
+        if (std::byte* const base{region.load(std::memory_order_relaxed)}) FreeRegion(base);
     }
-    if (!VirtualAlloc(region, bytes, MEM_COMMIT, PAGE_READWRITE)) NodeRegionUnavailable(bytes);
-    return region;
-#else
-    // Twice the size is mapped, and what lies before and after the aligned part goes back.
-    void* const mapping{mmap(nullptr, 2 * bytes, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0)};
-    if (mapping == MAP_FAILED) NodeRegionUnavailable(bytes);
-    const uintptr_t start{reinterpret_cast<uintptr_t>(mapping)};
-    const uintptr_t aligned{(start + bytes - 1) & ~uintptr_t{bytes - 1}};
-    if (aligned > start) munmap(mapping, aligned - start);
-    if (aligned + bytes < start + 2 * bytes) munmap(reinterpret_cast<void*>(aligned + bytes), start + bytes - aligned);
-    void* const region{reinterpret_cast<void*>(aligned)};
-#ifdef MADV_HUGEPAGE
-    (void)madvise(region, bytes, MADV_HUGEPAGE);
-#endif
-    return region;
-#endif
 }
 
-void CoinsStore::UnmapNodeRegion(void* region) noexcept
+uint32_t CoinsStore::PoolRegions::Chunk()
 {
-#ifdef WIN32
-    VirtualFree(region, 0, MEM_RELEASE);
-#else
-    munmap(region, NODE_REGION_BYTES);
-#endif
-}
-
-void CoinsStore::NodeRegionUnavailable(size_t region_bytes)
-{
-    LogError("The system gave no memory for a node region of the coins cache (%u MiB).", region_bytes >> 20);
-    std::abort();
+    LOCK(m_mutex);
+    if (m_left < m_chunk) {
+        // The rest of the region, less than a chunk, is left behind; the top bit of a number is the kind's.
+        const size_t max_regions{std::min(MAX_REGIONS, size_t{1} << (31 - m_slot_bits))};
+        if (m_regions_taken == max_regions) NodeNumbersExhausted(max_regions, NODE_REGION_BYTES);
+        m_regions[m_regions_taken].store(static_cast<std::byte*>(HintedRegion(NODE_REGION_BYTES)), std::memory_order_relaxed);
+        m_next = m_kind | (m_regions_taken++ << m_slot_bits) | 1;
+        m_left = m_slots - 1;
+    }
+    m_left -= m_chunk;
+    return std::exchange(m_next, m_next + m_chunk);
 }
 
 void CoinsStore::NodeNumbersExhausted(size_t regions, size_t region_bytes)
 {
-    LogError("The coins cache has used all %u node regions of %u MiB the process can number (%u GiB of nodes); it is not "
-             "given more memory than that.", regions, region_bytes >> 20, (uint64_t{regions} * region_bytes) >> 30);
+    LogError("The coins cache has used all %u regions of %u MiB it can number (%u GiB of cells); it is not given more "
+             "memory than that.", regions, region_bytes >> 20, (uint64_t{regions} * region_bytes) >> 30);
     std::abort();
-}
-
-int64_t CoinsStore::NodeBytes()
-{
-    // A node's own size, not what the general allocator would hold for it: nodes are carved back to
-    // back from the depot's regions, with no header and no rounding between them.
-    return static_cast<int64_t>(sizeof(Map::Cell));
 }
 
 size_t CoinsStore::SpanOf(int height)
@@ -172,7 +138,7 @@ void CoinsStore::Resized(Shard& shard) const
     const size_t buckets{shard.map.bucket_count()};
     if (entries == shard.entries && buckets == shard.buckets) return;
     const int64_t delta{static_cast<int64_t>(entries) - static_cast<int64_t>(shard.entries)};
-    int64_t bytes{NodeBytes() * delta};
+    int64_t bytes{NODE_BYTES * delta};
     if (buckets != shard.buckets) {
         bytes += static_cast<int64_t>(memusage::MallocUsage(Map::BUCKET_BYTES * buckets)) - static_cast<int64_t>(memusage::MallocUsage(Map::BUCKET_BYTES * shard.buckets));
     }
@@ -188,8 +154,8 @@ int64_t CoinsStore::DirtyBytes(const Entry& entry)
     // The node and the coin's script, as DynamicMemoryUsage() counts them: what the tier's usage falls by
     // when the entry is written out and then evicted (or, for a spent one, erased). A spent cell is counted
     // as a cell less what it saves (ShrinkDetached()).
-    if (entry.spent_cell) return NodeBytes() - static_cast<int64_t>(Map::SPENT_SAVING);
-    return NodeBytes() + static_cast<int64_t>(entry.coin.DynamicMemoryUsage());
+    if (entry.spent_cell) return NODE_BYTES - static_cast<int64_t>(Map::SPENT_SAVING);
+    return NODE_BYTES + static_cast<int64_t>(entry.coin.DynamicMemoryUsage());
 }
 
 void CoinsStore::Detach(Shard& shard, Node& node) const
@@ -703,7 +669,7 @@ size_t CoinsStore::GetDirtyCount() const noexcept
 
 size_t CoinsStore::DynamicMemoryUsage() const
 {
-    // The maps' nodes at their size (NodeBytes()) and bucket arrays, the shards' arrays of dirty span sums, and
+    // The maps' nodes at their size (NODE_BYTES) and bucket arrays, the shards' arrays of dirty span sums, and
     // the coins: summed as they change (Totals), since the connector asks for every block
     // it publishes and must neither queue behind an applier holding a shard nor read every shard.
     return SumTotals(&Totals::bytes);
@@ -1092,7 +1058,7 @@ void CoinsStore::RunWipeWorker(Wipe& wipe, WipeWorker& worker)
             // The shard stays locked beyond its walk, among the others the batch took changes from, and
             // they are unlocked together and not in the reverse order: the lock order checks know of the
             // shard for its walk only.
-            EnterCritical("shard.mutex", __FILE__, __LINE__, static_cast<ShardMutex::unique_lock::mutex_type*>(&shard.mutex));
+            EnterCritical("shard.mutex", __FILE__, __LINE__, static_cast<Mutex::unique_lock::mutex_type*>(&shard.mutex));
             shard.mutex.lock();
             walked = &shard;
             const uint64_t added{WipeShard(shard, worker)};
@@ -1286,7 +1252,7 @@ void CoinsStore::SanityCheck() const
         assert(dirty == shard.dirty_count);
         assert(shard.map.size() == shard.entries);
         assert(shard.map.bucket_count() == shard.buckets);
-        total_bytes += NodeBytes() * shard.map.size() - Map::SPENT_SAVING * spent_cells + memusage::MallocUsage(Map::BUCKET_BYTES * shard.map.bucket_count()) + memusage::DynamicUsage(shard.dirty_spans) + usage;
+        total_bytes += NODE_BYTES * shard.map.size() - Map::SPENT_SAVING * spent_cells + memusage::MallocUsage(Map::BUCKET_BYTES * shard.map.bucket_count()) + memusage::DynamicUsage(shard.dirty_spans) + usage;
         total_entries += shard.map.size();
         total_dirty += dirty;
         // The span sums are the dirty entries' bytes.

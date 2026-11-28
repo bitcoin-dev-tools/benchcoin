@@ -23,7 +23,6 @@
 #include <algorithm>
 #include <functional>
 #include <atomic>
-#include <fstream>
 #include <future>
 #include <limits>
 #include <map>
@@ -36,7 +35,6 @@
 #include <vector>
 
 #ifdef __linux__
-#include <unistd.h>
 #endif
 
 //! Parameters of an in-memory LevelDB for a test, every field named.
@@ -1744,52 +1742,6 @@ BOOST_AUTO_TEST_CASE(block_apply_view_commits_a_block)
     store.SanityCheck();
 }
 
-//! The map nodes one thread frees, more than a thread keeps, serve another thread's insertions, and the
-//! coins that land in them are whole.
-BOOST_AUTO_TEST_CASE(freed_nodes_serve_another_thread)
-{
-    CCoinsViewDB db{MemoryDb("store"), {}};
-    CoinsStore store{&db, 4, true};
-    store.SetBestBlock(uint256::ONE, 1);
-    constexpr uint32_t COUNT{5000};
-    const auto outpoint{[](uint8_t round, uint32_t i) { return COutPoint{Txid::FromUint256(uint256{round}), i}; }};
-    const auto add{[&](uint8_t round) {
-        for (uint32_t i{0}; i < COUNT; ++i) {
-            store.AddCoin(outpoint(round, i), Coin{CTxOut{CAmount{i} + round, CScript{} << OP_TRUE}, 1, false}, false);
-        }
-    }};
-    std::thread{add, uint8_t{1}}.join();
-    BOOST_CHECK_EQUAL(store.GetCacheSize(), COUNT);
-    // Fresh coins: each spend frees its node, two full lists stay with the thread and the rest change hands.
-    store.SetChangeHeight(2);
-    uint32_t spent{0};
-    std::thread{[&] {
-        for (uint32_t i{0}; i < COUNT; ++i) spent += store.SpendCoin(outpoint(1, i));
-    }}.join();
-    BOOST_CHECK_EQUAL(spent, COUNT);
-    BOOST_CHECK_EQUAL(store.GetCacheSize(), 0U);
-    std::thread{add, uint8_t{2}}.join();
-    BOOST_CHECK_EQUAL(store.GetCacheSize(), COUNT);
-    for (uint32_t i{0}; i < COUNT; ++i) {
-        BOOST_CHECK(!store.PeekCoin(outpoint(1, i)));
-        const std::optional<Coin> coin{store.PeekCoin(outpoint(2, i))};
-        BOOST_REQUIRE(coin);
-        BOOST_CHECK_EQUAL(coin->out.nValue, CAmount{i} + 2);
-    }
-    // Many threads that each end with nodes on their lists: the nodes come back, and no region is carved
-    // for the next thread.
-    const size_t regions{CoinsStore::NodeRegionBytes()};
-    for (uint8_t round{3}; round < 203; ++round) {
-        std::thread{[&] {
-            for (uint32_t i{0}; i < COUNT; ++i) store.SpendCoin(outpoint(static_cast<uint8_t>(round - 1), i));
-        }}.join();
-        BOOST_REQUIRE_EQUAL(store.GetCacheSize(), 0U);
-        std::thread{add, round}.join();
-    }
-    BOOST_CHECK_EQUAL(store.GetCacheSize(), COUNT);
-    BOOST_CHECK_EQUAL(CoinsStore::NodeRegionBytes(), regions);
-}
-
 //! A create that takes no coin to be at its outpoint and meets one is a conflict: the change is not made
 //! and the report names it, and the other changes of the block are made. A create that may overwrite
 //! takes the coin's place, and the report has the coin that was there.
@@ -2511,8 +2463,8 @@ BOOST_AUTO_TEST_CASE(stored_coin_kinds_round_trip)
     }
 }
 
-//! A node's links hold its number, not its address (CoinsStore::NodeAllocator::Number()): with more entries
-//! than one region of nodes holds, numbers of several regions are in the chains, and every entry is still
+//! A cell's links hold its number, not its address (CoinsStore::CellPool::At()): with more entries
+//! than one region of cells holds, numbers of several regions are in the chains, and every entry is still
 //! found, spent and counted where it belongs. About 80 MiB of nodes.
 BOOST_AUTO_TEST_CASE(node_numbers_span_regions)
 {
@@ -2557,43 +2509,6 @@ BOOST_AUTO_TEST_CASE(node_numbers_span_regions)
     store.EvictClean(0);
     BOOST_CHECK_EQUAL(store.GetCacheSize(), 0U);
     store.SanityCheck();
-}
-
-//! A node region is aligned to its size, which NodeAllocator::Number() relies on, and holds no more address space than
-//! that size: an aligned operator new kept a mapping of twice the size for every region (glibc's does).
-BOOST_AUTO_TEST_CASE(node_regions_aligned_without_slack)
-{
-    constexpr size_t BYTES{CoinsStore::NodeRegionBytesForTest()};
-    constexpr size_t REGIONS{8};
-#ifdef __linux__
-    // The process's address space in pages, the first field of /proc/self/statm.
-    const auto address_space{[] {
-        std::ifstream statm{"/proc/self/statm"};
-        size_t pages{0};
-        statm >> pages;
-        return pages * size_t(sysconf(_SC_PAGESIZE));
-    }};
-    const size_t before{address_space()};
-#endif
-    std::vector<void*> regions;
-    for (size_t i{0}; i < REGIONS; ++i) {
-        auto* const region{static_cast<std::byte*>(CoinsStore::MapNodeRegionForTest())};
-        BOOST_REQUIRE_EQUAL(reinterpret_cast<uintptr_t>(region) % BYTES, 0U);
-        // Usable from the first byte to the last.
-        region[0] = std::byte{1};
-        region[BYTES - 1] = std::byte{2};
-        BOOST_CHECK(region[0] == std::byte{1} && region[BYTES - 1] == std::byte{2});
-        regions.push_back(region);
-    }
-#ifdef __linux__
-    const size_t grown{address_space() - before};
-    BOOST_CHECK_GE(grown, REGIONS * BYTES);
-    BOOST_CHECK_LT(grown, REGIONS * BYTES * 3 / 2);
-#endif
-    for (void* region : regions) CoinsStore::UnmapNodeRegionForTest(region);
-#ifdef __linux__
-    BOOST_CHECK_LT(address_space(), before + BYTES);
-#endif
 }
 
 //! A write-out run that is not final leaves the database without a best block until a later run closes its marker:

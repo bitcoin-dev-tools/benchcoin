@@ -248,11 +248,6 @@ class CoinsStore : public CCoinsViewCache
     using Node = std::pair<const COutPoint, Entry>;
 
 public:
-    //! MapNodeRegion(), UnmapNodeRegion() and the size of their regions, for tests.
-    static void* MapNodeRegionForTest() { return MapNodeRegion(); }
-    static void UnmapNodeRegionForTest(void* region) noexcept { UnmapNodeRegion(region); }
-    static constexpr size_t NodeRegionBytesForTest() { return NODE_REGION_BYTES; }
-
     //! A write-out run between BeginWriteOut() and CommitWriteOut().
     struct WriteOutRun {
         //! Coins a disconnect restored (KeepWritten()), handed to this run: written before anything else of
@@ -292,8 +287,8 @@ public:
     //! runs, since a thread that finds a shard taken waits far longer than the hold it waits out. An
     //! empty shard is a few hundred bytes.
     static constexpr size_t DEFAULT_SHARDS{256};
-    //! `deterministic` is the cache base's (CCoinsViewCache), whose own map the store does not use; the shards'
-    //! key hash keeps its random salt (KeyHash()), which places entries and decides no outcome.
+    //! `deterministic` fixes the salt of the shards' key hash (KeyHash()), as it does the cache base's
+    //! (CCoinsViewCache), whose own map the store does not use.
     explicit CoinsStore(CCoinsView* base_view, size_t shards = DEFAULT_SHARDS, bool deterministic = false);
 
     // CCoinsView
@@ -340,9 +335,6 @@ public:
     unsigned int GetCacheSize() const override;
     size_t GetDirtyCount() const noexcept override;
     size_t DynamicMemoryUsage() const override;
-    //! The regions the nodes of every store are carved from, which are never given back: beyond the live
-    //! nodes, which DynamicMemoryUsage() counts, they hold the free ones, which nothing else counts.
-    static size_t NodeRegionBytes() { return s_node_region_bytes.load(std::memory_order_relaxed); }
     void SanityCheck() const override;
     //! Not meaningful for the tier.
     void Reset() noexcept override;
@@ -540,250 +532,78 @@ private:
     //! lands on a random node of a large map, and with small pages misses the TLB for the bucket and again
     //! for the node. Only a hint. Freed with FreeRegion().
     static void* HintedRegion(size_t bytes);
-    static inline std::atomic<size_t> s_node_region_bytes{0};
-    //! The size of the regions the nodes' memory is asked for in.
+    //! The size of the regions a store's cells are carved from (CellPool).
     static constexpr size_t NODE_REGION_BYTES{size_t{32} << 20};
     static void FreeRegion(void* region) noexcept { ::operator delete(region, std::align_val_t{HUGE_PAGE_BYTES}); }
-    //! Memory of NODE_REGION_BYTES aligned to its size, so that a node's address finds its region's number
-    //! (NodeAllocator::Number()), with the huge page hint, mapped from the system with nothing beside it. An
-    //! aligned operator new would serve the alignment from a mapping of twice the size and keep all of it
-    //! (glibc does), which doubles the address space and, where it is charged, the commit of every region
-    //! for the life of the process. Freed with UnmapNodeRegion(). A region the system does not give is a
-    //! failed allocation, which ends the process (NodeRegionUnavailable()).
-    static void* MapNodeRegion();
-    static void UnmapNodeRegion(void* region) noexcept;
-    //! The system gave no memory for a node region: logged, then aborted, as any failed allocation ends the process.
-    [[noreturn]] static void NodeRegionUnavailable(size_t region_bytes);
-    //! The process has used every node-region number (NodeAllocator::Depot): logged, then aborted.
+    //! A store has used every region number of one of its pools (CellPool): logged, then aborted.
     [[noreturn]] static void NodeNumbersExhausted(size_t regions, size_t region_bytes);
-    //! A shard's entries are inserted and erased by whichever thread holds its mutex, so a node is often freed
-    //! by another thread than the one that allocated it. A thread keeps the nodes it frees for its own next
-    //! insertions: a list of up to MAX_KEPT nodes and one full list beside it. A thread with two full lists
-    //! gives one to the depot, and a thread with none takes one from there: a lock for every MAX_KEPT
-    //! nodes, held for the exchange of a pointer.
+    //! The regions of a pool (CellPool) and how far it has carved them, under the pool's mutex: all of a pool
+    //! but its cells' type. A class of its own, outside the template: clang's lock analysis does not see a
+    //! negative requirement of a member of a class template nested in a class.
+    class PoolRegions
+    {
+        mutable Mutex m_mutex;
+
+    public:
+        //! Enough for the pool of the smallest number of places per region (CellPool::MAX_REGIONS).
+        static constexpr size_t MAX_REGIONS{size_t{1} << 12};
+        PoolRegions(uint32_t slots, unsigned slot_bits, uint32_t kind, uint32_t chunk) : m_slots{slots}, m_slot_bits{slot_bits}, m_kind{kind}, m_chunk{chunk} {}
+        PoolRegions(const PoolRegions&) = delete;
+        PoolRegions& operator=(const PoolRegions&) = delete;
+        ~PoolRegions();
+        //! The number of the first of a chunk of cells no shard has had, which follow it in number and in memory.
+        uint32_t Chunk() EXCLUSIVE_LOCKS_REQUIRED(!m_mutex);
+
+    protected:
+        //! The regions by number, each written once, before the first chunk of it is given (Chunk()), and read
+        //! without the mutex by the shards, for numbers given to them or found in their chains.
+        std::array<std::atomic<std::byte*>, MAX_REGIONS> m_regions{};
+
+    private:
+        const uint32_t m_slots;
+        const unsigned m_slot_bits;
+        const uint32_t m_kind;
+        const uint32_t m_chunk;
+        uint32_t m_regions_taken GUARDED_BY(m_mutex){0};
+        //! The next cell no shard has had, and how many follow it in its region.
+        uint32_t m_next GUARDED_BY(m_mutex){0};
+        uint32_t m_left GUARDED_BY(m_mutex){0};
+    };
+    //! A store's memory for cells of one size, from which its shards' maps take chunks and give out cells
+    //! themselves, under the shard's mutex (Map::Take()): regions of NODE_REGION_BYTES with the huge page hint
+    //! (HintedRegion()), carved in order and given back with the store.
     //!
-    //! The depot carves new lists from regions of REGION_BYTES (MapNodeRegion()). A node is never given back: one that is freed waits, with its thread or in the
-    //! depot, for the next insertion, and the regions stay with the process.
-    //!
-    //! A node has a number of 32 bits, which links hold in place of its address (Number(), At()): its
-    //! region's number in the high bits and its place in the region in the low ones. A region is aligned
-    //! to its size and begins with its number, in a slot of its own, so that no node has the number 0.
-    //! KIND is a bit every number of this allocator's nodes carries and no other allocator's does, so that a
-    //! map whose chains link nodes of two allocators knows which one a number names (Map::CellAt()).
+    //! A cell has a number of 32 bits, which links hold in place of its address (At()): its region's number in
+    //! the high bits and its place in the region in the low ones. The first place of a region is never given,
+    //! so that no cell has the number 0. KIND is a bit every number of this pool's cells carries and no other
+    //! pool's does, so that a map whose chains link cells of two pools knows which one a number names
+    //! (Map::CellAt()).
     template <typename T, uint32_t KIND = 0>
-    struct NodeAllocator {
-        using value_type = T;
-        static constexpr size_t MAX_KEPT{1024};
-        static constexpr size_t REGION_BYTES{NODE_REGION_BYTES};
-        static constexpr unsigned SLOT_BITS{static_cast<unsigned>(std::bit_width(REGION_BYTES / sizeof(T)))};
-        //! 2^12 regions of 32 MiB for 88-byte nodes, 128 GiB of them: the number's top bit is the kind's.
+    class CellPool : public PoolRegions
+    {
+    public:
+        static constexpr uint32_t SLOTS{static_cast<uint32_t>(NODE_REGION_BYTES / sizeof(T))};
+        static constexpr unsigned SLOT_BITS{static_cast<unsigned>(std::bit_width(SLOTS))};
+        //! 2^12 regions of 32 MiB for 88-byte cells, 128 GiB of them: the number's top bit is the kind's.
         static constexpr size_t MAX_REGIONS{size_t{1} << (31 - SLOT_BITS)};
-        //! The regions by number, each written once, when the depot takes it. Constant-initialized and never
-        //! destroyed (trivially destructible), so a lookup needs no guard and nodes may outlive static objects.
-        static inline std::atomic<std::byte*> s_regions[MAX_REGIONS]{};
-        static uint32_t Number(const T* node)
-        {
-            static_assert(std::has_single_bit(REGION_BYTES) && SLOT_BITS < 32);
-            const auto address{reinterpret_cast<uintptr_t>(node)};
-            const uintptr_t base{address & ~uintptr_t{REGION_BYTES - 1}};
-            uint32_t region;
-            std::memcpy(&region, reinterpret_cast<const void*>(base), sizeof(region));
-            return KIND | (region << SLOT_BITS) | static_cast<uint32_t>((address - base) / sizeof(T));
-        }
-        static T* At(uint32_t number)
+        //! The cells a shard takes at a time: little is left untouched in each of hundreds of shards.
+        static constexpr uint32_t CHUNK{static_cast<uint32_t>((size_t{16} << 10) / sizeof(T))};
+        // A free cell holds a cell number in its first word (Map::Free()), and cells lie back to back.
+        static_assert(sizeof(T) >= sizeof(uint32_t) && sizeof(T) % alignof(uint32_t) == 0 && alignof(T) <= alignof(uint32_t));
+        static_assert(MAX_REGIONS <= PoolRegions::MAX_REGIONS);
+
+        CellPool() : PoolRegions{SLOTS, SLOT_BITS, KIND, CHUNK} {}
+        T* At(uint32_t number) const
         {
             if (number == 0) return nullptr;
             number &= ~KIND;
-            std::byte* const base{s_regions[number >> SLOT_BITS].load(std::memory_order_relaxed)};
+            std::byte* const base{m_regions[number >> SLOT_BITS].load(std::memory_order_relaxed)};
             return reinterpret_cast<T*>(base + (number & ((uint32_t{1} << SLOT_BITS) - 1)) * sizeof(T));
         }
-        //! A free node's links are node numbers, as the map's are, so that a node needs no pointer's alignment: the
-        //! next node of its list in its first word, and in a list's first node the next full list in the depot in
-        //! its second.
-        static void* Link(const void* node, size_t word)
-        {
-            uint32_t number;
-            std::memcpy(&number, static_cast<const std::byte*>(node) + word * sizeof(number), sizeof(number));
-            return At(number);
-        }
-        static void SetLink(void* node, size_t word, const void* to)
-        {
-            const uint32_t number{to ? Number(static_cast<const T*>(to)) : 0};
-            std::memcpy(static_cast<std::byte*>(node) + word * sizeof(number), &number, sizeof(number));
-        }
-        static void* Next(const void* node) { return Link(node, 0); }
-        static void SetNext(void* node, const void* to) { SetLink(node, 0, to); }
-        static void* NextList(const void* list) { return Link(list, 1); }
-        static void SetNextList(void* list, const void* to) { SetLink(list, 1, to); }
-        //! Full lists, each MAX_KEPT nodes, for whichever thread next runs out, and the region new ones are
-        //! carved from. Never destroyed, so that a thread may end at any time.
-        struct Depot {
-            Mutex mutex;
-            void* lists GUARDED_BY(mutex){nullptr};
-            //! The nodes of threads that ended, fewer than MAX_KEPT: a full list once there are as many.
-            void* loose GUARDED_BY(mutex){nullptr};
-            size_t loose_count GUARDED_BY(mutex){0};
-            //! What is left of the newest region.
-            std::byte* fresh GUARDED_BY(mutex){nullptr};
-            size_t fresh_bytes GUARDED_BY(mutex){0};
-            uint32_t regions GUARDED_BY(mutex){0};
-            //! A region a thread asked for while another refilled the depot: the next refill's.
-            std::byte* unused GUARDED_BY(mutex){nullptr};
-            void Give(void* list) EXCLUSIVE_LOCKS_REQUIRED(!mutex)
-            {
-                LOCK(mutex);
-                SetNextList(list, lists);
-                lists = list;
-            }
-            void GiveLoose(void* nodes) EXCLUSIVE_LOCKS_REQUIRED(!mutex)
-            {
-                LOCK(mutex);
-                while (nodes) {
-                    void* next{Next(nodes)};
-                    SetNext(nodes, loose);
-                    loose = nodes;
-                    if (++loose_count == MAX_KEPT) {
-                        SetNextList(loose, lists);
-                        lists = std::exchange(loose, nullptr);
-                        loose_count = 0;
-                    }
-                    nodes = next;
-                }
-            }
-            //! A full list: one that was given, else MAX_KEPT nodes no one has used yet.
-            void* Take() EXCLUSIVE_LOCKS_REQUIRED(!mutex)
-            {
-                static constexpr size_t LIST_BYTES{MAX_KEPT * sizeof(T)};
-                std::byte* region{nullptr};
-                while (true) {
-                    void* list{nullptr};
-                    std::byte* nodes{nullptr};
-                    std::byte* surplus{nullptr};
-                    {
-                        LOCK(mutex);
-                        // A region asked for below waits for the next refill, unless one waits already.
-                        if (region) (unused ? surplus : unused) = std::exchange(region, nullptr);
-                        if (lists) {
-                            list = std::exchange(lists, NextList(lists));
-                        } else if (fresh_bytes >= LIST_BYTES || unused) {
-                            if (fresh_bytes < LIST_BYTES) {
-                                // The remainder, less than a list, is left behind. The region's first slot holds
-                                // its number; past the last number (MAX_REGIONS) there is none to give.
-                                const uint32_t number{regions++};
-                                if (number >= MAX_REGIONS) NodeNumbersExhausted(MAX_REGIONS, REGION_BYTES);
-                                std::byte* const next{std::exchange(unused, nullptr)};
-                                std::memcpy(next, &number, sizeof(number));
-                                s_regions[number].store(next, std::memory_order_relaxed);
-                                fresh = next + sizeof(T);
-                                fresh_bytes = REGION_BYTES - sizeof(T);
-                                s_node_region_bytes.fetch_add(REGION_BYTES, std::memory_order_relaxed);
-                            }
-                            nodes = fresh;
-                            fresh += LIST_BYTES;
-                            fresh_bytes -= LIST_BYTES;
-                        }
-                    }
-                    if (surplus) UnmapNodeRegion(surplus);
-                    if (list) return list;
-                    if (nodes) {
-                        // Linked outside the lock: the first touch of the memory is where the system supplies it.
-                        for (size_t i{0}; i < MAX_KEPT; ++i) {
-                            SetNext(nodes + i * sizeof(T), i + 1 < MAX_KEPT ? nodes + (i + 1) * sizeof(T) : nullptr);
-                        }
-                        return nodes;
-                    }
-                    // No list and no room: the region is asked for and its first page, where its number goes,
-                    // touched without the mutex, which every thread that takes or gives a list waits for.
-                    region = static_cast<std::byte*>(MapNodeRegion());
-                    *reinterpret_cast<volatile std::byte*>(region) = std::byte{0};
-                }
-            }
-        };
-        static Depot& Shared()
-        {
-            static Depot* const depot{new Depot};
-            return *depot;
-        }
-        //! Whether this thread's list is destroyed: at the thread's end, and on the main thread before the
-        //! static objects, which may still free nodes (a store a static test setup owns). Trivially
-        //! destructible, so it can be read after that.
-        static bool& KeptGone()
-        {
-            thread_local bool gone{false};
-            return gone;
-        }
-        struct Kept {
-            void* head{nullptr};
-            size_t count{0};
-            //! A full list, or none.
-            void* spare{nullptr};
-            ~Kept()
-            {
-                KeptGone() = true;
-                if (spare) Shared().Give(std::exchange(spare, nullptr));
-                if (head) Shared().GiveLoose(std::exchange(head, nullptr));
-                count = 0;
-            }
-        };
-        static Kept& Mine()
-        {
-            // A free node holds two node numbers (the links of its lists), and nodes lie back to back from an aligned start.
-            static_assert(sizeof(T) >= 2 * sizeof(uint32_t) && sizeof(T) % alignof(uint32_t) == 0 && alignof(T) <= alignof(uint32_t));
-            thread_local Kept kept;
-            return kept;
-        }
-        NodeAllocator() = default;
-        template <typename U, uint32_t K>
-        NodeAllocator(const NodeAllocator<U, K>&) noexcept {}
-        T* allocate(size_t n)
-        {
-            Assert(n == 1);
-            if (KeptGone()) {
-                // One node of a list of the depot's (which is never destroyed), the rest back to it.
-                void* node{Shared().Take()};
-                void* rest{Next(node)};
-                SetNext(node, nullptr);
-                Shared().GiveLoose(rest);
-                return static_cast<T*>(node);
-            }
-            Kept& kept{Mine()};
-            if (!kept.head) {
-                // The full list beside, else one of the depot's.
-                kept.head = kept.spare ? std::exchange(kept.spare, nullptr) : Shared().Take();
-                kept.count = MAX_KEPT;
-            }
-            void* node{kept.head};
-            kept.head = Next(node);
-            --kept.count;
-            return static_cast<T*>(node);
-        }
-        void deallocate(T* p, size_t n) noexcept
-        {
-            Assert(n == 1);
-            if (KeptGone()) {
-                SetNext(p, nullptr);
-                Shared().GiveLoose(p);
-                return;
-            }
-            Kept& kept{Mine()};
-            if (kept.count == MAX_KEPT) {
-                // The full list goes beside, the one that was there to the depot, and a new one begins.
-                if (kept.spare) Shared().Give(kept.spare);
-                kept.spare = std::exchange(kept.head, nullptr);
-                kept.count = 0;
-            }
-            SetNext(p, kept.head);
-            kept.head = p;
-            ++kept.count;
-        }
-        friend bool operator==(const NodeAllocator&, const NodeAllocator&) noexcept { return true; }
     };
-    //! The salted hash of an outpoint, one salt for all shards: a batch hashes its keys before it takes a shard.
-    static uint64_t KeyHash(const COutPoint& outpoint) noexcept
-    {
-        static const SaltedCoinsCacheHasher hasher;
-        return hasher(outpoint);
-    }
+    //! The salted hash of an outpoint, one salt for all of a store's shards: a batch hashes its keys before it
+    //! takes a shard.
+    uint64_t KeyHash(const COutPoint& outpoint) const noexcept { return m_key_hasher(outpoint); }
     /**
      * A shard's table: chained, with nodes that never move (a run in flight points at them),
      * of the std::unordered_map interface as far as the store uses it. The bucket array is a power of two
@@ -793,13 +613,13 @@ private:
     class Map
     {
     public:
-        //! The chain's link is the next cell's number (NodeAllocator::Number()), 0 at the chain's end.
+        //! The chain's link is the next cell's number (CellPool), 0 at the chain's end.
         struct Cell {
             uint32_t chain;
             Node node;
         };
         //! The node follows the link without padding, so that the link and the key are a cell's first bytes.
-        //! Cells lie back to back in their region (NodeAllocator) and are not a multiple of half a cache line
+        //! Cells lie back to back in their region (CellPool) and are not a multiple of half a cache line
         //! long: a cell starts anywhere in a line and may lie across three (PrefetchAll()).
         static constexpr size_t NODE_OFFSET{sizeof(uint32_t)};
         static constexpr size_t LINE_BYTES{64};
@@ -817,19 +637,17 @@ private:
         static_assert(sizeof(Entry) == sizeof(uint32_t) + sizeof(StoredCoin) && alignof(Entry) == alignof(uint32_t));
         static_assert(sizeof(SpentCell) == NODE_OFFSET + sizeof(COutPoint) + sizeof(uint32_t) && sizeof(Cell) == sizeof(SpentCell) + sizeof(StoredCoin));
         static constexpr uint32_t SPENT_KIND{uint32_t{1} << 31};
-        using CellAllocator = NodeAllocator<Cell>;
-        using SpentAllocator = NodeAllocator<SpentCell, SPENT_KIND>;
+        //! The store's memory for cells, which its shards' maps share (Use()).
+        struct Pools {
+            CellPool<Cell> cells;
+            CellPool<SpentCell, SPENT_KIND> spent;
+        };
         //! What a spent cell saves against a cell.
         static constexpr size_t SPENT_SAVING{sizeof(Cell) - sizeof(SpentCell)};
-        static Cell* CellAt(uint32_t number)
+        Cell* CellAt(uint32_t number) const
         {
-            if (number & SPENT_KIND) return reinterpret_cast<Cell*>(SpentAllocator::At(number));
-            return CellAllocator::At(number);
-        }
-        static uint32_t CellNumber(const Cell* cell)
-        {
-            if (cell->node.second.spent_cell) return SpentAllocator::Number(reinterpret_cast<const SpentCell*>(cell));
-            return CellAllocator::Number(cell);
+            if (number & SPENT_KIND) return reinterpret_cast<Cell*>(m_pools->spent.At(number));
+            return m_pools->cells.At(number);
         }
         //! A bucket is the number of its chain's first cell.
         static constexpr size_t BUCKET_BYTES{sizeof(uint32_t)};
@@ -845,8 +663,8 @@ private:
             size_t bucket() const { return m_bucket; }
             iterator& operator++()
             {
-                m_cell = CellAt(m_cell->chain);
-                while (!m_cell && ++m_bucket < m_map->m_bucket_count) m_cell = CellAt(m_map->m_buckets[m_bucket]);
+                m_cell = m_map->CellAt(m_cell->chain);
+                while (!m_cell && ++m_bucket < m_map->m_bucket_count) m_cell = m_map->CellAt(m_map->m_buckets[m_bucket]);
                 return *this;
             }
 
@@ -860,15 +678,22 @@ private:
         Map() = default;
         Map(const Map&) = delete;
         Map& operator=(const Map&) = delete;
+        //! The cells' memory goes back with the pools; a coin's script may hold memory of its own.
         ~Map()
         {
             for (size_t b{0}; b < m_bucket_count; ++b) {
                 for (Cell* cell{CellAt(m_buckets[b])}; cell;) {
                     Cell* next{CellAt(cell->chain)};
-                    Free(cell);
+                    if (!cell->node.second.spent_cell) std::destroy_at(cell);
                     cell = next;
                 }
             }
+        }
+        //! The pools the map's cells come from and the store's key hash, set before its first insertion.
+        void Use(Pools& pools, const SaltedCoinsCacheHasher& hasher)
+        {
+            m_pools = &pools;
+            m_hasher = &hasher;
         }
 
         size_t size() const { return m_size; }
@@ -899,7 +724,7 @@ private:
                 }
             }
         }
-        iterator find(const COutPoint& key) const { return find(key, KeyHash(key)); }
+        iterator find(const COutPoint& key) const { return find(key, (*m_hasher)(key)); }
         iterator find(const COutPoint& key, uint64_t hash) const
         {
             if (m_bucket_count == 0) return {};
@@ -909,15 +734,15 @@ private:
             }
             return {};
         }
-        std::pair<iterator, bool> try_emplace(const COutPoint& key) { return try_emplace(key, KeyHash(key)); }
+        std::pair<iterator, bool> try_emplace(const COutPoint& key) { return try_emplace(key, (*m_hasher)(key)); }
         std::pair<iterator, bool> try_emplace(const COutPoint& key, uint64_t hash)
         {
             if (const iterator it{find(key, hash)}; it != end()) return {it, false};
             if (m_size == m_bucket_count) Rebucket(m_bucket_count == 0 ? MIN_BUCKETS : m_bucket_count * 2);
             const size_t bucket{hash & (m_bucket_count - 1)};
-            Cell* cell{::new (CellAllocator{}.allocate(1)) Cell{{}, Node(std::piecewise_construct, std::forward_as_tuple(key), std::tuple<>())}};
-            cell->chain = m_buckets[bucket];
-            m_buckets[bucket] = CellNumber(cell);
+            const uint32_t number{Take(m_pools->cells, m_cell_slab)};
+            Cell* const cell{::new (m_pools->cells.At(number)) Cell{m_buckets[bucket], Node(std::piecewise_construct, std::forward_as_tuple(key), std::tuple<>())}};
+            m_buckets[bucket] = number;
             ++m_size;
             return {iterator{this, bucket, cell}, true};
         }
@@ -925,11 +750,7 @@ private:
         {
             iterator next{it};
             ++next;
-            const uint32_t number{CellNumber(it.m_cell)};
-            uint32_t* link{&m_buckets[it.m_bucket]};
-            while (*link != number) link = &CellAt(*link)->chain;
-            *link = it.m_cell->chain;
-            Free(it.m_cell);
+            Free(Relink(it.m_bucket, it.m_cell, it.m_cell->chain), it.m_cell);
             --m_size;
             return next;
         }
@@ -939,12 +760,12 @@ private:
         {
             Cell* const old{it.m_cell};
             Assume(old->node.second.spent_cell == 0 && old->node.second.coin.IsSpent() && old->node.second.coin.DynamicMemoryUsage() == 0);
-            auto* const spent{::new (SpentAllocator{}.allocate(1)) SpentCell{old->chain, old->node.first, 0}};
+            const uint32_t number{Take(m_pools->spent, m_spent_slab)};
+            auto* const spent{::new (m_pools->spent.At(number)) SpentCell{old->chain, old->node.first, 0}};
             std::memcpy(&spent->word, static_cast<const void*>(&old->node.second), sizeof(spent->word));
             Cell* const cell{reinterpret_cast<Cell*>(spent)};
             cell->node.second.spent_cell = 1;
-            Replace(it.m_bucket, old, cell);
-            Free(old);
+            Free(Relink(it.m_bucket, old, number), old);
             return {this, it.m_bucket, cell};
         }
         //! The entry of a spent cell moves into a cell, its coin spent, for a coin to be written into it.
@@ -952,11 +773,11 @@ private:
         {
             Cell* const old{it.m_cell};
             Assume(old->node.second.spent_cell != 0);
-            Cell* const cell{::new (CellAllocator{}.allocate(1)) Cell{old->chain, Node(std::piecewise_construct, std::forward_as_tuple(old->node.first), std::tuple<>())}};
+            const uint32_t number{Take(m_pools->cells, m_cell_slab)};
+            Cell* const cell{::new (m_pools->cells.At(number)) Cell{old->chain, Node(std::piecewise_construct, std::forward_as_tuple(old->node.first), std::tuple<>())}};
             std::memcpy(static_cast<void*>(&cell->node.second), &reinterpret_cast<const SpentCell*>(old)->word, sizeof(uint32_t));
             cell->node.second.spent_cell = 0;
-            Replace(it.m_bucket, old, cell);
-            Free(old);
+            Free(Relink(it.m_bucket, old, number), old);
             return {this, it.m_bucket, cell};
         }
         //! Only rehash(0) of an empty map is used: the bucket array goes back.
@@ -978,23 +799,46 @@ private:
             (void)p;
 #endif
         }
-        static void Free(Cell* cell)
+        //! The cells of one pool the map holds: those it freed, in a list linked by their first word, and what is
+        //! left of the last chunk it took, not touched yet.
+        struct Slab {
+            uint32_t free{0};
+            uint32_t fresh{0};
+            uint32_t left{0};
+        };
+        //! A cell's number: the cell freed last, with the one freed before it asked for, as a run of insertions
+        //! takes it next; else the next of the chunk; else the first of a new chunk.
+        template <typename Pool>
+        static uint32_t Take(Pool& pool, Slab& slab)
         {
-            if (cell->node.second.spent_cell) {
-                // A spent cell holds a link, a key and a word, nothing to destroy.
-                SpentAllocator{}.deallocate(reinterpret_cast<SpentCell*>(cell), 1);
-                return;
+            if (const uint32_t number{slab.free}) {
+                std::memcpy(&slab.free, pool.At(number), sizeof(slab.free));
+                if (slab.free) Ahead(pool.At(slab.free));
+                return number;
             }
-            std::destroy_at(cell);
-            CellAllocator{}.deallocate(cell, 1);
+            if (slab.left == 0) {
+                slab.fresh = pool.Chunk();
+                slab.left = Pool::CHUNK;
+            }
+            --slab.left;
+            return slab.fresh++;
         }
-        //! The chain of `bucket` links `to` where it linked `from`, which keeps its own link.
-        void Replace(size_t bucket, const Cell* from, Cell* to)
+        //! The cell of `number`, unlinked, goes to the list of its slab.
+        void Free(uint32_t number, Cell* cell)
         {
-            const uint32_t number{CellNumber(from)};
+            const bool spent{cell->node.second.spent_cell != 0};
+            // A spent cell holds a link, a key and a word, nothing to destroy.
+            if (!spent) std::destroy_at(cell);
+            Slab& slab{spent ? m_spent_slab : m_cell_slab};
+            std::memcpy(static_cast<void*>(cell), &slab.free, sizeof(slab.free));
+            slab.free = number;
+        }
+        //! The chain of `bucket` links `to` where it linked `cell`: the cell's number, which the link held.
+        uint32_t Relink(size_t bucket, const Cell* cell, uint32_t to)
+        {
             uint32_t* link{&m_buckets[bucket]};
-            while (*link != number) link = &CellAt(*link)->chain;
-            *link = CellNumber(to);
+            while (CellAt(*link) != cell) link = &CellAt(*link)->chain;
+            return std::exchange(*link, to);
         }
         void Rebucket(size_t count)
         {
@@ -1003,12 +847,13 @@ private:
             void* array{buckets.get_deleter().hinted ? HintedRegion(count * BUCKET_BYTES) : ::operator new(count * BUCKET_BYTES)};
             buckets.reset(new (array) uint32_t[count]());
             for (size_t b{0}; b < m_bucket_count; ++b) {
-                for (Cell* cell{CellAt(m_buckets[b])}; cell;) {
-                    Cell* next{CellAt(cell->chain)};
-                    const size_t bucket{KeyHash(cell->node.first) & (count - 1)};
+                for (uint32_t number{m_buckets[b]}; number;) {
+                    Cell* const cell{CellAt(number)};
+                    const uint32_t next{cell->chain};
+                    const size_t bucket{(*m_hasher)(cell->node.first) & (count - 1)};
                     cell->chain = buckets[bucket];
-                    buckets[bucket] = CellNumber(cell);
-                    cell = next;
+                    buckets[bucket] = number;
+                    number = next;
                 }
             }
             m_buckets = std::move(buckets);
@@ -1030,16 +875,18 @@ private:
         Buckets m_buckets{nullptr, BucketsDeleter{false}};
         size_t m_bucket_count{0};
         size_t m_size{0};
+        Pools* m_pools{nullptr};
+        const SaltedCoinsCacheHasher* m_hasher{nullptr};
+        Slab m_cell_slab;
+        Slab m_spent_slab;
     };
-    //! The dirty entries of one span of change heights in a shard: what writing them out frees, DirtyBytes()
-    //! of each.
-    struct Bucket {
-        int64_t bytes{0};
-    };
-    using ShardMutex = Mutex;
+    //! What an entry's map node costs, as DynamicMemoryUsage() counts it: the node's own size, not what the
+    //! general allocator would hold for it, since cells are carved back to back from the store's regions
+    //! (CellPool), with no header and no rounding between them.
+    static constexpr int64_t NODE_BYTES{sizeof(Map::Cell)};
     //! On cache lines of its own: a shard is written by whichever thread holds it, and its neighbours by others.
     struct alignas(64) Shard {
-        mutable ShardMutex mutex;
+        mutable Mutex mutex;
         Map map GUARDED_BY(mutex);
         //! The shard's share of the tier's totals (see Totals): its dirty entries, and its map's size and
         //! bucket count as last counted (Resized()).
@@ -1076,13 +923,11 @@ private:
     //! The calling thread's stripe.
     Totals& MyTotals() const;
     size_t SumTotals(std::atomic<int64_t> Totals::* field) const;
-    //! What an entry's map node costs, as DynamicMemoryUsage() counts it.
-    static int64_t NodeBytes();
     /**
-     * How many change heights share a list of dirty entries, as a power of two. While nothing is written
-     * out the dirty entries are the coins of every height since the last write, a few to a shard for each:
-     * a list for every height would be an allocation of its own for nearly every dirty coin. An entry
-     * keeps its height, and whoever needs heights apart inside a span reads them there.
+     * How many change heights share one byte sum of a shard's dirty entries (Shard::dirty_spans), as a power
+     * of two. While nothing is written out the dirty entries' heights cover every height since the last
+     * write, a few entries to a shard for each: a sum for every height would give each shard an array as long
+     * as that range. An entry keeps its height, and whoever needs heights apart inside a span reads them there.
      */
     static constexpr int DIRTY_SPAN_BITS{10};
     static size_t SpanOf(int height);
@@ -1218,6 +1063,9 @@ private:
         return static_cast<int>(coin.nHeight) > m_written_height ? static_cast<int>(coin.nHeight) : m_change_height;
     }
 
+    const SaltedCoinsCacheHasher m_key_hasher;
+    //! The memory of the shards' cells, which outlives their maps.
+    Map::Pools m_pools;
     mutable std::vector<Shard> m_shards;
     mutable std::array<Totals, TOTALS_STRIPES> m_totals;
     mutable uint256 m_tier_block_hash;
